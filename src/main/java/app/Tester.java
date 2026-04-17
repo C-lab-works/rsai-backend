@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.HashMap;
 
 @GateController
-public class tester {
+public class Tester {
 
     @GetMapping("/hello")
     public void hello(Context ctx) {

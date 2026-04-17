@@ -2,8 +2,8 @@ package dev.gate.core;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
-/** "GET:/hello" のようなキーとハンドラーを対応付けるルーティングテーブル */
 public class Router {
 
     private final Map<String, Handler> routes = new HashMap<>();
@@ -12,8 +12,7 @@ public class Router {
         routes.put(key, handler);
     }
 
-    /** 対応するハンドラーがなければ null を返す */
-    public Handler find(String key) {
-        return routes.get(key);
+    public Optional<Handler> find(String key) {
+        return Optional.ofNullable(routes.get(key));
     }
 }

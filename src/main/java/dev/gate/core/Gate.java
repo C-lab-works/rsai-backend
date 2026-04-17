@@ -10,14 +10,13 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
+import java.net.JarURLConnection;
+import java.util.jar.JarFile;
 
-
-/** フレームワークのエントリーポイント。サーバーの起動とコントローラーの登録を担う */
 public class Gate {
-
     public static void main(String[] args) throws Exception {
         Gate gate = new Gate();
-        gate.register(new Gate());
         gate.scan("app");
         gate.start(8080);
     }
@@ -25,12 +24,10 @@ public class Gate {
     private final Router router = new Router();
     private final AnnotationScanner scanner = new AnnotationScanner(router);
 
-    /** コントローラーを登録する。アノテーションをスキャンしてルートに追加する */
     public void register(Object controller) {
         scanner.scan(controller);
     }
 
-    /** Jetty サーバーを起動し、全リクエストをルーターに委譲する */
     public void start(int port) throws Exception {
         Server server = new Server(port);
 
@@ -40,18 +37,19 @@ public class Gate {
                                HttpServletRequest request,
                                HttpServletResponse response) throws IOException {
 
-                // "GET:/hello" のようなキーでルートを検索する
                 String key = request.getMethod() + ":" + target;
                 Context ctx = new Context(target, request);
 
-                Handler handler = router.find(key);
-                if (handler != null) {
-                    handler.handle(ctx);
-                    response.setStatus(200);
-                } else {
-                    response.setStatus(404);
-                    ctx.result("404 Not Found");
-                }
+                router.find(key).ifPresentOrElse(
+                    handler -> {
+                        handler.handle(ctx);
+                        response.setStatus(200);
+                    },
+                    () -> {
+                        response.setStatus(404);
+                        ctx.result("404 Not Found");
+                    }
+                );
 
                 ctx.headers().forEach(response::addHeader);
                 response.setContentType(ctx.contentType());
@@ -60,7 +58,7 @@ public class Gate {
             }
         });
 
-        System.out.println("Gate starting on port " + port);
+        System.out.println("starting on port " + port);
         server.start();
         server.join();
     }
@@ -70,32 +68,60 @@ public class Gate {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
 
         var resources = classLoader.getResources(packagePath);
+        if (!resources.hasMoreElements()) {
+            System.err.println("notfound: " + packageName);
+            return;
+        }
+
         while (resources.hasMoreElements()) {
-            File directory = new File(resources.nextElement().getFile());
-            scanDirectory(packageName, classLoader, directory);
+            URL url = resources.nextElement();
+            switch (url.getProtocol()) {
+                case "file" -> scanDirectory(packageName, classLoader, new File(url.getFile()));
+                case "jar"  -> scanJar(packageName, classLoader, url);
+                default     -> System.err.println("unsupported: " + url.getProtocol());
+            }
         }
     }
 
-    private void scanDirectory(String packageName, ClassLoader classLoader, File directory) throws Exception {
-        if (!directory.isDirectory()) {
-            return;
-        }
+        private void scanDirectory(String packageName, ClassLoader classLoader, File directory) throws Exception {
+        if (!directory.isDirectory()) return;
 
         File[] files = directory.listFiles();
-        if (files == null) {
-            return;
-        }
+        if (files == null) return;
 
         for (File file : files) {
-            if (!file.getName().endsWith(".class")) {
-                continue;
+            if (file.isDirectory()) {
+                scanDirectory(packageName + "." + file.getName(), classLoader, file);
+            } else if (file.getName().endsWith(".class")) {
+                String className = packageName + "." + file.getName().replace(".class", "");
+                loadAndRegister(className, classLoader);
             }
+        }
+    }
 
-            String className = file.getName().replace(".class", "");
-            Class<?> clazz = classLoader.loadClass(packageName + "." + className);
+        private void scanJar(String packageName, ClassLoader classLoader, URL url) throws Exception {
+        JarURLConnection conn = (JarURLConnection) url.openConnection();
+        String packagePath = packageName.replace('.', '/') + "/";
+
+        try (JarFile jar = conn.getJarFile()) {
+            jar.stream()
+                .filter(e -> e.getName().startsWith(packagePath) && e.getName().endsWith(".class"))
+                .forEach(e -> {
+                    String className = e.getName().replace('/', '.').replace(".class", "");
+                    loadAndRegister(className, classLoader);
+                });
+        }
+    }
+
+        private void loadAndRegister(String className, ClassLoader classLoader) {
+        try {
+            Class<?> clazz = classLoader.loadClass(className);
             if (clazz.isAnnotationPresent(GateController.class)) {
                 register(clazz.getDeclaredConstructor().newInstance());
+                System.out.println("load:" + className);
             }
+        } catch (Exception e) {
+            System.err.println("failed: " + className + " - " + e.getMessage());
         }
     }
 }

@@ -2,10 +2,11 @@ package dev.gate.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-/** 1リクエストの情報とレスポンスの構築を保持するオブジェクト */
 public class Context {
 
     private static final ObjectMapper mapper = new ObjectMapper();
@@ -21,41 +22,37 @@ public class Context {
         this.request = request;
     }
 
-    /** リクエストパスを返す */
     public String path() {
         return path;
     }
 
-    /** クエリパラメーターを取得する（例: ?name=foo → query("name") == "foo"） */
     public String query(String key) {
         return request.getParameter(key);
     }
 
-    /** リクエストボディを文字列で返す */
     public String body() {
         try {
-            return request.getReader().lines().reduce("", String::concat);
-        } catch (Exception e) {
+            return request.getReader().lines().collect(Collectors.joining());
+        } catch (IOException e) {
+            System.err.println("readfailed: " + e.getMessage());
             return "";
         }
     }
 
-    /** テキストレスポンスをセットする */
     public void result(String body) {
         this.responseBody = body;
     }
 
-    /** オブジェクトを JSON にシリアライズしてレスポンスにセットする */
     public void json(Object object) {
         try {
             this.responseBody = mapper.writeValueAsString(object);
             this.contentType = "application/json";
         } catch (Exception e) {
+            System.err.println("serializefailed: " + e.getMessage());
             this.responseBody = "{}";
         }
     }
 
-    /** レスポンスヘッダーを追加する */
     public void header(String key, String value) {
         headers.put(key, value);
     }
