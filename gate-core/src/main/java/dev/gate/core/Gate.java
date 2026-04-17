@@ -15,11 +15,6 @@ import java.net.JarURLConnection;
 import java.util.jar.JarFile;
 
 public class Gate {
-    public static void main(String[] args) throws Exception {
-        Gate gate = new Gate();
-        gate.scan("app");
-        gate.start(8080);
-    }
 
     private final Router router = new Router();
     private final AnnotationScanner scanner = new AnnotationScanner(router);

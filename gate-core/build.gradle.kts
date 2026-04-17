@@ -11,10 +11,6 @@ java {
     }
 }
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     api(project(":gate-mapping"))
     implementation("org.eclipse.jetty:jetty-server:11.0.20")
