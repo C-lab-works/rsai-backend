@@ -2,8 +2,11 @@ package app;
 
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
+import dev.gate.core.WsContext;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
+import dev.gate.mapping.WsMapping;
+
 import java.util.Map;
 import java.util.HashMap;
 
@@ -34,5 +37,10 @@ public class Tester {
         ctx.header("X-Gate-Version", "0.1.0");
         ctx.header("Access-Control-Allow-Origin", "*");
         ctx.result("headers set!");
+    }
+
+    @WsMapping("/chat")
+    public void chat(WsContext ctx, String message) {
+        ctx.send("Echo: " + message);
     }
 }

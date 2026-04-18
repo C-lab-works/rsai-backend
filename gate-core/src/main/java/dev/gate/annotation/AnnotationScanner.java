@@ -6,6 +6,7 @@ import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import dev.gate.mapping.WsMapping;
 
 public class AnnotationScanner {
 
@@ -27,6 +28,16 @@ public class AnnotationScanner {
             if (method.isAnnotationPresent(PostMapping.class)) {
                 String path = method.getAnnotation(PostMapping.class).value();
                 router.register("POST:" + path, ctx -> invoke(method, controller, ctx));
+            }
+            if (method.isAnnotationPresent(WsMapping.class)) {
+                String path = method.getAnnotation(WsMapping.class).value();
+                router.registerWs(path, (ctx, message) -> {
+                    try {
+                        method.invoke(controller, ctx, message);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                });
             }
         }
     }

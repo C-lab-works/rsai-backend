@@ -2,11 +2,13 @@ package dev.gate.core;
 
 import dev.gate.annotation.AnnotationScanner;
 import dev.gate.annotation.GateController;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.Request;
-import org.eclipse.jetty.server.handler.AbstractHandler;
+import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.websocket.server.config.JettyWebSocketServletContainerInitializer;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,27 +33,35 @@ public class Gate {
 
     public void start(int port) throws Exception {
         Server server = new Server(port);
+        ServletContextHandler context = new ServletContextHandler();
+        context.setContextPath("/");
 
-        server.setHandler(new AbstractHandler() {
+        JettyWebSocketServletContainerInitializer.configure(context, (servletContext, wsContainer) -> {
+            router.getWsRoutes().forEach((path, wsHandler) -> {
+                wsContainer.addMapping(path, (req, res) -> new WsAdapter(wsHandler));
+            });
+        });
+
+        final String finalCorsOrigin = this.corsOrigin;
+        context.addServlet(new ServletHolder(new HttpServlet() {
             @Override
-            public void handle(String target, Request baseRequest,
-                               HttpServletRequest request,
-                               HttpServletResponse response) throws IOException {
+            protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
                 try {
-                    if (corsOrigin != null) {
-                        response.setHeader("Access-Control-Allow-Origin", corsOrigin);
+                    if (finalCorsOrigin != null) {
+                        response.setHeader("Access-Control-Allow-Origin", finalCorsOrigin);
                         response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                         response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
                     }
 
                     if ("OPTIONS".equals(request.getMethod())) {
                         response.setStatus(204);
-                        baseRequest.setHandled(true);
                         return;
                     }
 
-                    String key = request.getMethod() + ":" + target;
-                    Context ctx = new Context(target, request);
+                    String path = request.getPathInfo();
+                    if (path == null) path = request.getServletPath();
+                    String key = request.getMethod() + ":" + path;
+                    Context ctx = new Context(path, request);
 
                     router.find(key).ifPresentOrElse(
                         handler -> {
@@ -71,11 +81,11 @@ public class Gate {
                 } catch (Exception e) {
                     System.err.println("[Gate] handle error: " + e.getMessage());
                     response.setStatus(500);
-                } finally {
-                    baseRequest.setHandled(true);
                 }
             }
-        });
+        }), "/*");
+
+        server.setHandler(context);
 
         System.out.println("starting on port " + port);
         server.start();
