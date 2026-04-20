@@ -1,7 +1,6 @@
 package dev.gate.annotation;
 
 import dev.gate.core.Context;
-import dev.gate.core.Logger;
 import dev.gate.core.Router;
 import dev.gate.core.WsContext;
 import dev.gate.mapping.DeleteMapping;
@@ -19,7 +18,6 @@ import java.lang.reflect.Modifier;
 
 public class AnnotationScanner {
 
-    private static final Logger logger = new Logger(AnnotationScanner.class);
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
     private final Router router;
 

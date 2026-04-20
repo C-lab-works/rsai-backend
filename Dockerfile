@@ -11,10 +11,26 @@ COPY app/ app/
 
 RUN chmod +x gradlew && ./gradlew :app:shadowJar --no-daemon --quiet
 
-# --- Stage 2: Runtime ---
-FROM eclipse-temurin:21-jre-alpine
+# --- Stage 2: Custom JRE ---
+FROM eclipse-temurin:21-jdk-alpine AS jre-builder
+
+RUN jlink \
+    --add-modules java.base,java.desktop,java.instrument,java.management,java.naming,java.security.jgss,java.sql \
+    --strip-debug \
+    --no-man-pages \
+    --no-header-files \
+    --compress=zip-6 \
+    --output /custom-jre
+
+# --- Stage 3: Runtime ---
+FROM alpine:3.20
 
 RUN addgroup -S gate && adduser -S gate -G gate
+
+ENV JAVA_HOME=/opt/java
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+COPY --from=jre-builder /custom-jre $JAVA_HOME
 
 WORKDIR /app
 

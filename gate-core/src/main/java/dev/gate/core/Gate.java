@@ -142,7 +142,6 @@ public class Gate {
                         return;
                     }
 
-                    // before filters
                     for (Handler filter : beforeFilters) {
                         filter.handle(ctx);
                     }

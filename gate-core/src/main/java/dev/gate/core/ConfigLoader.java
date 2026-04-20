@@ -18,25 +18,24 @@ public class ConfigLoader {
 
         Yaml yaml = new Yaml(new Constructor(Config.class, options));
 
+        Config config = null;
         try (InputStream input = ConfigLoader.class
                 .getClassLoader()
                 .getResourceAsStream("config.yml")) {
 
-            if (input == null) {
+            if (input != null) {
+                config = yaml.load(input);
+            } else {
                 logger.info("config.yml not found, using defaults");
-                Config config = new Config();
-                config.freeze();
-                return config;
             }
-
-            Config config = yaml.load(input);
-            config.freeze();
-            return config;
         } catch (Exception e) {
             logger.warn("Failed to load config.yml: {} — using defaults", e.getMessage());
-            Config config = new Config();
-            config.freeze();
-            return config;
         }
+
+        if (config == null) {
+            config = new Config();
+        }
+        config.freeze();
+        return config;
     }
 }

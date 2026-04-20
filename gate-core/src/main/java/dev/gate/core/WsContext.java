@@ -6,8 +6,6 @@ import java.io.UncheckedIOException;
 
 public class WsContext {
 
-    private static final Logger logger = new Logger(WsContext.class);
-
     private final Session session;
 
     public WsContext(Session session) {
