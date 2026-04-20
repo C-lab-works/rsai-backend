@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -96,5 +97,5 @@ public class Context {
 
     public String responseBody() { return responseBody; }
     public String contentType() { return contentType; }
-    public Map<String, String> headers() { return Map.copyOf(headers); }
+    public Map<String, String> headers() { return Collections.unmodifiableMap(headers); }
 }

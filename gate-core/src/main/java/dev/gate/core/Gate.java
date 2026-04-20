@@ -6,8 +6,10 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import org.eclipse.jetty.websocket.server.config.JettyWebSocketServletContainerInitializer;
 
 import java.io.File;
@@ -19,6 +21,7 @@ import java.nio.file.Paths;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -103,7 +106,14 @@ public class Gate {
     // --- Server lifecycle ---
 
     public GateServer start(int port) throws Exception {
-        Server server = new Server(port);
+        // Java 21 Virtual Threads via Jetty's official API
+        QueuedThreadPool threadPool = new QueuedThreadPool();
+        threadPool.setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        Server server = new Server(threadPool);
+        ServerConnector connector = new ServerConnector(server);
+        connector.setPort(port);
+        server.addConnector(connector);
+
         ServletContextHandler context = new ServletContextHandler();
         context.setContextPath("/");
 
@@ -146,7 +156,7 @@ public class Gate {
                         filter.handle(ctx);
                     }
 
-                    String key = request.getMethod() + ":" + path;
+                    String key = request.getMethod() + ':' + path;
 
                     router.find(key).ifPresentOrElse(
                         match -> {

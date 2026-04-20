@@ -14,14 +14,19 @@ public class Router {
 
     private static final Logger log = new Logger(Router.class);
     private static final Pattern SLASH = Pattern.compile("/", Pattern.LITERAL);
+    private static final int CACHE_MAX_SIZE = 1024;
 
     public record RouteMatch(Handler handler, Map<String, String> pathParams) {}
 
     private record PatternRoute(String method, String[] segments, String[] paramNames, Handler handler) {}
 
+    // Cache key for pattern route matches (method + path → matched PatternRoute index + params)
+    private record CachedMatch(int routeIndex, Map<String, String> params) {}
+
     private final Map<String, Handler> exactRoutes = new ConcurrentHashMap<>();
     private final List<PatternRoute> patternRoutes = new CopyOnWriteArrayList<>();
     private final Map<String, WsHandler> wsRoutes = new ConcurrentHashMap<>();
+    private final Map<String, CachedMatch> patternCache = new ConcurrentHashMap<>();
 
     private static String normalizePath(String path) {
         if (path.length() > 1 && path.endsWith("/")) {
@@ -74,6 +79,7 @@ public class Router {
             }
 
             patternRoutes.add(new PatternRoute(method, segments, paramNames, handler));
+            patternCache.clear(); // Invalidate cache on route mutation
         } else {
             exactRoutes.put(normalizedKey, handler);
         }
@@ -86,13 +92,22 @@ public class Router {
             return Optional.of(new RouteMatch(exact, Map.of()));
         }
 
+        // キャッシュチェック
+        CachedMatch cached = patternCache.get(key);
+        if (cached != null) {
+            PatternRoute route = patternRoutes.get(cached.routeIndex());
+            return Optional.of(new RouteMatch(route.handler(), cached.params()));
+        }
+
         // パターンマッチ
         int colonIdx = key.indexOf(':');
         String method = key.substring(0, colonIdx);
         String path = key.substring(colonIdx + 1);
         String[] requestSegments = SLASH.split(path, -1);
 
-        for (PatternRoute route : patternRoutes) {
+        List<PatternRoute> routes = patternRoutes;
+        for (int ri = 0; ri < routes.size(); ri++) {
+            PatternRoute route = routes.get(ri);
             if (!route.method().equals(method)) continue;
             if (route.segments().length != requestSegments.length) continue;
 
@@ -117,7 +132,14 @@ public class Router {
                         params.put(route.paramNames()[i], requestSegments[i]);
                     }
                 }
-                return Optional.of(new RouteMatch(route.handler(), Map.copyOf(params)));
+                Map<String, String> immutableParams = Map.copyOf(params);
+
+                // キャッシュに保存（サイズ制限付き）
+                if (patternCache.size() < CACHE_MAX_SIZE) {
+                    patternCache.put(key, new CachedMatch(ri, immutableParams));
+                }
+
+                return Optional.of(new RouteMatch(route.handler(), immutableParams));
             }
         }
 
