@@ -6,9 +6,9 @@ import org.yaml.snakeyaml.constructor.Constructor;
 
 import java.io.InputStream;
 
-public class Loadconfig {
+public class ConfigLoader {
 
-    private static final Logger logger = new Logger(Loadconfig.class);
+    private static final Logger logger = new Logger(ConfigLoader.class);
 
     public static Config load() {
         LoaderOptions options = new LoaderOptions();
@@ -18,19 +18,25 @@ public class Loadconfig {
 
         Yaml yaml = new Yaml(new Constructor(Config.class, options));
 
-        try (InputStream input = Loadconfig.class
+        try (InputStream input = ConfigLoader.class
                 .getClassLoader()
                 .getResourceAsStream("config.yml")) {
 
             if (input == null) {
                 logger.info("config.yml not found, using defaults");
-                return new Config();
+                Config config = new Config();
+                config.freeze();
+                return config;
             }
 
-            return yaml.load(input);
+            Config config = yaml.load(input);
+            config.freeze();
+            return config;
         } catch (Exception e) {
-            logger.warn("Failed to load config.yml: " + e.getMessage() + ", using defaults");
-            return new Config();
+            logger.warn("Failed to load config.yml: {} — using defaults", e.getMessage());
+            Config config = new Config();
+            config.freeze();
+            return config;
         }
     }
 }

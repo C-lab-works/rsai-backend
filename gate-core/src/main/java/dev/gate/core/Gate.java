@@ -17,6 +17,8 @@ import java.net.JarURLConnection;
 import java.net.URL;
 import java.nio.file.Paths;
 import java.util.Enumeration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -24,14 +26,57 @@ public class Gate {
 
     private final Router router = new Router();
     private final AnnotationScanner scanner = new AnnotationScanner(router);
-    private String corsOrigin = null;
     private final Logger logger = new Logger(Gate.class);
+    private final List<Handler> beforeFilters = new CopyOnWriteArrayList<>();
+    private final List<Handler> afterFilters = new CopyOnWriteArrayList<>();
+    private String corsOrigin = null;
+    private int wsMaxMessageSize = 64 * 1024;
 
     private ErrorHandler errorHandler = (ctx, e) -> {
         logger.error("Unhandled error: " + e.getMessage(), e);
-        ctx.status(500);
-        ctx.result("500 Internal Server Error");
+        ctx.status(500).result("500 Internal Server Error");
     };
+
+    // --- Programmatic route registration ---
+
+    public Gate get(String path, Handler handler) {
+        router.register("GET:" + path, handler);
+        return this;
+    }
+
+    public Gate post(String path, Handler handler) {
+        router.register("POST:" + path, handler);
+        return this;
+    }
+
+    public Gate put(String path, Handler handler) {
+        router.register("PUT:" + path, handler);
+        return this;
+    }
+
+    public Gate delete(String path, Handler handler) {
+        router.register("DELETE:" + path, handler);
+        return this;
+    }
+
+    public Gate patch(String path, Handler handler) {
+        router.register("PATCH:" + path, handler);
+        return this;
+    }
+
+    // --- Middleware ---
+
+    public Gate before(Handler handler) {
+        beforeFilters.add(handler);
+        return this;
+    }
+
+    public Gate after(Handler handler) {
+        afterFilters.add(handler);
+        return this;
+    }
+
+    // --- Configuration ---
 
     public void register(Object controller) {
         scanner.scan(controller);
@@ -45,19 +90,19 @@ public class Gate {
         return this;
     }
 
-    public Gate errorHandler(ErrorHandler handler) {
-        this.errorHandler = handler;
-        return this;
-    }
-
-    private int wsMaxMessageSize = 64 * 1024;
-
     public Gate wsMaxMessageSize(int bytes) {
         this.wsMaxMessageSize = bytes;
         return this;
     }
 
-    public void start(int port) throws Exception {
+    public Gate errorHandler(ErrorHandler handler) {
+        this.errorHandler = handler;
+        return this;
+    }
+
+    // --- Server lifecycle ---
+
+    public GateServer start(int port) throws Exception {
         Server server = new Server(port);
         ServletContextHandler context = new ServletContextHandler();
         context.setContextPath("/");
@@ -84,13 +129,22 @@ public class Gate {
                 try {
                     if (finalCorsOrigin != null) {
                         response.setHeader("Access-Control-Allow-Origin", finalCorsOrigin);
-                        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
                         response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+                        response.setHeader("Access-Control-Max-Age", "86400");
+                        if (!"*".equals(finalCorsOrigin)) {
+                            response.setHeader("Access-Control-Allow-Credentials", "true");
+                        }
                     }
 
                     if ("OPTIONS".equals(request.getMethod())) {
                         response.setStatus(204);
                         return;
+                    }
+
+                    // before filters
+                    for (Handler filter : beforeFilters) {
+                        filter.handle(ctx);
                     }
 
                     String key = request.getMethod() + ":" + path;
@@ -100,13 +154,19 @@ public class Gate {
                             ctx.setPathParams(match.pathParams());
                             match.handler().handle(ctx);
                         },
-                        () -> {
-                            ctx.status(404);
-                            ctx.result("404 Not Found");
-                        }
+                        () -> ctx.status(404).result("404 Not Found")
                     );
                 } catch (Exception e) {
                     errorHandler.handle(ctx, e);
+                } finally {
+                    // after filters always run (logging, metrics, cleanup)
+                    for (Handler filter : afterFilters) {
+                        try {
+                            filter.handle(ctx);
+                        } catch (Exception ex) {
+                            logger.error("After-filter error: {}", ex.getMessage(), ex);
+                        }
+                    }
                 }
 
                 // ヘッダー・ContentType は Writer 取得前に設定する
@@ -127,14 +187,15 @@ public class Gate {
             try { server.stop(); } catch (Exception ex) { logger.error("Error stopping server", ex); }
         }));
 
-        logger.info("Starting on port " + port);
+        logger.info("Starting on port {}", port);
         try {
             server.start();
-            server.join();
         } catch (Exception e) {
             server.stop();
             throw e;
         }
+
+        return new GateServer(server);
     }
 
     public void scan(String packageName) throws Exception {

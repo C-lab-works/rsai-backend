@@ -7,9 +7,9 @@ public class WsAdapter extends WebSocketAdapter {
 
     private static final Logger logger = new Logger(WsAdapter.class);
 
-    private final WsHandle handler;
+    private final WsHandler handler;
 
-    public WsAdapter(WsHandle handler) {
+    public WsAdapter(WsHandler handler) {
         this.handler = handler;
     }
 
@@ -25,12 +25,17 @@ public class WsAdapter extends WebSocketAdapter {
     @Override
     public void onWebSocketConnect(Session session) {
         super.onWebSocketConnect(session);
-        logger.info("WS connected: " + session.getRemoteAddress());
+        logger.info("WS connected: {}", session.getRemoteAddress());
     }
 
     @Override
     public void onWebSocketClose(int statusCode, String reason) {
         super.onWebSocketClose(statusCode, reason);
-        logger.info("WS closed: " + statusCode + " " + reason);
+        logger.info("WS closed: {} {}", statusCode, reason);
+    }
+
+    @Override
+    public void onWebSocketError(Throwable cause) {
+        logger.error("WebSocket error: {}", cause.getMessage(), cause);
     }
 }

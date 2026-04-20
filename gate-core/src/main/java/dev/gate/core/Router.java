@@ -1,12 +1,19 @@
 package dev.gate.core;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.regex.Pattern;
 
 public class Router {
 
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Router.class);
+    private static final Logger log = new Logger(Router.class);
+    private static final Pattern SLASH = Pattern.compile("/", Pattern.LITERAL);
 
     public record RouteMatch(Handler handler, Map<String, String> pathParams) {}
 
@@ -14,7 +21,7 @@ public class Router {
 
     private final Map<String, Handler> exactRoutes = new ConcurrentHashMap<>();
     private final List<PatternRoute> patternRoutes = new CopyOnWriteArrayList<>();
-    private final Map<String, WsHandle> wsRoutes = new ConcurrentHashMap<>();
+    private final Map<String, WsHandler> wsRoutes = new ConcurrentHashMap<>();
 
     private static String normalizePath(String path) {
         if (path.length() > 1 && path.endsWith("/")) {
@@ -31,7 +38,7 @@ public class Router {
         String normalizedKey = method + ":" + path;
 
         if (path.contains("{")) {
-            String[] segments = path.split("/", -1);
+            String[] segments = SLASH.split(path, -1);
             String[] paramNames = new String[segments.length];
             Set<String> seen = new HashSet<>();
             for (int i = 0; i < segments.length; i++) {
@@ -83,44 +90,45 @@ public class Router {
         int colonIdx = key.indexOf(':');
         String method = key.substring(0, colonIdx);
         String path = key.substring(colonIdx + 1);
-        String[] requestSegments = path.split("/", -1);
+        String[] requestSegments = SLASH.split(path, -1);
 
         for (PatternRoute route : patternRoutes) {
             if (!route.method().equals(method)) continue;
             if (route.segments().length != requestSegments.length) continue;
 
-            Map<String, String> params = new HashMap<>();
             boolean match = true;
             for (int i = 0; i < route.segments().length; i++) {
                 if (route.segments()[i] == null) {
-                    // 空セグメントを拒否
                     if (requestSegments[i].isEmpty()) {
                         match = false;
                         break;
                     }
-                    params.put(route.paramNames()[i], requestSegments[i]);
                 } else if (!route.segments()[i].equals(requestSegments[i])) {
                     match = false;
                     break;
                 }
             }
+
             if (match) {
-                return Optional.of(new RouteMatch(route.handler(), Collections.unmodifiableMap(params)));
+                // マッチ確認後にパラメータを抽出
+                Map<String, String> params = new HashMap<>();
+                for (int i = 0; i < route.segments().length; i++) {
+                    if (route.segments()[i] == null) {
+                        params.put(route.paramNames()[i], requestSegments[i]);
+                    }
+                }
+                return Optional.of(new RouteMatch(route.handler(), Map.copyOf(params)));
             }
         }
 
         return Optional.empty();
     }
 
-    public void registerWs(String path, WsHandle handler) {
+    public void registerWs(String path, WsHandler handler) {
         wsRoutes.put(path, handler);
     }
 
-    public Optional<WsHandle> findWs(String path) {
-        return Optional.ofNullable(wsRoutes.get(path));
-    }
-
-    public Map<String, WsHandle> getWsRoutes() {
-        return Collections.unmodifiableMap(wsRoutes);
+    public Map<String, WsHandler> getWsRoutes() {
+        return Map.copyOf(wsRoutes);
     }
 }

@@ -1,6 +1,6 @@
 package dev.gate.core;
 
 @FunctionalInterface
-public interface WsHandle {
+public interface WsHandler {
     void handle(WsContext ctx, String message);
 }

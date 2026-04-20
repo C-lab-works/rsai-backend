@@ -2,6 +2,7 @@ package dev.gate.core;
 
 import org.eclipse.jetty.websocket.api.Session;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 
 public class WsContext {
 
@@ -17,7 +18,7 @@ public class WsContext {
         try {
             session.getRemote().sendString(message);
         } catch (IOException e) {
-            logger.error("Failed to send WebSocket message: " + e.getMessage(), e);
+            throw new UncheckedIOException("Failed to send WebSocket message", e);
         }
     }
 

@@ -8,7 +8,6 @@ import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.WsMapping;
 
 import java.util.Map;
-import java.util.HashMap;
 
 @GateController
 public class Tester {
@@ -31,10 +30,7 @@ public class Tester {
 
     @GetMapping("/json")
     public void json(Context ctx) {
-        Map<String, String> data = new HashMap<>();
-        data.put("message", "Hello from Gate!");
-        data.put("status", "ok");
-        ctx.json(data);
+        ctx.json(Map.of("message", "Hello from Gate!", "status", "ok"));
     }
 
     @GetMapping("/headers")

@@ -3,15 +3,16 @@ package dev.gate.core;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.util.Collections;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class Context {
 
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Logger logger = new Logger(Context.class);
+    static final int MAX_BODY_SIZE = 1024 * 1024; // 1 MB default
 
     private final String path;
     private final HttpServletRequest request;
@@ -29,6 +30,8 @@ public class Context {
 
     public String path() { return path; }
 
+    public String method() { return request.getMethod(); }
+
     public String pathParam(String name) { return pathParams.get(name); }
 
     void setPathParams(Map<String, String> params) { this.pathParams = params; }
@@ -38,7 +41,18 @@ public class Context {
     public String body() {
         if (cachedBody != null) return cachedBody;
         try {
-            cachedBody = request.getReader().lines().collect(Collectors.joining());
+            int contentLength = request.getContentLength();
+            if (contentLength > MAX_BODY_SIZE) {
+                throw new RuntimeException("Request body too large: " + contentLength + " bytes (max: " + MAX_BODY_SIZE + ")");
+            }
+            Charset charset = request.getCharacterEncoding() != null
+                    ? Charset.forName(request.getCharacterEncoding())
+                    : StandardCharsets.UTF_8;
+            byte[] bytes = request.getInputStream().readAllBytes();
+            if (bytes.length > MAX_BODY_SIZE) {
+                throw new RuntimeException("Request body too large: " + bytes.length + " bytes (max: " + MAX_BODY_SIZE + ")");
+            }
+            cachedBody = new String(bytes, charset);
             return cachedBody;
         } catch (IOException e) {
             logger.error("Failed to read request body: " + e.getMessage(), e);
@@ -48,39 +62,39 @@ public class Context {
 
     public <T> T bodyAs(Class<T> type) {
         String raw = body();
-        if (raw == null || raw.isEmpty()) return null;
+        if (raw.isEmpty()) return null;
         try {
             return mapper.readValue(raw, type);
         } catch (Exception e) {
-            logger.warn("Failed to parse request body as " + type.getSimpleName() + ": " + e.getMessage());
-            return null;
+            throw new RuntimeException("Failed to parse request body as " + type.getSimpleName() + ": " + e.getMessage(), e);
         }
     }
 
-    public void status(int code) { this.statusCode = code; }
+    public Context status(int code) { this.statusCode = code; return this; }
     public int statusCode() { return statusCode; }
 
-    public void result(String body) { this.responseBody = body; }
+    public Context result(String body) { this.responseBody = body; return this; }
 
-    public void json(Object object) {
+    public Context json(Object object) {
         try {
             this.responseBody = mapper.writeValueAsString(object);
             this.contentType = "application/json; charset=utf-8";
         } catch (Exception e) {
-            logger.error("Failed to serialize response: " + e.getMessage(), e);
-            this.responseBody = "{}";
+            throw new RuntimeException("Failed to serialize response: " + e.getMessage(), e);
         }
+        return this;
     }
 
-    public void header(String key, String value) {
+    public Context header(String key, String value) {
         if (key == null || key.contains("\r") || key.contains("\n") ||
             value == null || value.contains("\r") || value.contains("\n")) {
             throw new IllegalArgumentException("Header contains illegal characters");
         }
         headers.put(key, value);
+        return this;
     }
 
     public String responseBody() { return responseBody; }
     public String contentType() { return contentType; }
-    public Map<String, String> headers() { return Collections.unmodifiableMap(headers); }
+    public Map<String, String> headers() { return Map.copyOf(headers); }
 }
