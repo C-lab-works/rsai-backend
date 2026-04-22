@@ -12,8 +12,8 @@ import java.util.Map;
 @GateController
 public class Tester {
 
-    @GetMapping("/hearth")
-    public void hearth(Context ctx) {
+    @GetMapping("/health")
+    public void health(Context ctx) {
         ctx.result("running...");
         ctx.status(200);
     }
@@ -24,6 +24,11 @@ public class Tester {
         if (name == null || name.isBlank()) {
             ctx.status(400);
             ctx.result("name parameter is required");
+            return;
+        }
+        if (name.length() > 100) {
+            ctx.status(400);
+            ctx.result("name too long");
             return;
         }
         ctx.result("Hello, " + name + "!");
@@ -42,7 +47,6 @@ public class Tester {
     @GetMapping("/headers")
     public void headers(Context ctx) {
         ctx.header("X-Gate-Version", "0.1.0");
-        ctx.header("Access-Control-Allow-Origin", "*");
         ctx.result("headers set!");
     }
 

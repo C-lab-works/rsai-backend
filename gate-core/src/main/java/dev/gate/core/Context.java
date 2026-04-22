@@ -39,6 +39,8 @@ public class Context {
 
     public String query(String key) { return request.getParameter(key); }
 
+    public String requestHeader(String name) { return request.getHeader(name); }
+
     public String body() {
         if (cachedBody != null) return cachedBody;
         try {

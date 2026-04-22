@@ -41,7 +41,7 @@ public class UserController {
     @GetMapping("/users/{id}")
     public void getUser(Context ctx) {
         int id = parseId(ctx);
-        if (id < 0) return;
+        if (id <= 0) return;
 
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement("SELECT id, name, email FROM users WHERE id = ?")) {
@@ -61,6 +61,10 @@ public class UserController {
 
     @PostMapping("/users")
     public void createUser(Context ctx) {
+        if (!isJsonContentType(ctx)) {
+            ctx.status(415).json(Map.of("error", "Content-Type must be application/json"));
+            return;
+        }
         CreateUserRequest req;
         try {
             req = ctx.bodyAs(CreateUserRequest.class);
@@ -68,8 +72,9 @@ public class UserController {
             ctx.status(400).json(Map.of("error", "invalid request body"));
             return;
         }
-        if (req == null || req.name() == null || req.email() == null) {
-            ctx.status(400).json(Map.of("error", "name and email are required"));
+        String validationError = validateRequest(req);
+        if (validationError != null) {
+            ctx.status(400).json(Map.of("error", validationError));
             return;
         }
 
@@ -99,8 +104,12 @@ public class UserController {
     @PutMapping("/users/{id}")
     public void updateUser(Context ctx) {
         int id = parseId(ctx);
-        if (id < 0) return;
+        if (id <= 0) return;
 
+        if (!isJsonContentType(ctx)) {
+            ctx.status(415).json(Map.of("error", "Content-Type must be application/json"));
+            return;
+        }
         CreateUserRequest req;
         try {
             req = ctx.bodyAs(CreateUserRequest.class);
@@ -108,8 +117,9 @@ public class UserController {
             ctx.status(400).json(Map.of("error", "invalid request body"));
             return;
         }
-        if (req == null || req.name() == null || req.email() == null) {
-            ctx.status(400).json(Map.of("error", "name and email are required"));
+        String validationError = validateRequest(req);
+        if (validationError != null) {
+            ctx.status(400).json(Map.of("error", validationError));
             return;
         }
 
@@ -139,7 +149,7 @@ public class UserController {
     @DeleteMapping("/users/{id}")
     public void deleteUser(Context ctx) {
         int id = parseId(ctx);
-        if (id < 0) return;
+        if (id <= 0) return;
 
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement("DELETE FROM users WHERE id = ?")) {
@@ -157,10 +167,30 @@ public class UserController {
 
     private int parseId(Context ctx) {
         try {
-            return Integer.parseInt(ctx.pathParam("id"));
+            int id = Integer.parseInt(ctx.pathParam("id"));
+            if (id <= 0) {
+                ctx.status(400).json(Map.of("error", "id must be a positive number"));
+                return -1;
+            }
+            return id;
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "id must be a number"));
             return -1;
         }
+    }
+
+    private String validateRequest(CreateUserRequest req) {
+        if (req == null) return "name and email are required";
+        if (req.name() == null || req.name().isBlank()) return "name is required";
+        if (req.name().length() > 255) return "name must be 255 characters or fewer";
+        if (req.email() == null || req.email().isBlank()) return "email is required";
+        if (req.email().length() > 255) return "email must be 255 characters or fewer";
+        if (!req.email().contains("@")) return "email is invalid";
+        return null;
+    }
+
+    private boolean isJsonContentType(Context ctx) {
+        String ct = ctx.requestHeader("Content-Type");
+        return ct != null && ct.contains("application/json");
     }
 }

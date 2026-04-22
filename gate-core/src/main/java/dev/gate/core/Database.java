@@ -57,13 +57,12 @@ public class Database {
         }
     }
 
-    /**
-     * Looks for schema.sql on the classpath and applies it on startup.
-     * Applications place their schema.sql in src/main/resources/.
-     */
     private static void runSchema() throws Exception {
         try (InputStream is = Database.class.getClassLoader().getResourceAsStream("schema.sql")) {
-            if (is == null) return;
+            if (is == null) {
+                logger.warn("schema.sql not found — skipping schema initialization");
+                return;
+            }
             String sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
                 stmt.execute(sql);
