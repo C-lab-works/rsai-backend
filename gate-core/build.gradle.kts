@@ -29,10 +29,6 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.4.11")
 
-    // Database
-    implementation("com.mysql:mysql-connector-j:8.4.0")
-    implementation("com.zaxxer:HikariCP:5.1.0")
-
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 }
