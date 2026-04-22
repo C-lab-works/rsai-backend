@@ -6,6 +6,6 @@ database:
   port: 5432
   name: rsai
   user: postgres
-  password: postgres
+  password: ""
   cloudSqlInstance: ""
   maxPoolSize: 10

@@ -1,6 +1,7 @@
 package app;
 
 import dev.gate.core.Database;
+import dev.gate.core.Logger;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.mapping.DeleteMapping;
@@ -16,6 +17,8 @@ import java.util.Map;
 @GateController
 public class UserController {
 
+    private static final Logger logger = new Logger(UserController.class);
+
     record User(int id, String name, String email) {}
     record CreateUserRequest(String name, String email) {}
 
@@ -30,6 +33,7 @@ public class UserController {
             }
             ctx.json(list);
         } catch (SQLException e) {
+            logger.error("getUsers failed", e);
             ctx.status(500).json(Map.of("error", "database error"));
         }
     }
@@ -50,6 +54,7 @@ public class UserController {
                 }
             }
         } catch (SQLException e) {
+            logger.error("getUser failed for id={}", id, e);
             ctx.status(500).json(Map.of("error", "database error"));
         }
     }
@@ -74,13 +79,18 @@ public class UserController {
             ps.setString(1, req.name());
             ps.setString(2, req.email());
             try (ResultSet rs = ps.executeQuery()) {
-                rs.next();
-                ctx.status(201).json(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+                if (rs.next()) {
+                    ctx.status(201).json(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+                } else {
+                    logger.error("createUser: INSERT returned no rows");
+                    ctx.status(500).json(Map.of("error", "database error"));
+                }
             }
         } catch (SQLException e) {
             if ("23505".equals(e.getSQLState())) {
                 ctx.status(409).json(Map.of("error", "email already exists"));
             } else {
+                logger.error("createUser failed", e);
                 ctx.status(500).json(Map.of("error", "database error"));
             }
         }
@@ -120,6 +130,7 @@ public class UserController {
             if ("23505".equals(e.getSQLState())) {
                 ctx.status(409).json(Map.of("error", "email already exists"));
             } else {
+                logger.error("updateUser failed for id={}", id, e);
                 ctx.status(500).json(Map.of("error", "database error"));
             }
         }
@@ -139,6 +150,7 @@ public class UserController {
                 ctx.status(404).json(Map.of("error", "user not found"));
             }
         } catch (SQLException e) {
+            logger.error("deleteUser failed for id={}", id, e);
             ctx.status(500).json(Map.of("error", "database error"));
         }
     }
