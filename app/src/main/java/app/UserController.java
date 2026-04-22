@@ -1,5 +1,7 @@
 package app;
 
+import dev.gate.core.Database;
+import dev.gate.core.Logger;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.mapping.DeleteMapping;
@@ -7,25 +9,33 @@ import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
 
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @GateController
 public class UserController {
 
+    private static final Logger logger = new Logger(UserController.class);
+
     record User(int id, String name, String email) {}
-
-    private final ConcurrentHashMap<Integer, User> users = new ConcurrentHashMap<>(Map.of(
-        1, new User(1, "Alice", "alice@example.com"),
-        2, new User(2, "Bob",   "bob@example.com")
-    ));
-
-    private final AtomicInteger idGenerator = new AtomicInteger(2);
+    record CreateUserRequest(String name, String email) {}
 
     @GetMapping("/users")
     public void getUsers(Context ctx) {
-        ctx.json(users.values());
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT id, name, email FROM users ORDER BY id");
+             ResultSet rs = ps.executeQuery()) {
+            List<User> list = new ArrayList<>();
+            while (rs.next()) {
+                list.add(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+            }
+            ctx.json(list);
+        } catch (SQLException e) {
+            logger.error("getUsers failed", e);
+            ctx.status(500).json(Map.of("error", "database error"));
+        }
     }
 
     @GetMapping("/users/{id}")
@@ -33,28 +43,56 @@ public class UserController {
         int id = parseId(ctx);
         if (id < 0) return;
 
-        User user = users.get(id);
-        if (user != null) {
-            ctx.json(user);
-        } else {
-            ctx.status(404).json(Map.of("error", "user not found"));
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT id, name, email FROM users WHERE id = ?")) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    ctx.json(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+                } else {
+                    ctx.status(404).json(Map.of("error", "user not found"));
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("getUser failed for id={}", id, e);
+            ctx.status(500).json(Map.of("error", "database error"));
         }
     }
 
     @PostMapping("/users")
     public void createUser(Context ctx) {
+        CreateUserRequest req;
         try {
-            CreateUserRequest req = ctx.bodyAs(CreateUserRequest.class);
-            if (req == null || req.name() == null || req.email() == null) {
-                ctx.status(400).json(Map.of("error", "name and email are required"));
-                return;
-            }
-            int newId = idGenerator.incrementAndGet();
-            User user = new User(newId, req.name(), req.email());
-            users.put(newId, user);
-            ctx.status(201).json(user);
+            req = ctx.bodyAs(CreateUserRequest.class);
         } catch (Exception e) {
-            ctx.status(400).json(Map.of("error", "Invalid request body"));
+            ctx.status(400).json(Map.of("error", "invalid request body"));
+            return;
+        }
+        if (req == null || req.name() == null || req.email() == null) {
+            ctx.status(400).json(Map.of("error", "name and email are required"));
+            return;
+        }
+
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                 "INSERT INTO users (name, email) VALUES (?, ?) RETURNING id, name, email")) {
+            ps.setString(1, req.name());
+            ps.setString(2, req.email());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    ctx.status(201).json(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+                } else {
+                    logger.error("createUser: INSERT returned no rows");
+                    ctx.status(500).json(Map.of("error", "database error"));
+                }
+            }
+        } catch (SQLException e) {
+            if ("23505".equals(e.getSQLState())) {
+                ctx.status(409).json(Map.of("error", "email already exists"));
+            } else {
+                logger.error("createUser failed", e);
+                ctx.status(500).json(Map.of("error", "database error"));
+            }
         }
     }
 
@@ -63,21 +101,38 @@ public class UserController {
         int id = parseId(ctx);
         if (id < 0) return;
 
+        CreateUserRequest req;
         try {
-            CreateUserRequest req = ctx.bodyAs(CreateUserRequest.class);
-            if (req == null || req.name() == null || req.email() == null) {
-                ctx.status(400).json(Map.of("error", "name and email are required"));
-                return;
-            }
-            User updated = new User(id, req.name(), req.email());
-            User prev = users.computeIfPresent(id, (k, v) -> updated);
-            if (prev == null) {
-                ctx.status(404).json(Map.of("error", "user not found"));
-                return;
-            }
-            ctx.json(updated);
+            req = ctx.bodyAs(CreateUserRequest.class);
         } catch (Exception e) {
-            ctx.status(400).json(Map.of("error", "Invalid request body"));
+            ctx.status(400).json(Map.of("error", "invalid request body"));
+            return;
+        }
+        if (req == null || req.name() == null || req.email() == null) {
+            ctx.status(400).json(Map.of("error", "name and email are required"));
+            return;
+        }
+
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                 "UPDATE users SET name = ?, email = ? WHERE id = ? RETURNING id, name, email")) {
+            ps.setString(1, req.name());
+            ps.setString(2, req.email());
+            ps.setInt(3, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    ctx.json(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+                } else {
+                    ctx.status(404).json(Map.of("error", "user not found"));
+                }
+            }
+        } catch (SQLException e) {
+            if ("23505".equals(e.getSQLState())) {
+                ctx.status(409).json(Map.of("error", "email already exists"));
+            } else {
+                logger.error("updateUser failed for id={}", id, e);
+                ctx.status(500).json(Map.of("error", "database error"));
+            }
         }
     }
 
@@ -86,10 +141,17 @@ public class UserController {
         int id = parseId(ctx);
         if (id < 0) return;
 
-        if (users.remove(id) != null) {
-            ctx.status(204).result("");
-        } else {
-            ctx.status(404).json(Map.of("error", "user not found"));
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement("DELETE FROM users WHERE id = ?")) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() > 0) {
+                ctx.status(204).result("");
+            } else {
+                ctx.status(404).json(Map.of("error", "user not found"));
+            }
+        } catch (SQLException e) {
+            logger.error("deleteUser failed for id={}", id, e);
+            ctx.status(500).json(Map.of("error", "database error"));
         }
     }
 
@@ -101,6 +163,4 @@ public class UserController {
             return -1;
         }
     }
-
-    record CreateUserRequest(String name, String email) {}
 }
