@@ -15,7 +15,7 @@ RUN chmod +x gradlew && ./gradlew :app:shadowJar --no-daemon --quiet
 FROM eclipse-temurin:21-jdk-alpine AS jre-builder
 
 RUN jlink \
-    --add-modules java.base,java.desktop,java.instrument,java.management,java.naming,java.security.jgss,java.sql \
+    --add-modules java.base,java.desktop,java.instrument,java.management,java.naming,java.net.http,java.security.jgss,java.sql,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.unsupported \
     --strip-debug \
     --no-man-pages \
     --no-header-files \
