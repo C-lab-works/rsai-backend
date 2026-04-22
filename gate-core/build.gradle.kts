@@ -30,9 +30,8 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.4.11")
 
     // Database
-    implementation("org.postgresql:postgresql:42.7.3")
+    implementation("com.mysql:mysql-connector-j:8.4.0")
     implementation("com.zaxxer:HikariCP:5.1.0")
-    implementation("com.google.cloud.sql:postgres-socket-factory:1.20.1")
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")

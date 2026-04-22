@@ -24,19 +24,18 @@ public class Database {
 
         if (!cloudSqlInstance.isBlank()) {
             hikari.setJdbcUrl(String.format(
-                "jdbc:postgresql:///%s?cloudSqlInstance=%s&socketFactory=com.google.cloud.sql.postgres.SocketFactory",
+                "jdbc:mysql:///%s?cloudSqlInstance=%s&socketFactory=com.google.cloud.sql.mysql.SocketFactory&useSSL=false",
                 dbName, cloudSqlInstance
             ));
-            logger.info("Connecting to Cloud SQL: {}/{}", cloudSqlInstance, dbName);
+            logger.info("Connecting to Cloud SQL (MySQL): {}/{}", cloudSqlInstance, dbName);
         } else {
             String host = envOrDefault("DB_HOST", config.getHost());
             int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
-            String sslMode = config.isSsl() ? "require" : "disable";
             hikari.setJdbcUrl(String.format(
-                "jdbc:postgresql://%s:%d/%s?sslmode=%s&connectTimeout=5&socketTimeout=30",
-                host, port, dbName, sslMode
+                "jdbc:mysql://%s:%d/%s?useSSL=false&connectTimeout=5000&socketTimeout=30000",
+                host, port, dbName
             ));
-            logger.info("Connecting to PostgreSQL at {}:{}/{}", host, port, dbName);
+            logger.info("Connecting to MySQL at {}:{}/{}", host, port, dbName);
         }
 
         hikari.setUsername(user);
