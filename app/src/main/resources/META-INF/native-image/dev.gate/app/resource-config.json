@@ -1,8 +1,0 @@
-{
-  "resources": {
-    "includes": [
-      { "pattern": "config\\.yml" },
-      { "pattern": "logback\\.xml" }
-    ]
-  }
-}
