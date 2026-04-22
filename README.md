@@ -2,6 +2,25 @@
 
 A lightweight HTTP framework for Java 21, built on Jetty with virtual thread support.
 
+[Japanese README](README_ja.md)
+
+## Table of Contents
+
+- [Requirements](#requirements)
+- [Modules](#modules)
+- [Quick Start](#quick-start)
+- [Routing](#routing)
+- [Context API](#context-api)
+- [Middleware](#middleware)
+- [WebSocket](#websocket)
+- [CORS](#cors)
+- [Error Handling](#error-handling)
+- [Database](#database)
+- [Configuration](#configuration)
+- [Server Lifecycle](#server-lifecycle)
+- [Build](#build)
+- [License](#license)
+
 ## Requirements
 
 - Java 21
@@ -13,6 +32,8 @@ A lightweight HTTP framework for Java 21, built on Jetty with virtual thread sup
 |---|---|
 | `gate-mapping` | HTTP verb annotations (`@GetMapping`, `@PostMapping`, etc.) |
 | `gate-core` | Framework core: routing, request/response, WebSocket, database |
+
+`gate-core` declares `api(project(":gate-mapping"))`, so any project depending on `gate-core` automatically gets the mapping annotations on its compile classpath.
 
 ## Quick Start
 
@@ -87,7 +108,22 @@ public class UserController {
 
     @DeleteMapping("/users/{id}")
     public void delete(Context ctx) { ... }
+
+    @PatchMapping("/users/{id}/status")
+    public void patch(Context ctx) { ... }
 }
+```
+
+Register an instance manually:
+
+```java
+gate.register(new UserController());
+```
+
+Or scan a package to auto-register all `@GateController` classes from the classpath:
+
+```java
+gate.scan("com.example.controllers");
 ```
 
 ### Programmatic
@@ -99,25 +135,48 @@ gate.get("/ping", ctx -> ctx.result("pong"));
 gate.post("/data", ctx -> ctx.json(ctx.bodyAs(Data.class)));
 ```
 
-## Context API
+### Path parameters
+
+Use curly-brace syntax. Parameters are URL-decoded (UTF-8) before delivery.
 
 ```java
-// Request
-ctx.pathParam("id");         // path parameter
-ctx.query("page");           // query parameter
-ctx.body();                  // raw request body
-ctx.bodyAs(MyClass.class);   // deserialize JSON body
-ctx.requestHeader("Authorization");
-ctx.method();                // HTTP method
-ctx.path();                  // request path
+@GetMapping("/users/{id}")
+public void get(Context ctx) {
+    String id = ctx.pathParam("id");
+}
+```
 
-// Response
-ctx.result("text");          // plain text response
-ctx.json(object);            // JSON response (sets Content-Type automatically)
-ctx.status(201);             // status code
-ctx.header("X-Key", "val"); // response header
+- Empty param names (`{}`) and duplicate names in the same pattern throw `IllegalArgumentException` at registration time.
+- Exact routes always take priority over pattern routes.
+- Within pattern routes, the first-registered match wins.
+- Trailing slashes are stripped before matching: `/users/` resolves to `/users`.
 
-// Chaining
+## Context API
+
+### Request
+
+| Method | Return | Description |
+|---|---|---|
+| `ctx.path()` | `String` | Normalized request path |
+| `ctx.method()` | `String` | HTTP method, e.g. `"GET"` |
+| `ctx.pathParam("name")` | `String` or `null` | URL path parameter by name |
+| `ctx.query("key")` | `String` or `null` | Query string parameter |
+| `ctx.requestHeader("name")` | `String` or `null` | Request header value |
+| `ctx.body()` | `String` | Full request body as string, cached after first read. Maximum: 1 MB. |
+| `ctx.bodyAs(MyClass.class)` | `T` or `null` | Deserializes JSON body via Jackson. Returns `null` if body is empty. |
+
+### Response
+
+All response methods return `this` for chaining.
+
+| Method | Description |
+|---|---|
+| `ctx.result("text")` | Plain text response (`text/plain; charset=utf-8`) |
+| `ctx.json(object)` | JSON response via Jackson (`application/json; charset=utf-8`) |
+| `ctx.status(201)` | Set HTTP status code (default: `200`) |
+| `ctx.header("X-Key", "val")` | Set response header. Throws `IllegalArgumentException` if key or value contains `\r` or `\n`. |
+
+```java
 ctx.status(404).json(Map.of("error", "not found"));
 ```
 
@@ -137,6 +196,21 @@ gate.after(ctx -> {
 });
 ```
 
+Request execution order:
+
+```
+before filters (in order) -> route handler -> after filters (in order) -> write response
+```
+
+Note: Setting `ctx.status(401)` in a `before` filter does **not** stop routing on its own.
+You must throw an exception to prevent the route handler from executing.
+The thrown exception is passed to the error handler. To avoid the default 500 response,
+register a custom error handler that inspects the exception type.
+
+After filters always run, even when a before filter or the route handler threw an exception.
+Each after filter runs in its own try/catch, so one failure does not stop the rest.
+The response is written after all after filters complete, so they may still modify it.
+
 ## WebSocket
 
 ```java
@@ -145,15 +219,24 @@ public class ChatController {
 
     @WsMapping("/chat")
     public void chat(WsContext ctx, String message) {
-        ctx.send("Echo: " + message);
+        if (ctx.isOpen()) {
+            ctx.send("Echo: " + message);
+        }
     }
 }
 ```
 
+`WsContext` API:
+
+| Method | Description |
+|---|---|
+| `ctx.send(String)` | Send a text frame. Throws `UncheckedIOException` on failure. |
+| `ctx.isOpen()` | Returns `true` if the connection is still open. |
+
+Default max text message size is 64 KB. Override before calling `start()`:
+
 ```java
-// WsContext API
-ctx.send("message");
-ctx.isOpen();
+gate.wsMaxMessageSize(128 * 1024);
 ```
 
 ## CORS
@@ -163,6 +246,19 @@ gate.cors("https://example.com");  // specific origin
 gate.cors("*");                     // wildcard (credentials not supported)
 ```
 
+Sets the following headers on every response:
+
+```
+Access-Control-Allow-Origin: <value>
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization
+Access-Control-Max-Age: 86400
+```
+
+`Access-Control-Allow-Credentials: true` is added only when the origin is not `"*"`.
+
+Preflight `OPTIONS` requests return `204` immediately. Before filters do not run for OPTIONS requests.
+
 ## Error Handling
 
 ```java
@@ -171,12 +267,15 @@ gate.errorHandler((ctx, e) -> {
 });
 ```
 
+The default handler logs the exception and returns `500 Internal Server Error`.
+Exceptions thrown inside after filters are logged and swallowed — they do not reach the error handler.
+
 ## Database
 
 Gate includes built-in PostgreSQL support via HikariCP.
 
 ```java
-// Initialize on startup
+// Initialize on startup (must be called before gate.start())
 Database.init(config.getDatabase());
 
 // Use in handlers
@@ -193,7 +292,8 @@ Database.close();
 
 ### Schema initialization
 
-Place a `schema.sql` file in `src/main/resources`. It is executed automatically on startup.
+Place `schema.sql` in `src/main/resources`. It runs automatically on `Database.init()`.
+Use `IF NOT EXISTS` to keep it idempotent across restarts.
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
@@ -203,6 +303,21 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 ```
+
+If `schema.sql` is not found, a warning is logged and startup continues normally.
+
+### Cloud SQL (GCP)
+
+```yaml
+database:
+  cloudSqlInstance: "my-project:us-central1:my-instance"
+  name: mydb
+  user: myuser
+  password: ""
+```
+
+When `cloudSqlInstance` is non-blank, the Cloud SQL Socket Factory is used and `host`/`port` are ignored.
+Can also be set via the `CLOUD_SQL_INSTANCE` environment variable.
 
 ## Configuration
 
@@ -219,8 +334,10 @@ database:
   user: postgres
   password: ""
   cloudSqlInstance: ""   # GCP Cloud SQL instance (project:region:instance)
-  maxPoolSize: 33
+  maxPoolSize: 10
 ```
+
+If `config.yml` is absent or fails to parse, default values are used and a warning is logged.
 
 All database fields can be overridden with environment variables:
 
@@ -233,6 +350,19 @@ All database fields can be overridden with environment variables:
 | `DB_PASSWORD` | `database.password` |
 | `CLOUD_SQL_INSTANCE` | `database.cloudSqlInstance` |
 
+## Server Lifecycle
+
+`gate.start(port)` returns a `GateServer` instance.
+
+| Method | Description |
+|---|---|
+| `server.join()` | Blocks until the server stops. Call at the end of `main`. |
+| `server.stop()` | Gracefully stops the server. |
+| `server.isRunning()` | Returns `true` if the server is currently running. |
+
+A JVM shutdown hook to stop the server is registered automatically.
+Register separate hooks for other cleanup such as `Database.close()`.
+
 ## Build
 
 ```bash
@@ -241,4 +371,24 @@ All database fields can be overridden with environment variables:
 
 ## License
 
-MIT
+MIT License
+
+Copyright (c) 2026 tatsu-t
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

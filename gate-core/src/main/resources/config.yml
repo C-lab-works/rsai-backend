@@ -9,3 +9,4 @@ database:
   password: ""
   cloudSqlInstance: ""
   maxPoolSize: 33
+  ssl: false

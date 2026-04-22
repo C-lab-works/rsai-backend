@@ -132,7 +132,9 @@ public class Router {
                 for (int i = 0; i < route.segments().length; i++) {
                     if (route.segments()[i] == null) {
                         String raw = requestSegments[i];
-                        String decoded = URLDecoder.decode(raw, StandardCharsets.UTF_8);
+                        // Preserve literal '+' in path segments (RFC 3986).
+                        // URLDecoder treats '+' as space (form-encoding), so escape it first.
+                        String decoded = URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8);
                         params.put(route.paramNames()[i], decoded);
                     }
                 }

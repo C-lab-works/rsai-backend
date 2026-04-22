@@ -161,17 +161,19 @@ public class Gate {
 
                     for (Handler filter : beforeFilters) {
                         filter.handle(ctx);
+                        if (ctx.isHalted()) break;
                     }
 
-                    String key = request.getMethod() + ':' + path;
-
-                    router.find(key).ifPresentOrElse(
-                        match -> {
-                            ctx.setPathParams(match.pathParams());
-                            match.handler().handle(ctx);
-                        },
-                        () -> ctx.status(404).result("404 Not Found")
-                    );
+                    if (!ctx.isHalted()) {
+                        String key = request.getMethod() + ':' + path;
+                        router.find(key).ifPresentOrElse(
+                            match -> {
+                                ctx.setPathParams(match.pathParams());
+                                match.handler().handle(ctx);
+                            },
+                            () -> ctx.status(404).result("404 Not Found")
+                        );
+                    }
                 } catch (Exception e) {
                     errorHandler.handle(ctx, e);
                 } finally {

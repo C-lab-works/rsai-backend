@@ -31,9 +31,10 @@ public class Database {
         } else {
             String host = envOrDefault("DB_HOST", config.getHost());
             int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
+            String sslMode = config.isSsl() ? "require" : "disable";
             hikari.setJdbcUrl(String.format(
-                "jdbc:postgresql://%s:%d/%s?sslmode=disable&connectTimeout=5&socketTimeout=30",
-                host, port, dbName
+                "jdbc:postgresql://%s:%d/%s?sslmode=%s&connectTimeout=5&socketTimeout=30",
+                host, port, dbName, sslMode
             ));
             logger.info("Connecting to PostgreSQL at {}:{}/{}", host, port, dbName);
         }
@@ -49,13 +50,22 @@ public class Database {
         hikari.setMaxLifetime(1_800_000);
         hikari.setKeepaliveTime(60_000);
 
-        dataSource = new HikariDataSource(hikari);
+        HikariDataSource ds = new HikariDataSource(hikari);
+        try {
+            dataSource = ds;
+            runSchema();
+        } catch (Exception e) {
+            ds.close();
+            dataSource = null;
+            throw e;
+        }
         logger.info("Database connection pool initialized");
-
-        runSchema();
     }
 
     public static Connection getConnection() throws SQLException {
+        if (dataSource == null) {
+            throw new IllegalStateException("Database has not been initialized. Call Database.init() first.");
+        }
         return dataSource.getConnection();
     }
 

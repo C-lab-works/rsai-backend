@@ -25,15 +25,17 @@ public class ConfigLoader {
 
             if (input != null) {
                 config = yaml.load(input);
+                if (config == null) {
+                    throw new IllegalStateException("config.yml is empty or invalid");
+                }
             } else {
                 logger.info("config.yml not found, using defaults");
+                config = new Config();
             }
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
-            logger.warn("Failed to load config.yml: {} — using defaults", e.getMessage());
-        }
-
-        if (config == null) {
-            config = new Config();
+            throw new IllegalStateException("Failed to parse config.yml: " + e.getMessage(), e);
         }
         config.freeze();
         return config;

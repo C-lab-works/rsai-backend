@@ -37,6 +37,7 @@ public class Config {
         private String password = "";
         private String cloudSqlInstance = "";
         private int maxPoolSize = 10;
+        private boolean ssl = false;
         private volatile boolean frozen = false;
 
         private void checkFrozen() {
@@ -59,13 +60,15 @@ public class Config {
         public void setUser(String user) { checkFrozen(); this.user = user; }
         public String getPassword() { return password; }
         public void setPassword(String password) { checkFrozen(); this.password = password; }
-        public String getCloudSqlInstance() { return cloudSqlInstance; }
-        public void setCloudSqlInstance(String cloudSqlInstance) { checkFrozen(); this.cloudSqlInstance = cloudSqlInstance; }
+        public String getCloudSqlInstance() { return cloudSqlInstance != null ? cloudSqlInstance : ""; }
+        public void setCloudSqlInstance(String cloudSqlInstance) { checkFrozen(); this.cloudSqlInstance = cloudSqlInstance != null ? cloudSqlInstance : ""; }
         public int getMaxPoolSize() { return maxPoolSize; }
         public void setMaxPoolSize(int maxPoolSize) {
             checkFrozen();
             if (maxPoolSize < 1) throw new IllegalArgumentException("Invalid maxPoolSize: " + maxPoolSize);
             this.maxPoolSize = maxPoolSize;
         }
+        public boolean isSsl() { return ssl; }
+        public void setSsl(boolean ssl) { checkFrozen(); this.ssl = ssl; }
     }
 }

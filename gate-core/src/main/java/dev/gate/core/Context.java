@@ -23,6 +23,7 @@ public class Context {
     private final Map<String, String> headers = new HashMap<>();
     private Map<String, String> pathParams = Map.of();
     private String cachedBody = null;
+    private boolean halted = false;
 
     public Context(String path, HttpServletRequest request) {
         this.path = path;
@@ -51,9 +52,10 @@ public class Context {
             Charset charset = request.getCharacterEncoding() != null
                     ? Charset.forName(request.getCharacterEncoding())
                     : StandardCharsets.UTF_8;
-            byte[] bytes = request.getInputStream().readAllBytes();
+            // readNBytes caps reads at MAX_BODY_SIZE+1, preventing OOM on chunked transfers
+            byte[] bytes = request.getInputStream().readNBytes(MAX_BODY_SIZE + 1);
             if (bytes.length > MAX_BODY_SIZE) {
-                throw new RuntimeException("Request body too large: " + bytes.length + " bytes (max: " + MAX_BODY_SIZE + ")");
+                throw new RuntimeException("Request body too large (max: " + MAX_BODY_SIZE + " bytes)");
             }
             cachedBody = new String(bytes, charset);
             return cachedBody;
@@ -72,6 +74,9 @@ public class Context {
             throw new RuntimeException("Failed to parse request body as " + type.getSimpleName() + ": " + e.getMessage(), e);
         }
     }
+
+    public Context halt() { this.halted = true; return this; }
+    public boolean isHalted() { return halted; }
 
     public Context status(int code) { this.statusCode = code; return this; }
     public int statusCode() { return statusCode; }
