@@ -1,5 +1,11 @@
 plugins {
     id("java-library")
+    id("application")
+    id("io.github.goooler.shadow") version "8.1.8"
+}
+
+application {
+    mainClass.set("dev.gate.Main")
 }
 
 group = "dev.gate"
