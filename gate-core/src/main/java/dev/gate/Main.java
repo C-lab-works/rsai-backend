@@ -1,5 +1,8 @@
 package dev.gate;
 
+import dev.gate.core.Config;
+import dev.gate.core.ConfigLoader;
+import dev.gate.core.Database;
 import dev.gate.core.Gate;
 import dev.gate.core.GateServer;
 
@@ -12,6 +15,10 @@ public class Main {
         if (portEnv != null && !portEnv.isBlank()) {
             port = Integer.parseInt(portEnv.trim());
         }
+
+        Config config = ConfigLoader.load();
+        Database.init(config.getDatabase());
+        Runtime.getRuntime().addShutdownHook(new Thread(Database::close));
 
         Gate gate = new Gate();
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
