@@ -22,16 +22,27 @@ public class UserController {
     record User(int id, String name, String email) {}
     record CreateUserRequest(String name, String email) {}
 
+    private static final int DEFAULT_PAGE_SIZE = 20;
+    private static final int MAX_PAGE_SIZE = 100;
+
     @GetMapping("/users")
     public void getUsers(Context ctx) {
+        int page = parseQueryInt(ctx.query("page"), 0);
+        int size = Math.min(parseQueryInt(ctx.query("size"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+        if (page < 0) page = 0;
+
         try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT id, name, email FROM users ORDER BY id");
-             ResultSet rs = ps.executeQuery()) {
-            List<User> list = new ArrayList<>();
-            while (rs.next()) {
-                list.add(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+             PreparedStatement ps = conn.prepareStatement(
+                 "SELECT id, name, email FROM users ORDER BY id LIMIT ? OFFSET ?")) {
+            ps.setInt(1, size);
+            ps.setInt(2, page * size);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<User> list = new ArrayList<>();
+                while (rs.next()) {
+                    list.add(new User(rs.getInt("id"), rs.getString("name"), rs.getString("email")));
+                }
+                ctx.json(list);
             }
-            ctx.json(list);
         } catch (SQLException e) {
             logger.error("getUsers failed", e);
             ctx.status(500).json(Map.of("error", "database error"));
@@ -187,6 +198,11 @@ public class UserController {
         if (req.email().length() > 255) return "email must be 255 characters or fewer";
         if (!req.email().contains("@")) return "email is invalid";
         return null;
+    }
+
+    private int parseQueryInt(String value, int defaultValue) {
+        if (value == null) return defaultValue;
+        try { return Integer.parseInt(value); } catch (NumberFormatException e) { return defaultValue; }
     }
 
     private boolean isJsonContentType(Context ctx) {

@@ -8,4 +8,4 @@ database:
   user: postgres
   password: ""
   cloudSqlInstance: ""
-  maxPoolSize: 10
+  maxPoolSize: 33

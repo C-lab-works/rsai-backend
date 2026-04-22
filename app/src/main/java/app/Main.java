@@ -18,6 +18,7 @@ public class Main {
 
         Gate gate = new Gate();
         gate.register(new UserController());
+        gate.register(new Tester());
         GateServer server = gate.start(config.getPort());
 
         Runtime.getRuntime().addShutdownHook(new Thread(Database::close));

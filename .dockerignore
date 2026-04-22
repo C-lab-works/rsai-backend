@@ -1,6 +1,7 @@
 # Build outputs
 .gradle/
 **/build/
+!app/build/libs/app.jar
 
 # IDE
 .idea/

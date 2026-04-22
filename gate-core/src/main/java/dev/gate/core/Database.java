@@ -31,15 +31,23 @@ public class Database {
         } else {
             String host = envOrDefault("DB_HOST", config.getHost());
             int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
-            hikari.setJdbcUrl(String.format("jdbc:postgresql://%s:%d/%s", host, port, dbName));
+            hikari.setJdbcUrl(String.format(
+                "jdbc:postgresql://%s:%d/%s?sslmode=disable&connectTimeout=5&socketTimeout=30",
+                host, port, dbName
+            ));
             logger.info("Connecting to PostgreSQL at {}:{}/{}", host, port, dbName);
         }
 
         hikari.setUsername(user);
         hikari.setPassword(password);
         hikari.setMaximumPoolSize(poolSize);
+        hikari.setMinimumIdle(poolSize / 2);
         hikari.setPoolName("gate-pool");
         hikari.setInitializationFailTimeout(10_000);
+        hikari.setConnectionTimeout(5_000);
+        hikari.setIdleTimeout(600_000);
+        hikari.setMaxLifetime(1_800_000);
+        hikari.setKeepaliveTime(60_000);
 
         dataSource = new HikariDataSource(hikari);
         logger.info("Database connection pool initialized");
