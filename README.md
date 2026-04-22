@@ -207,6 +207,10 @@ You must throw an exception to prevent the route handler from executing.
 The thrown exception is passed to the error handler. To avoid the default 500 response,
 register a custom error handler that inspects the exception type.
 
+Calling `ctx.halt()` in a `before` filter stops routing without an exception. The route handler
+is skipped, and execution jumps to after filters. Note that `halt()` also stops any remaining
+before filters from running — only the filters registered before the halting one will have executed.
+
 After filters always run, even when a before filter or the route handler threw an exception.
 Each after filter runs in its own try/catch, so one failure does not stop the rest.
 The response is written after all after filters complete, so they may still modify it.
@@ -230,8 +234,12 @@ public class ChatController {
 
 | Method | Description |
 |---|---|
-| `ctx.send(String)` | Send a text frame. Throws `UncheckedIOException` on failure. |
+| `ctx.send(String)` | Send a text frame. Throws `UncheckedIOException` if an `IOException` occurs. |
 | `ctx.isOpen()` | Returns `true` if the connection is still open. |
+
+Always call `ctx.isOpen()` before `ctx.send()`. If the session was closed by the remote end,
+Jetty may throw an exception that is not an `IOException`, which would propagate unwrapped
+from `send()` rather than as `UncheckedIOException`.
 
 Default max text message size is 64 KB. Override before calling `start()`:
 
@@ -269,6 +277,9 @@ gate.errorHandler((ctx, e) -> {
 
 The default handler logs the exception and returns `500 Internal Server Error`.
 Exceptions thrown inside after filters are logged and swallowed — they do not reach the error handler.
+
+If the error handler itself throws an exception, that exception is not caught. After filters still
+run via `finally`, but the response may be incomplete. Keep error handlers simple and exception-free.
 
 ## Database
 
