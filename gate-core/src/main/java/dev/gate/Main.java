@@ -17,8 +17,12 @@ public class Main {
         }
 
         Config config = ConfigLoader.load();
-        Database.init(config.getDatabase());
-        Runtime.getRuntime().addShutdownHook(new Thread(Database::close));
+        try {
+            Database.init(config.getDatabase());
+            Runtime.getRuntime().addShutdownHook(new Thread(Database::close));
+        } catch (Exception e) {
+            System.err.println("[WARN] Database initialization failed, running without DB: " + e.getMessage());
+        }
 
         Gate gate = new Gate();
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
