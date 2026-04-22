@@ -1,9 +1,7 @@
-package app.db;
+package dev.gate.core;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import dev.gate.core.Config;
-import dev.gate.core.Logger;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -19,12 +17,12 @@ public class Database {
         HikariConfig hikari = new HikariConfig();
 
         String cloudSqlInstance = envOrDefault("CLOUD_SQL_INSTANCE", config.getCloudSqlInstance());
-        String dbName  = envOrDefault("DB_NAME",     config.getName());
-        String user    = envOrDefault("DB_USER",     config.getUser());
-        String password = envOrDefault("DB_PASSWORD", config.getPassword());
+        String dbName    = envOrDefault("DB_NAME",     config.getName());
+        String user      = envOrDefault("DB_USER",     config.getUser());
+        String password  = envOrDefault("DB_PASSWORD", config.getPassword());
+        int    poolSize  = config.getMaxPoolSize();
 
         if (!cloudSqlInstance.isBlank()) {
-            // Cloud SQL connector: connects via Unix socket without a proxy
             hikari.setJdbcUrl(String.format(
                 "jdbc:postgresql:///%s?cloudSqlInstance=%s&socketFactory=com.google.cloud.sql.postgres.SocketFactory",
                 dbName, cloudSqlInstance
@@ -39,9 +37,8 @@ public class Database {
 
         hikari.setUsername(user);
         hikari.setPassword(password);
-        hikari.setMaximumPoolSize(config.getMaxPoolSize());
-        hikari.setPoolName("rsai-pool");
-        // Fail fast if DB is unreachable at startup
+        hikari.setMaximumPoolSize(poolSize);
+        hikari.setPoolName("gate-pool");
         hikari.setInitializationFailTimeout(10_000);
 
         dataSource = new HikariDataSource(hikari);
@@ -60,8 +57,12 @@ public class Database {
         }
     }
 
+    /**
+     * Looks for schema.sql on the classpath and applies it on startup.
+     * Applications place their schema.sql in src/main/resources/.
+     */
     private static void runSchema() throws Exception {
-        try (InputStream is = Database.class.getResourceAsStream("/schema.sql")) {
+        try (InputStream is = Database.class.getClassLoader().getResourceAsStream("schema.sql")) {
             if (is == null) return;
             String sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {

@@ -15,14 +15,6 @@ java {
 
 dependencies {
     implementation(project(":gate-core"))
-
-    // PostgreSQL JDBC driver
-    implementation("org.postgresql:postgresql:42.7.3")
-    // Connection pool
-    implementation("com.zaxxer:HikariCP:5.1.0")
-    // Cloud SQL connector for Java (enables socket-factory-based Cloud SQL connections)
-    implementation("com.google.cloud.sql:postgres-socket-factory:1.20.1")
-
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
 }

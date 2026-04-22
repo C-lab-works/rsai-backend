@@ -1,7 +1,7 @@
 package app;
 
-import app.db.Database;
 import dev.gate.core.Config;
+import dev.gate.core.Database;
 import dev.gate.core.ConfigLoader;
 import dev.gate.core.Gate;
 import dev.gate.core.GateServer;

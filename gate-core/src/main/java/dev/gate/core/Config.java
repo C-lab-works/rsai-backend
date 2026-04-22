@@ -11,7 +11,10 @@ public class Config {
         if (frozen) throw new IllegalStateException("Config is frozen and cannot be modified");
     }
 
-    public void freeze() { this.frozen = true; }
+    public void freeze() {
+        this.frozen = true;
+        this.database.freeze();
+    }
 
     public int getPort() { return port; }
     public void setPort(int port) {
@@ -32,24 +35,37 @@ public class Config {
         private String name = "rsai";
         private String user = "postgres";
         private String password = "";
-        // Cloud SQL instance connection name: "project:region:instance"
-        // Leave blank to use direct TCP connection (local dev)
         private String cloudSqlInstance = "";
         private int maxPoolSize = 10;
+        private volatile boolean frozen = false;
+
+        private void checkFrozen() {
+            if (frozen) throw new IllegalStateException("Config is frozen and cannot be modified");
+        }
+
+        void freeze() { this.frozen = true; }
 
         public String getHost() { return host; }
-        public void setHost(String host) { this.host = host; }
+        public void setHost(String host) { checkFrozen(); this.host = host; }
         public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
+        public void setPort(int port) {
+            checkFrozen();
+            if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid port: " + port);
+            this.port = port;
+        }
         public String getName() { return name; }
-        public void setName(String name) { this.name = name; }
+        public void setName(String name) { checkFrozen(); this.name = name; }
         public String getUser() { return user; }
-        public void setUser(String user) { this.user = user; }
+        public void setUser(String user) { checkFrozen(); this.user = user; }
         public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
+        public void setPassword(String password) { checkFrozen(); this.password = password; }
         public String getCloudSqlInstance() { return cloudSqlInstance; }
-        public void setCloudSqlInstance(String cloudSqlInstance) { this.cloudSqlInstance = cloudSqlInstance; }
+        public void setCloudSqlInstance(String cloudSqlInstance) { checkFrozen(); this.cloudSqlInstance = cloudSqlInstance; }
         public int getMaxPoolSize() { return maxPoolSize; }
-        public void setMaxPoolSize(int maxPoolSize) { this.maxPoolSize = maxPoolSize; }
+        public void setMaxPoolSize(int maxPoolSize) {
+            checkFrozen();
+            if (maxPoolSize < 1) throw new IllegalArgumentException("Invalid maxPoolSize: " + maxPoolSize);
+            this.maxPoolSize = maxPoolSize;
+        }
     }
 }
