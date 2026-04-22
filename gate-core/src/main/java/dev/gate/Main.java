@@ -26,6 +26,7 @@ public class Main {
 
         Gate gate = new Gate();
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
+        gate.register(new ScheduleController());
 
         GateServer server = gate.start(port);
         server.join();
