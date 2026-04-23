@@ -14,6 +14,7 @@ public class Main {
         }
 
         Gate gate = new Gate();
+        gate.cors("*");
         gate.before(new ApiKeyAuth());
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
         gate.register(new DataController());
