@@ -1,5 +1,7 @@
 package dev.gate;
 
+import dev.gate.core.Config;
+import dev.gate.core.Database;
 import dev.gate.core.Gate;
 import dev.gate.core.GateServer;
 
@@ -12,6 +14,13 @@ public class Main {
         if (portEnv != null && !portEnv.isBlank()) {
             port = Integer.parseInt(portEnv.trim());
         }
+
+        Config.DatabaseConfig dbConfig = new Config.DatabaseConfig();
+        dbConfig.setHost("localhost");
+        dbConfig.setPort(3306);
+        dbConfig.setName("rsai");
+        Database.init(dbConfig);
+        DataSeeder.seed();
 
         Gate gate = new Gate();
         gate.cors("*");
