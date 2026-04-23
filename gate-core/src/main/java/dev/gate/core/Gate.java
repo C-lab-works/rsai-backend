@@ -152,7 +152,7 @@ public class Gate {
                     if (finalCorsOrigin != null) {
                         response.setHeader("Access-Control-Allow-Origin", finalCorsOrigin);
                         response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-                        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+                        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
                         response.setHeader("Access-Control-Max-Age", "86400");
                         if (!"*".equals(finalCorsOrigin)) {
                             response.setHeader("Access-Control-Allow-Credentials", "true");
