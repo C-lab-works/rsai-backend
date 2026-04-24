@@ -265,14 +265,14 @@ public class DataController {
         ArrayNode poiArr = root.putArray("poi");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor_id, type, accessible, room_ref, note FROM poi")) {
+                "SELECT id, name, floor_id, type, is_accessible, room_ref, note FROM poi")) {
             while (rs.next()) {
                 ObjectNode p = poiArr.addObject();
                 p.put("id",   rs.getString("id"));
                 p.put("name", rs.getString("name"));
                 putStringOrNull(p, "floor",   rs.getString("floor_id"));
                 p.put("type",                 rs.getString("type"));
-                p.put("accessible", rs.getInt("accessible") == 1);
+                p.put("accessible", rs.getInt("is_accessible") == 1);
                 putStringOrNull(p, "roomRef", rs.getString("room_ref"));
                 putStringOrNull(p, "note",    rs.getString("note"));
             }
@@ -289,11 +289,11 @@ public class DataController {
     // ── util ────────────────────────────────────────────────
 
     private void putStringOrNull(ObjectNode node, String key, String value) {
-        if (value == null) node.putNull(key); else node.put(key, value);
+        if (value != null) node.put(key, value);
     }
 
     private void putJsonArrayOrNull(ObjectNode node, String key, String json) throws Exception {
-        if (json == null) { node.putNull(key); return; }
+        if (json == null) return;
         node.set(key, mapper.readTree(json));
     }
 }
