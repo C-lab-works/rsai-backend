@@ -289,11 +289,11 @@ public class DataController {
     // ── util ────────────────────────────────────────────────
 
     private void putStringOrNull(ObjectNode node, String key, String value) {
-        if (value == null) node.putNull(key); else node.put(key, value);
+        if (value != null) node.put(key, value);
     }
 
     private void putJsonArrayOrNull(ObjectNode node, String key, String json) throws Exception {
-        if (json == null) { node.putNull(key); return; }
+        if (json == null) return;
         node.set(key, mapper.readTree(json));
     }
 }
