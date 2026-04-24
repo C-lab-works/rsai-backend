@@ -125,13 +125,13 @@ CREATE TABLE IF NOT EXISTS outdoor_areas (
 );
 
 CREATE TABLE IF NOT EXISTS poi (
-    id          VARCHAR(100) PRIMARY KEY,
-    name        TEXT         NOT NULL,
-    floor_id    VARCHAR(10),
-    type        VARCHAR(50)  NOT NULL,
-    accessible  TINYINT(1)   NOT NULL DEFAULT 0,
-    room_ref    VARCHAR(100),
-    note        TEXT
+    id            VARCHAR(100) PRIMARY KEY,
+    name          TEXT         NOT NULL,
+    floor_id      VARCHAR(10),
+    type          VARCHAR(50)  NOT NULL,
+    is_accessible TINYINT(1)   NOT NULL DEFAULT 0,
+    room_ref      VARCHAR(100),
+    note          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS map_config (
