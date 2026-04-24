@@ -20,6 +20,7 @@ public class Main {
         dbConfig.setPort(3306);
         dbConfig.setName("rsai");
         Database.init(dbConfig);
+        SchemaManager.initSchema();
         DataSeeder.seed();
 
         Gate gate = new Gate();
