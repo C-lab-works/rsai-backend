@@ -28,6 +28,8 @@ public class Main {
         gate.before(new ApiKeyAuth());
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
         gate.register(new DataController());
+        gate.register(new CongestionController());
+        gate.register(new AdminController());
 
         GateServer server = gate.start(port);
         server.join();

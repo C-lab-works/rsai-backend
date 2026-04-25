@@ -145,3 +145,19 @@ CREATE TABLE IF NOT EXISTS map_notes (
     note        TEXT NOT NULL,
     sort_order  INT  NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS locations (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    name        VARCHAR(100) NOT NULL,
+    floor       VARCHAR(20)  NOT NULL,
+    category    VARCHAR(50),
+    map_x       FLOAT        NOT NULL DEFAULT 0,
+    map_y       FLOAT        NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS congestion_status (
+    location_id INT          PRIMARY KEY,
+    level       TINYINT      NOT NULL DEFAULT 0,
+    updated_at  DATETIME     NOT NULL,
+    updated_by  VARCHAR(100) NOT NULL
+);
