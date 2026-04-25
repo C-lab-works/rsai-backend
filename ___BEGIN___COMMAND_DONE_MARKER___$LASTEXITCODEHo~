@@ -1,0 +1,11 @@
+[
+  {
+    "name": "db-password"
+  },
+  {
+    "name": "ghcrio-c-lab-works"
+  },
+  {
+    "name": "read-only-key"
+  }
+]
