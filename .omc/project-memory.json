@@ -1,0 +1,105 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1777113071961,
+  "projectRoot": "C:\\Users\\tatsu\\Desktop\\scripts\\tatsu-gate",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 0,
+      "lastAccessed": 1777113071939,
+      "keyFiles": []
+    },
+    "build": {
+      "path": "build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1777113071940,
+      "keyFiles": []
+    },
+    "gate-core": {
+      "path": "gate-core",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1777113071940,
+      "keyFiles": [
+        "build.gradle.kts"
+      ]
+    },
+    "gate-mapping": {
+      "path": "gate-mapping",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777113071940,
+      "keyFiles": []
+    },
+    "gradle": {
+      "path": "gradle",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777113071940,
+      "keyFiles": []
+    },
+    "app\\build": {
+      "path": "app\\build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1777113071941,
+      "keyFiles": []
+    },
+    "gate-core\\build": {
+      "path": "gate-core\\build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1777113071941,
+      "keyFiles": []
+    },
+    "gate-core\\src": {
+      "path": "gate-core\\src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1777113071941,
+      "keyFiles": []
+    },
+    "gate-mapping\\build": {
+      "path": "gate-mapping\\build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1777113071942,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

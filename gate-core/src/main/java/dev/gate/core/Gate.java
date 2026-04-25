@@ -192,7 +192,6 @@ public class Gate {
                     }
                 }
 
-                // ヘッダー・ContentType は Writer 取得前に設定する
                 response.setStatus(ctx.statusCode());
                 ctx.headers().forEach(response::setHeader);
                 response.setContentType(ctx.contentType());
