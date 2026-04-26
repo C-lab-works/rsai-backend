@@ -25,7 +25,7 @@ public class AnnouncementsController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, title, body, is_emergency, display_from, display_until " +
+                "SELECT id, content, is_emergency, display_from, display_until " +
                 "FROM announcements " +
                 "WHERE (display_from  IS NULL OR display_from  <= NOW()) " +
                 "  AND (display_until IS NULL OR display_until >= NOW()) " +
@@ -36,9 +36,7 @@ public class AnnouncementsController {
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
                 n.put("id",          rs.getInt("id"));
-                n.put("title",       rs.getString("title"));
-                String body = rs.getString("body");
-                if (body != null) n.put("body", body);
+                n.put("content",     rs.getString("content"));
                 n.put("isEmergency", rs.getInt("is_emergency") == 1);
                 String from  = rs.getString("display_from");
                 String until = rs.getString("display_until");

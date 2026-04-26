@@ -27,16 +27,15 @@ public class CongestionController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT id, name, floor, category, map_x, map_y FROM locations ORDER BY floor, id")) {
+                 "SELECT id, name, floor, svg_id FROM locations ORDER BY floor, id")) {
             ArrayNode arr = mapper.createArrayNode();
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
-                n.put("id",       rs.getInt("id"));
-                n.put("name",     rs.getString("name"));
-                n.put("floor",    rs.getString("floor"));
-                n.put("category", rs.getString("category"));
-                n.put("map_x",    rs.getFloat("map_x"));
-                n.put("map_y",    rs.getFloat("map_y"));
+                n.put("id",    rs.getInt("id"));
+                n.put("name",  rs.getString("name"));
+                n.put("floor", rs.getInt("floor"));
+                String svgId = rs.getString("svg_id");
+                if (svgId != null) n.put("svgId", svgId);
             }
             ctx.json(arr);
         } catch (Exception e) {
