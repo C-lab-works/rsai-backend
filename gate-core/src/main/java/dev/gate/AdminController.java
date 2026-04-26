@@ -199,7 +199,11 @@ public class AdminController {
                     }
                     ctx.json(root);
                 } else {
-                    ctx.json(Map.of("affected", s.getUpdateCount()));
+                    ObjectNode root = mapper.createObjectNode();
+                    root.putArray("cols");
+                    root.putArray("rows");
+                    root.put("affected", s.getUpdateCount());
+                    ctx.json(root);
                 }
             }
         } catch (Exception e) {
