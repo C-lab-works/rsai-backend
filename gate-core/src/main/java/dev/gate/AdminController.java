@@ -176,36 +176,38 @@ public class AdminController {
             Map<String, Object> body = ctx.bodyAs(Map.class);
             String sql = (String) body.get("sql");
             if (sql == null || sql.isBlank()) { ctx.status(400).json(Map.of("error", "sql required")); return; }
-            try (Statement s = conn.createStatement()) {
-                boolean hasRs = s.execute(sql);
-                if (hasRs) {
-                    ObjectNode root = mapper.createObjectNode();
-                    ArrayNode colsNode = root.putArray("cols");
-                    ArrayNode rowsNode = root.putArray("rows");
-                    try (ResultSet rs = s.getResultSet()) {
-                        ResultSetMetaData meta = rs.getMetaData();
-                        int colCount = meta.getColumnCount();
-                        for (int i = 1; i <= colCount; i++) {
-                            ObjectNode col = colsNode.addObject();
-                            col.put("name", meta.getColumnName(i));
-                            col.put("type", meta.getColumnTypeName(i).toLowerCase());
-                        }
-                        while (rs.next()) {
-                            ObjectNode row = rowsNode.addObject();
+
+            ObjectNode lastResult = null;
+            for (String raw : sql.split(";")) {
+                String stmt = raw.strip();
+                if (stmt.isEmpty()) continue;
+                try (Statement s = conn.createStatement()) {
+                    boolean hasRs = s.execute(stmt);
+                    lastResult = mapper.createObjectNode();
+                    ArrayNode colsNode = lastResult.putArray("cols");
+                    ArrayNode rowsNode = lastResult.putArray("rows");
+                    if (hasRs) {
+                        try (ResultSet rs = s.getResultSet()) {
+                            ResultSetMetaData meta = rs.getMetaData();
+                            int colCount = meta.getColumnCount();
                             for (int i = 1; i <= colCount; i++) {
-                                putValue(row, meta.getColumnName(i), rs.getObject(i));
+                                ObjectNode col = colsNode.addObject();
+                                col.put("name", meta.getColumnName(i));
+                                col.put("type", meta.getColumnTypeName(i).toLowerCase());
+                            }
+                            while (rs.next()) {
+                                ObjectNode row = rowsNode.addObject();
+                                for (int i = 1; i <= colCount; i++) {
+                                    putValue(row, meta.getColumnName(i), rs.getObject(i));
+                                }
                             }
                         }
+                    } else {
+                        lastResult.put("affected", s.getUpdateCount());
                     }
-                    ctx.json(root);
-                } else {
-                    ObjectNode root = mapper.createObjectNode();
-                    root.putArray("cols");
-                    root.putArray("rows");
-                    root.put("affected", s.getUpdateCount());
-                    ctx.json(root);
                 }
             }
+            ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
         } catch (Exception e) {
             logger.error("execSql error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", e.getMessage()));
