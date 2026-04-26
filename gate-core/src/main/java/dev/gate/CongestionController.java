@@ -27,7 +27,14 @@ public class CongestionController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT id, name, floor, svg_id FROM locations ORDER BY floor, id")) {
+                 "SELECT l.id, l.name, l.floor, l.svg_id, " +
+                 "  (SELECT p.title FROM timetables t " +
+                 "   JOIN projects p ON p.id = t.project_id " +
+                 "   WHERE t.location_id = l.id " +
+                 "   ORDER BY t.event_date, t.start_time LIMIT 1) AS project " +
+                 "FROM locations l " +
+                 "WHERE l.tracks_congestion = 1 " +
+                 "ORDER BY l.floor, l.id")) {
             ArrayNode arr = mapper.createArrayNode();
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
@@ -36,6 +43,8 @@ public class CongestionController {
                 n.put("floor", rs.getInt("floor"));
                 String svgId = rs.getString("svg_id");
                 if (svgId != null) n.put("svgId", svgId);
+                String project = rs.getString("project");
+                if (project != null) n.put("project", project);
             }
             ctx.json(arr);
         } catch (Exception e) {

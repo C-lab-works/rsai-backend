@@ -11,22 +11,28 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 2) {
-                logger.info("Seed data v2 already present — skipping");
+            if (v >= 3) {
+                logger.info("Seed data v3 already present — skipping");
                 return;
             }
             if (v == 1) {
-                logger.info("Migrating schema v1 -> v2");
+                logger.info("Migrating schema v1 -> v3");
                 migrateV1(conn);
             }
-            createTables(conn);
-            seedCategories(conn);
-            seedLocations(conn);
-            seedProjects(conn);
-            seedTimetables(conn);
-            seedAnnouncements(conn);
-            setSeedVersion(conn, 2);
-            logger.info("Demo seed data (v2) inserted");
+            if (v <= 1) {
+                createTables(conn);
+                seedCategories(conn);
+                seedLocations(conn);
+                seedProjects(conn);
+                seedTimetables(conn);
+                seedAnnouncements(conn);
+            }
+            if (v == 2) {
+                logger.info("Migrating schema v2 -> v3");
+                migrateV2(conn);
+            }
+            setSeedVersion(conn, 3);
+            logger.info("Seed data v3 ready");
         }
     }
 
@@ -49,7 +55,7 @@ public class DataSeeder {
         }
     }
 
-    // ── v1 → v2 migration ────────────────────────────────────
+    // ── migrations ────────────────────────────────────────────
 
     private static void migrateV1(Connection conn) throws Exception {
         exec(conn, "TRUNCATE TABLE congestion_status");
@@ -63,6 +69,15 @@ public class DataSeeder {
         }
     }
 
+    private static void migrateV2(Connection conn) throws Exception {
+        try {
+            exec(conn, "ALTER TABLE locations ADD COLUMN tracks_congestion TINYINT(1) NOT NULL DEFAULT 1");
+            logger.info("Added tracks_congestion column to locations");
+        } catch (Exception ignored) {
+            // column already exists
+        }
+    }
+
     // ── DDL ───────────────────────────────────────────────────
 
     private static void createTables(Connection conn) throws Exception {
@@ -73,10 +88,11 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS locations (" +
-            "  id     INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  name   VARCHAR(255) NOT NULL," +
-            "  floor  INT          NOT NULL DEFAULT 0," +
-            "  svg_id VARCHAR(255)" +
+            "  id                INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name              VARCHAR(255) NOT NULL," +
+            "  floor             INT          NOT NULL DEFAULT 0," +
+            "  svg_id            VARCHAR(255)," +
+            "  tracks_congestion TINYINT(1)   NOT NULL DEFAULT 1" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS projects (" +
@@ -124,17 +140,17 @@ public class DataSeeder {
 
     private static void seedLocations(Connection conn) throws Exception {
         exec(conn,
-            "INSERT IGNORE INTO locations (id, name, floor, svg_id) VALUES " +
-            "(1,  '体育館',              1, 'gym'),     " +
-            "(2,  'メインステージ',       1, 'stage'),   " +
-            "(3,  '3-A教室',             2, 'room-3a'), " +
-            "(4,  '3-B教室',             2, 'room-3b'), " +
-            "(5,  '3-C教室',             2, 'room-3c'), " +
-            "(6,  '4-A教室',             3, 'room-4a'), " +
-            "(7,  '4-B教室',             3, 'room-4b'), " +
-            "(8,  '中庭',                0, 'yard'),    " +
-            "(9,  'キッチンカーエリア',   0, 'kitchen'), " +
-            "(10, '正門前広場',           0, 'gate')");
+            "INSERT IGNORE INTO locations (id, name, floor, svg_id, tracks_congestion) VALUES " +
+            "(1,  '体育館',              1, 'gym',     1), " +
+            "(2,  'メインステージ',       1, 'stage',   1), " +
+            "(3,  '3-A教室',             2, 'room-3a', 1), " +
+            "(4,  '3-B教室',             2, 'room-3b', 1), " +
+            "(5,  '3-C教室',             2, 'room-3c', 1), " +
+            "(6,  '4-A教室',             3, 'room-4a', 1), " +
+            "(7,  '4-B教室',             3, 'room-4b', 1), " +
+            "(8,  '中庭',                0, 'yard',    1), " +
+            "(9,  'キッチンカーエリア',   0, 'kitchen', 1), " +
+            "(10, '正門前広場',           0, 'gate',    1)");
     }
 
     private static void seedProjects(Connection conn) throws Exception {
