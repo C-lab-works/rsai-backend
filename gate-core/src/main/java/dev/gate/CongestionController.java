@@ -48,8 +48,8 @@ public class CongestionController {
             }
             ctx.json(arr);
         } catch (Exception e) {
-            logger.error("locations error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("locations error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -69,8 +69,8 @@ public class CongestionController {
             }
             ctx.json(arr);
         } catch (Exception e) {
-            logger.error("getCongestion error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("getCongestion error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -86,7 +86,7 @@ public class CongestionController {
             int level = ((Number) levelObj).intValue();
             if (level < 0 || level > 2) { ctx.status(400).json(Map.of("error", "level must be 0-2")); return; }
 
-            String updatedBy = ctx.requestHeader("Cf-Access-Authenticated-User-Email");
+            String updatedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
             if (updatedBy == null || updatedBy.isBlank()) updatedBy = "unknown";
             String now = LocalDateTime.now().format(FMT);
 
@@ -104,8 +104,8 @@ public class CongestionController {
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "Invalid id"));
         } catch (Exception e) {
-            logger.error("updateCongestion error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("updateCongestion error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 }

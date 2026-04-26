@@ -31,9 +31,14 @@ public class Main {
         DataSeeder.seed();
 
         Gate gate = new Gate();
-        gate.cors("*");
+        String allowedOrigin = System.getenv("CORS_ALLOWED_ORIGIN");
+        gate.cors(allowedOrigin != null && !allowedOrigin.isBlank()
+                ? allowedOrigin
+                : "https://admin.r-sai2026.site");
         gate.before(RequestMetrics.get()::startTimer);
+        gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
+        gate.before(new CfAccessAuth());
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
         gate.register(new DataController());
         gate.register(new CongestionController());

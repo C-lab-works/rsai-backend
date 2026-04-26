@@ -45,8 +45,8 @@ public class AnnouncementsController {
             }
             ctx.json(root);
         } catch (Exception e) {
-            logger.error("announcements error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("announcements error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 }

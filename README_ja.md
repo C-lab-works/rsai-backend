@@ -255,7 +255,7 @@ Access-Control-Max-Age: 86400
 
 オリジンが `"*"` でない場合のみ `Access-Control-Allow-Credentials: true` が追加されます。
 
-プリフライト `OPTIONS` リクエストは即座に `204` を返します。OPTIONS リクエストでは before フィルタは実行されません。
+プリフライト `OPTIONS` リクエストは before フィルタ実行後に `204` を返します。これにより IP ベースのフィルタ（例: `CloudflareIpFilter`）が未承認の送信元をブロックできます。クレデンシャルが必要なフィルタ（`ApiKeyAuth`、`CfAccessAuth` など）は、ブラウザがプリフライト時にクレデンシャルを送信しないため、内部で OPTIONS をスキップする必要があります。
 
 ## エラーハンドリング
 

@@ -22,6 +22,7 @@ public class Context {
     private int statusCode = 200;
     private final Map<String, String> headers = new HashMap<>();
     private Map<String, String> pathParams = Map.of();
+    private final Map<String, Object> attributes = new HashMap<>();
     private String cachedBody = null;
     private boolean halted = false;
 
@@ -105,4 +106,9 @@ public class Context {
     public String responseBody() { return responseBody; }
     public String contentType() { return contentType; }
     public Map<String, String> headers() { return Collections.unmodifiableMap(headers); }
+
+    public void setAttribute(String key, Object value) { attributes.put(key, value); }
+
+    @SuppressWarnings("unchecked")
+    public <T> T getAttribute(String key) { return (T) attributes.get(key); }
 }

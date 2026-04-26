@@ -23,6 +23,8 @@ public class ApiKeyAuth implements Handler {
     @Override
     public void handle(Context ctx) {
         if ("/health".equals(ctx.path())) return;
+        // CORS preflights do not carry credentials — skip API key check
+        if ("OPTIONS".equals(ctx.method())) return;
 
         String provided = ctx.requestHeader(HEADER);
         if (provided == null) {

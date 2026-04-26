@@ -41,8 +41,8 @@ public class AdminController {
             }
             ctx.json(arr);
         } catch (Exception e) {
-            logger.error("listTables error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("listTables error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -84,8 +84,8 @@ public class AdminController {
             }
             ctx.json(root);
         } catch (Exception e) {
-            logger.error("getTable '{}' error: {}", table, e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("getTable '{}' error", table, e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -114,8 +114,8 @@ public class AdminController {
                 ctx.json(Map.of("updated", ps.executeUpdate()));
             }
         } catch (Exception e) {
-            logger.error("updateRow error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("updateRow error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -133,8 +133,8 @@ public class AdminController {
                 ctx.json(Map.of("deleted", ps.executeUpdate()));
             }
         } catch (Exception e) {
-            logger.error("deleteRow error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("deleteRow error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -164,8 +164,8 @@ public class AdminController {
                 }
             }
         } catch (Exception e) {
-            logger.error("insertRow error: {}", e.getMessage());
-            ctx.status(503).json(Map.of("error", e.getMessage()));
+            logger.error("insertRow error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
 
@@ -209,8 +209,8 @@ public class AdminController {
             }
             ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
         } catch (Exception e) {
-            logger.error("execSql error: {}", e.getMessage());
-            ctx.status(400).json(Map.of("error", e.getMessage()));
+            logger.error("execSql error", e);
+            ctx.status(400).json(Map.of("error", "Query execution failed"));
         }
     }
 

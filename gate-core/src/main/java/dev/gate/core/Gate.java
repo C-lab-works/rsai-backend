@@ -159,25 +159,28 @@ public class Gate {
                         }
                     }
 
-                    if ("OPTIONS".equals(request.getMethod())) {
-                        response.setStatus(204);
-                        return;
-                    }
-
+                    // Run ALL before-filters first (CloudflareIpFilter, ApiKeyAuth, CfAccessAuth).
+                    // This ensures OPTIONS preflights are also subject to IP and auth checks.
+                    // Individual filters that require credentials (ApiKeyAuth, CfAccessAuth) must
+                    // skip OPTIONS themselves since browsers do not send credentials in preflights.
                     for (Handler filter : beforeFilters) {
                         filter.handle(ctx);
                         if (ctx.isHalted()) break;
                     }
 
                     if (!ctx.isHalted()) {
-                        String key = request.getMethod() + ':' + path;
-                        router.find(key).ifPresentOrElse(
-                            match -> {
-                                ctx.setPathParams(match.pathParams());
-                                match.handler().handle(ctx);
-                            },
-                            () -> ctx.status(404).result("404 Not Found")
-                        );
+                        if ("OPTIONS".equals(request.getMethod())) {
+                            ctx.status(204);
+                        } else {
+                            String key = request.getMethod() + ':' + path;
+                            router.find(key).ifPresentOrElse(
+                                match -> {
+                                    ctx.setPathParams(match.pathParams());
+                                    match.handler().handle(ctx);
+                                },
+                                () -> ctx.status(404).result("404 Not Found")
+                            );
+                        }
                     }
                 } catch (Exception e) {
                     errorHandler.handle(ctx, e);

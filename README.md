@@ -255,7 +255,7 @@ Access-Control-Max-Age: 86400
 
 `Access-Control-Allow-Credentials: true` is added only when the origin is not `"*"`.
 
-Preflight `OPTIONS` requests return `204` immediately. Before filters do not run for OPTIONS requests.
+Preflight `OPTIONS` requests return `204` after before filters run. This allows IP-based filters (e.g. `CloudflareIpFilter`) to reject unauthorized origins before responding. Filters that require request credentials (e.g. `ApiKeyAuth`, `CfAccessAuth`) must skip OPTIONS internally, since browsers do not include credentials in preflights.
 
 ## Error Handling
 
