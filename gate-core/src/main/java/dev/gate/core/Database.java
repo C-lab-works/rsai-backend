@@ -16,10 +16,10 @@ public class Database {
     public static void init(Config.DatabaseConfig config) throws Exception {
         HikariConfig hikari = new HikariConfig();
 
-        String cloudSqlInstance = envOrDefault("CLOUD_SQL_INSTANCE", envOrDefault("cloud-sql-instance", config.getCloudSqlInstance()));
-        String dbName    = envOrDefault("DB_NAME",     envOrDefault("db-name",     config.getName()));
-        String user      = envOrDefault("DB_USER",     envOrDefault("db-user",     config.getUser()));
-        String password  = envOrDefault("DB_PASSWORD", envOrDefault("db-password", config.getPassword()));
+        String cloudSqlInstance = envOrDefault("CLOUD_SQL_INSTANCE", config.getCloudSqlInstance());
+        String dbName    = envOrDefault("DB_NAME",     config.getName());
+        String user      = envOrDefault("DB_USER",     config.getUser());
+        String password  = envOrDefault("DB_PASSWORD", config.getPassword());
         int    poolSize  = config.getMaxPoolSize();
 
         if (!cloudSqlInstance.isBlank()) {
@@ -29,8 +29,8 @@ public class Database {
             ));
             logger.info("Connecting to Cloud SQL (MySQL): {}/{}", cloudSqlInstance, dbName);
         } else {
-            String host = envOrDefault("DB_HOST", envOrDefault("db-host", config.getHost()));
-            int    port = Integer.parseInt(envOrDefault("DB_PORT", envOrDefault("db-port", String.valueOf(config.getPort()))));
+            String host = envOrDefault("DB_HOST", config.getHost());
+            int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
             hikari.setJdbcUrl(String.format(
                 "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=5000&socketTimeout=30000",
                 host, port, dbName
