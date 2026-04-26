@@ -49,7 +49,7 @@ public class RequestMetrics {
 
     public void record(Context ctx) {
         totalRequests.increment();
-        if (ctx.statusCode() >= 400) errorCount.increment();
+        if (ctx.statusCode() >= 500) errorCount.increment();
 
         // hourly slot
         long hour = epochHour();

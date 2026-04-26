@@ -233,7 +233,9 @@ public class AdminController {
         ArrayNode endpoints = root.putArray("endpoints");
         for (var e : m.getTopEndpoints(10)) {
             String[] parts = e.getKey().split(" ", 2);
-            addEndpoint(endpoints, parts[0], parts.length > 1 ? parts[1] : "", e.getValue());
+            String path = parts.length > 1 ? parts[1] : "";
+            if (path.startsWith("/admin")) continue;
+            addEndpoint(endpoints, parts[0], path, e.getValue());
         }
 
         ArrayNode system = root.putArray("system");
