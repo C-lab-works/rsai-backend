@@ -1,0 +1,22 @@
+#!/bin/bash
+VERSION_FILE="gate-core/src/main/resources/version.txt"
+
+# If version.txt is already staged, user changed it manually — keep it
+if git diff --cached --name-only | grep -q "$VERSION_FILE"; then
+    echo "[version] Manually updated — keeping"
+    exit 0
+fi
+
+# Skip if no meaningful source files are being committed
+if ! git diff --cached --name-only | grep -qE '\.(java|kts|sql|properties|yaml|yml)$'; then
+    exit 0
+fi
+
+# Auto-bump patch version
+[ -f "$VERSION_FILE" ] || exit 0
+version=$(cat "$VERSION_FILE")
+IFS='.' read -r major minor patch <<< "$version"
+new_version="$major.$minor.$((patch + 1))"
+echo "$new_version" > "$VERSION_FILE"
+git add "$VERSION_FILE"
+echo "[version] Auto-bumped: $version -> $new_version"
