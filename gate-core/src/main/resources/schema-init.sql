@@ -162,6 +162,16 @@ CREATE TABLE IF NOT EXISTS congestion_status (
     updated_by  VARCHAR(100) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS announcements (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    title         TEXT         NOT NULL,
+    body          TEXT,
+    is_emergency  TINYINT(1)   NOT NULL DEFAULT 0,
+    display_from  DATETIME,
+    display_until DATETIME,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 INSERT IGNORE INTO locations (id, name, floor, category, map_x, map_y) VALUES
   (1,  '体育館',             '1F',  'ステージ', 120, 340),
   (2,  'メインステージ',      '1F',  'ステージ', 80,  200),

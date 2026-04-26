@@ -38,6 +38,7 @@ public class Main {
         gate.register(new DataController());
         gate.register(new CongestionController());
         gate.register(new AdminController());
+        gate.register(new AnnouncementsController());
 
         gate.after(RequestMetrics.get()::record);
         GateServer server = gate.start(port);
