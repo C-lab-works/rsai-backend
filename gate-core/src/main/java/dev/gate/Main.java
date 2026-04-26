@@ -45,6 +45,7 @@ public class Main {
         gate.register(new AdminController());
         gate.register(new AnnouncementsController());
 
+        gate.after(SecurityHeaders.get()::handle);
         gate.after(RequestMetrics.get()::record);
         GateServer server = gate.start(port);
         server.join();
