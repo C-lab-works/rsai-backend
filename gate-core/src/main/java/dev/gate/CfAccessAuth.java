@@ -77,7 +77,12 @@ public class CfAccessAuth implements Handler {
             this.enabled   = false;
         } else {
             this.audience = aud.strip();
-            this.certsUrl = "https://" + domain.strip() + "/cdn-cgi/access/certs";
+            String d = domain.strip();
+            // Accept either short org name ("tatsut") or full FQDN ("tatsut.cloudflareaccess.com")
+            if (!d.contains(".")) {
+                d = d + ".cloudflareaccess.com";
+            }
+            this.certsUrl = "https://" + d + "/cdn-cgi/access/certs";
             this.enabled  = true;
             logger.info("CfAccessAuth enabled. Audience={} Certs={}", audience, certsUrl);
         }
