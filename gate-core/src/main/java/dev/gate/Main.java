@@ -32,12 +32,14 @@ public class Main {
 
         Gate gate = new Gate();
         gate.cors("*");
+        gate.before(RequestMetrics.get()::startTimer);
         gate.before(new ApiKeyAuth());
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
         gate.register(new DataController());
         gate.register(new CongestionController());
         gate.register(new AdminController());
 
+        gate.after(RequestMetrics.get()::record);
         GateServer server = gate.start(port);
         server.join();
     }

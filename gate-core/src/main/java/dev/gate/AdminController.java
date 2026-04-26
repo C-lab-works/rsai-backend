@@ -180,10 +180,16 @@ public class AdminController {
                 boolean hasRs = s.execute(sql);
                 if (hasRs) {
                     ObjectNode root = mapper.createObjectNode();
+                    ArrayNode colsNode = root.putArray("cols");
                     ArrayNode rowsNode = root.putArray("rows");
                     try (ResultSet rs = s.getResultSet()) {
                         ResultSetMetaData meta = rs.getMetaData();
                         int colCount = meta.getColumnCount();
+                        for (int i = 1; i <= colCount; i++) {
+                            ObjectNode col = colsNode.addObject();
+                            col.put("name", meta.getColumnName(i));
+                            col.put("type", meta.getColumnTypeName(i).toLowerCase());
+                        }
                         while (rs.next()) {
                             ObjectNode row = rowsNode.addObject();
                             for (int i = 1; i <= colCount; i++) {
@@ -204,27 +210,29 @@ public class AdminController {
 
     @GetMapping("/admin/stats")
     public void stats(Context ctx) {
-        // TODO: replace mock — actual request metrics not yet tracked
+        RequestMetrics m = RequestMetrics.get();
+        long[] perc = m.getPercentiles();
+
         ObjectNode root = mapper.createObjectNode();
-        root.put("totalRequests", 12483);
-        root.put("errorRate", 0.8);
-        root.put("p50ms", 45);
-        root.put("p95ms", 180);
-        root.put("instances", 1);
-        root.put("maxInstances", 10);
+        root.put("totalRequests", m.getTotalRequests());
+        root.put("errorRate",     Math.round(m.getErrorRate() * 100.0) / 100.0);
+        root.put("p50ms",         perc[0]);
+        root.put("p95ms",         perc[1]);
+        root.put("instances",     1);
+        root.put("maxInstances",  10);
+
         ArrayNode chart = root.putArray("chart");
-        for (int v : new int[]{120,145,98,112,167,203,445,612,589,478,523,601,712,698,534,489,567,623,701,534,456,389,234,178})
-            chart.add(v);
+        for (long v : m.getHourlyCounts()) chart.add(v);
+
         ArrayNode endpoints = root.putArray("endpoints");
-        addEndpoint(endpoints, "GET",  "/events",          4521);
-        addEndpoint(endpoints, "GET",  "/food",            3210);
-        addEndpoint(endpoints, "GET",  "/map",             2890);
-        addEndpoint(endpoints, "GET",  "/congestion",      1456);
-        addEndpoint(endpoints, "POST", "/congestion/{id}",  286);
+        for (var e : m.getTopEndpoints(10)) {
+            String[] parts = e.getKey().split(" ", 2);
+            addEndpoint(endpoints, parts[0], parts.length > 1 ? parts[1] : "", e.getValue());
+        }
+
         ArrayNode system = root.putArray("system");
         addStatus(system, "Database",   "ok", "Connected");
         addStatus(system, "API Server", "ok", "Running");
-        addStatus(system, "Cache",      "ok", "Active");
         ctx.json(root);
     }
 
@@ -240,7 +248,7 @@ public class AdminController {
         row.put(col, val.toString());
     }
 
-    private void addEndpoint(ArrayNode arr, String method, String path, int count) {
+    private void addEndpoint(ArrayNode arr, String method, String path, long count) {
         ObjectNode n = arr.addObject();
         n.put("method", method); n.put("path", path); n.put("count", count);
     }

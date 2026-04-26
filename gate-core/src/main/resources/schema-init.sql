@@ -161,3 +161,15 @@ CREATE TABLE IF NOT EXISTS congestion_status (
     updated_at  DATETIME     NOT NULL,
     updated_by  VARCHAR(100) NOT NULL
 );
+
+INSERT IGNORE INTO locations (id, name, floor, category, map_x, map_y) VALUES
+  (1,  '体育館',             '1F',  'ステージ', 120, 340),
+  (2,  'メインステージ',      '1F',  'ステージ', 80,  200),
+  (3,  '3-A教室',            '2F',  '教室',     200, 150),
+  (4,  '3-B教室',            '2F',  '教室',     260, 150),
+  (5,  '3-C教室',            '2F',  '教室',     320, 150),
+  (6,  '4-A教室',            '3F',  '教室',     200, 100),
+  (7,  '4-B教室',            '3F',  '教室',     260, 100),
+  (8,  '中庭',               '屋外', 'その他',   340, 80),
+  (9,  'キッチンカーエリア',  '屋外', 'フード',   400, 420),
+  (10, '正門前広場',          '屋外', 'その他',   60,  460);
