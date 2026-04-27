@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 public class Database {
     private static final Logger logger = new Logger(Database.class);
@@ -81,9 +83,19 @@ public class Database {
                 logger.warn("schema.sql not found — skipping schema initialization");
                 return;
             }
-            String sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
-                stmt.execute(sql);
+            String full = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            // Strip -- line comments before splitting on ; to support multi-statement files
+            String stripped = Arrays.stream(full.split("\n"))
+                    .map(line -> { int i = line.indexOf("--"); return i >= 0 ? line.substring(0, i) : line; })
+                    .collect(Collectors.joining("\n"));
+            try (Connection conn = getConnection()) {
+                for (String raw : stripped.split(";")) {
+                    String sql = raw.strip();
+                    if (sql.isEmpty()) continue;
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.execute(sql);
+                    }
+                }
             }
         }
         logger.info("Schema applied");
