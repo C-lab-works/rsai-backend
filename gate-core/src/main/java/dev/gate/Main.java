@@ -1,6 +1,7 @@
 package dev.gate;
 
 import dev.gate.core.Config;
+import dev.gate.core.ConfigLoader;
 import dev.gate.core.Database;
 import dev.gate.core.Gate;
 import dev.gate.core.GateServer;
@@ -16,18 +17,15 @@ public class Main {
             if (vs != null) version = new String(vs.readAllBytes(), StandardCharsets.UTF_8).trim();
         } catch (Exception ignored) {}
         System.out.println("rsai-backend v" + version + " starting");
-        int port = 8080;
-        String portEnv = System.getenv("PORT");
-        if (portEnv != null && !portEnv.isBlank()) {
-            port = Integer.parseInt(portEnv.trim());
-        }
 
-        Config.DatabaseConfig dbConfig = new Config.DatabaseConfig();
-        dbConfig.setHost("localhost");
-        dbConfig.setPort(3306);
-        dbConfig.setName("rsai");
-        Database.init(dbConfig);
-        SchemaManager.initSchema();
+        Config config = ConfigLoader.load();
+        // PORT env var overrides config.yml (Azure / Cloud Run inject this)
+        String portEnv = System.getenv("PORT");
+        int port = (portEnv != null && !portEnv.isBlank())
+                ? Integer.parseInt(portEnv.trim())
+                : config.getPort();
+
+        Database.init(config.getDatabase());
         DataSeeder.seed();
 
         Gate gate = new Gate();

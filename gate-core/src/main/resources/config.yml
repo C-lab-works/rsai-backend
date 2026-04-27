@@ -1,11 +1,11 @@
 port: 8080
 env: development
-name: Gate
+name: rsai-backend
 database:
   host: localhost
-  port: 5432
+  port: 3306
   name: rsai
-  user: postgres
+  user: root
   password: ""
   cloudSqlInstance: ""
   maxPoolSize: 33
