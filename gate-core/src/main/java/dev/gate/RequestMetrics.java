@@ -48,6 +48,12 @@ public class RequestMetrics {
     // --- after filter: record metrics ---
 
     public void record(Context ctx) {
+        // Exclude admin endpoints from public-facing metrics
+        if (ctx.path().startsWith("/admin")) {
+            requestStart.remove();
+            return;
+        }
+
         totalRequests.increment();
         if (ctx.statusCode() >= 500) errorCount.increment();
 
