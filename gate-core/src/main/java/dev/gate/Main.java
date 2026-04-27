@@ -27,6 +27,9 @@ public class Main {
 
         Database.init(config.getDatabase());
         DataSeeder.seed();
+        RequestMetrics.get().init();
+        Runtime.getRuntime().addShutdownHook(
+                new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
 
         Gate gate = new Gate();
         String allowedOrigin = System.getenv("CORS_ALLOWED_ORIGIN");

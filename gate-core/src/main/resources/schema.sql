@@ -14,3 +14,13 @@ CREATE TABLE IF NOT EXISTS congestion_status (
     updated_at  DATETIME     NOT NULL,
     updated_by  VARCHAR(100) NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS metrics_hourly (
+    hour     BIGINT PRIMARY KEY,
+    requests BIGINT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS metrics_endpoints (
+    endpoint VARCHAR(250) PRIMARY KEY,
+    hits     BIGINT NOT NULL DEFAULT 0
+);

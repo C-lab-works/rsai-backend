@@ -1,16 +1,20 @@
 package dev.gate;
 
 import dev.gate.core.Context;
+import dev.gate.core.Database;
+import dev.gate.core.Logger;
 
+import java.sql.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.stream.Collectors;
 
 public class RequestMetrics {
-    private static final int HOURS       = 24;
-    private static final int SAMPLE_SIZE = 1000;
-    private static final int MAX_KEYS    = 100;
+    private static final Logger logger      = new Logger(RequestMetrics.class);
+    private static final int    HOURS       = 24;
+    private static final int    SAMPLE_SIZE = 1000;
+    private static final int    MAX_KEYS    = 100;
     private static final RequestMetrics INSTANCE = new RequestMetrics();
 
     private final AtomicLong[] hourlyCounts = new AtomicLong[HOURS];
@@ -26,6 +30,13 @@ public class RequestMetrics {
 
     private final ThreadLocal<Long> requestStart = new ThreadLocal<>();
 
+    private final ScheduledExecutorService scheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "metrics-flush");
+                t.setDaemon(true);
+                return t;
+            });
+
     private RequestMetrics() {
         long currentHour = epochHour();
         for (int i = 0; i < HOURS; i++) {
@@ -39,16 +50,115 @@ public class RequestMetrics {
 
     private long epochHour() { return System.currentTimeMillis() / 3_600_000L; }
 
-    // --- before filter: record start time ---
+    // ── persistence ───────────────────────────────────────────────────────────
+
+    /** Loads persisted metrics from DB and starts the periodic flush scheduler. */
+    public void init() {
+        loadFromDb();
+        scheduler.scheduleAtFixedRate(this::flushAll, 5, 5, TimeUnit.MINUTES);
+        logger.info("RequestMetrics persistence enabled (5-min flush)");
+    }
+
+    /** Performs a final flush and stops the scheduler on graceful shutdown. */
+    public void shutdown() {
+        scheduler.shutdown();
+        flushAll();
+        logger.info("RequestMetrics final flush complete");
+    }
+
+    private void loadFromDb() {
+        try (Connection conn = Database.getConnection()) {
+            long since = epochHour() - (HOURS - 1);
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT hour, requests FROM metrics_hourly WHERE hour >= ?")) {
+                ps.setLong(1, since);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        long h   = rs.getLong("hour");
+                        long req = rs.getLong("requests");
+                        int  s   = (int)(h % HOURS);
+                        if (s < 0) s += HOURS;
+                        synchronized (slotLocks[s]) {
+                            slotHour[s] = h;
+                            hourlyCounts[s].set(req);
+                        }
+                    }
+                }
+            }
+            try (Statement st = conn.createStatement();
+                 ResultSet rs = st.executeQuery(
+                         "SELECT endpoint, hits FROM metrics_endpoints")) {
+                while (rs.next()) {
+                    String ep   = rs.getString("endpoint");
+                    long   hits = rs.getLong("hits");
+                    if (endpointCounts.size() < MAX_KEYS) {
+                        endpointCounts.computeIfAbsent(ep, k -> new LongAdder()).add(hits);
+                    }
+                }
+            }
+            logger.info("RequestMetrics: restored from DB");
+        } catch (Exception e) {
+            logger.warn("RequestMetrics: DB restore failed (starting fresh): {}", e.getMessage());
+        }
+    }
+
+    private void flushAll() {
+        flushHourly();
+        flushEndpoints();
+    }
+
+    private void flushHourly() {
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "INSERT INTO metrics_hourly(hour, requests) VALUES(?, ?) AS new " +
+                     "ON DUPLICATE KEY UPDATE requests = GREATEST(requests, new.requests)")) {
+            long currentHour = epochHour();
+            for (int i = 0; i < HOURS; i++) {
+                long targetHour = currentHour - (HOURS - 1) + i;
+                int  s          = (int)(targetHour % HOURS);
+                if (s < 0) s += HOURS;
+                long count;
+                synchronized (slotLocks[s]) {
+                    count = slotHour[s] == targetHour ? hourlyCounts[s].get() : 0L;
+                }
+                if (count > 0) {
+                    ps.setLong(1, targetHour);
+                    ps.setLong(2, count);
+                    ps.addBatch();
+                }
+            }
+            ps.executeBatch();
+        } catch (Exception e) {
+            logger.warn("metrics hourly flush failed: {}", e.getMessage());
+        }
+    }
+
+    private void flushEndpoints() {
+        if (endpointCounts.isEmpty()) return;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "INSERT INTO metrics_endpoints(endpoint, hits) VALUES(?, ?) AS new " +
+                     "ON DUPLICATE KEY UPDATE hits = GREATEST(hits, new.hits)")) {
+            for (Map.Entry<String, LongAdder> e : endpointCounts.entrySet()) {
+                ps.setString(1, e.getKey());
+                ps.setLong(2, e.getValue().sum());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (Exception e) {
+            logger.warn("metrics endpoints flush failed: {}", e.getMessage());
+        }
+    }
+
+    // ── before filter: record start time ─────────────────────────────────────
 
     public void startTimer(Context ctx) {
         requestStart.set(System.nanoTime());
     }
 
-    // --- after filter: record metrics ---
+    // ── after filter: record metrics ──────────────────────────────────────────
 
     public void record(Context ctx) {
-        // Exclude admin endpoints from public-facing metrics
         if (ctx.path().startsWith("/admin")) {
             requestStart.remove();
             return;
@@ -57,9 +167,8 @@ public class RequestMetrics {
         totalRequests.increment();
         if (ctx.statusCode() >= 500) errorCount.increment();
 
-        // hourly slot
         long hour = epochHour();
-        int slot = (int)(hour % HOURS);
+        int  slot = (int)(hour % HOURS);
         synchronized (slotLocks[slot]) {
             if (slotHour[slot] != hour) {
                 hourlyCounts[slot].set(1);
@@ -69,7 +178,6 @@ public class RequestMetrics {
             }
         }
 
-        // response time sample
         Long start = requestStart.get();
         if (start != null) {
             long ms = (System.nanoTime() - start) / 1_000_000L;
@@ -78,7 +186,6 @@ public class RequestMetrics {
             responseSamples[pos] = ms;
         }
 
-        // endpoint count (cap map size to avoid unbounded growth from path params)
         String key = ctx.method().toUpperCase() + " " + ctx.path();
         if (endpointCounts.size() < MAX_KEYS) {
             endpointCounts.computeIfAbsent(key, k -> new LongAdder()).increment();
@@ -87,7 +194,7 @@ public class RequestMetrics {
         }
     }
 
-    // --- read methods for /admin/stats ---
+    // ── read methods ──────────────────────────────────────────────────────────
 
     public long getTotalRequests() { return totalRequests.sum(); }
     public long getErrorCount()    { return errorCount.sum(); }
@@ -97,13 +204,13 @@ public class RequestMetrics {
         return total == 0 ? 0.0 : (getErrorCount() * 100.0) / total;
     }
 
-    /** Returns counts for the last 24 hours, oldest first. */
+    /** Returns request counts for the last 24 hours, oldest slot first. */
     public long[] getHourlyCounts() {
         long currentHour = epochHour();
         long[] result = new long[HOURS];
         for (int i = 0; i < HOURS; i++) {
             long targetHour = currentHour - (HOURS - 1) + i;
-            int s = (int)(targetHour % HOURS);
+            int  s          = (int)(targetHour % HOURS);
             if (s < 0) s += HOURS;
             synchronized (slotLocks[s]) {
                 result[i] = slotHour[s] == targetHour ? hourlyCounts[s].get() : 0L;
@@ -112,7 +219,7 @@ public class RequestMetrics {
         return result;
     }
 
-    /** Returns {p50, p95} in milliseconds. */
+    /** Returns {@code [p50ms, p95ms]} over the last {@value #SAMPLE_SIZE} requests. */
     public long[] getPercentiles() {
         long[] samples = Arrays.copyOf(responseSamples, SAMPLE_SIZE);
         Arrays.sort(samples);
@@ -125,12 +232,12 @@ public class RequestMetrics {
         return new long[]{p50, p95};
     }
 
-    /** Returns top N endpoints sorted by request count descending. */
+    /** Returns the top {@code n} endpoints sorted by hit count descending. */
     public List<Map.Entry<String, Long>> getTopEndpoints(int n) {
         return endpointCounts.entrySet().stream()
-            .map(e -> Map.entry(e.getKey(), e.getValue().sum()))
-            .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
-            .limit(n)
-            .collect(Collectors.toList());
+                .map(e -> Map.entry(e.getKey(), e.getValue().sum()))
+                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                .limit(n)
+                .collect(Collectors.toList());
     }
 }
