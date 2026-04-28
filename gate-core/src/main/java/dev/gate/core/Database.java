@@ -34,7 +34,7 @@ public class Database {
             String host = envOrDefault("DB_HOST", config.getHost());
             int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
             hikari.setJdbcUrl(String.format(
-                "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=5000&socketTimeout=30000",
+                "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&connectTimeout=5000&socketTimeout=30000",
                 host, port, dbName
             ));
             logger.info("Connecting to MySQL at {}:{}/{}", host, port, dbName);

@@ -318,6 +318,10 @@ public class AdminController {
     /** Converts JSON-deserialized booleans to integers so MySQL TINYINT columns accept them. */
     private Object normalizeValue(Object val) {
         if (val instanceof Boolean b) return b ? 1 : 0;
+        if (val instanceof String s) {
+            if ("true".equalsIgnoreCase(s))  return 1;
+            if ("false".equalsIgnoreCase(s)) return 0;
+        }
         return val;
     }
 
