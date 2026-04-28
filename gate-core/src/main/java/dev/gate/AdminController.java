@@ -19,6 +19,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+// MySQL error codes
+// 1048 = Column cannot be null
+// 1062 = Duplicate entry (unique/PK violation)
+// 1216/1217/1451/1452 = Foreign key violation
+// 1292/1366 = Incorrect value for column type
+
 @GateController
 public class AdminController {
 
@@ -113,6 +119,12 @@ public class AdminController {
                 ps.setString(i, pkVal);
                 ctx.json(Map.of("updated", ps.executeUpdate()));
             }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            logger.warn("updateRow constraint violation: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", toUserMessage(e)));
+        } catch (SQLSyntaxErrorException e) {
+            logger.warn("updateRow syntax error: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", "Invalid SQL syntax"));
         } catch (Exception e) {
             logger.error("updateRow error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -132,6 +144,9 @@ public class AdminController {
                 ps.setString(1, pkVal);
                 ctx.json(Map.of("deleted", ps.executeUpdate()));
             }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            logger.warn("deleteRow constraint violation: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", toUserMessage(e)));
         } catch (Exception e) {
             logger.error("deleteRow error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -163,6 +178,12 @@ public class AdminController {
                     else ctx.json(Map.of("ok", true));
                 }
             }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            logger.warn("insertRow constraint violation: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", toUserMessage(e)));
+        } catch (SQLSyntaxErrorException e) {
+            logger.warn("insertRow syntax error: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", "Invalid SQL syntax"));
         } catch (Exception e) {
             logger.error("insertRow error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -276,6 +297,28 @@ public class AdminController {
 
     private boolean isValidIdentifier(String s) {
         return s != null && s.matches("[a-zA-Z0-9_]+");
+    }
+
+    private String toUserMessage(SQLIntegrityConstraintViolationException e) {
+        int code = e.getErrorCode();
+        String msg = e.getMessage();
+        if (code == 1062) return "Duplicate entry: " + extractDuplicateValue(msg);
+        if (code == 1048) return "Column cannot be null: " + extractColumnName(msg);
+        if (code == 1216 || code == 1217 || code == 1451 || code == 1452)
+            return "Foreign key constraint violation";
+        return "Constraint violation";
+    }
+
+    private String extractDuplicateValue(String msg) {
+        // MySQL: Duplicate entry 'X' for key 'Y'
+        int s = msg.indexOf("'"), e = msg.indexOf("'", s + 1);
+        return (s >= 0 && e > s) ? msg.substring(s + 1, e) : msg;
+    }
+
+    private String extractColumnName(String msg) {
+        // MySQL: Column 'X' cannot be null
+        int s = msg.indexOf("'"), e = msg.indexOf("'", s + 1);
+        return (s >= 0 && e > s) ? msg.substring(s + 1, e) : msg;
     }
 
     private String getPkColumn(Connection conn, String table) throws SQLException {
