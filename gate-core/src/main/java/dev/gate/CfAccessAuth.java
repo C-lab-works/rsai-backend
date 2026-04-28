@@ -94,6 +94,9 @@ public class CfAccessAuth implements Handler {
         if ("/health".equals(ctx.path())) return;
         // CORS preflights do not carry a CF-Access-Jwt-Assertion header — skip JWT check
         if ("OPTIONS".equals(ctx.method())) return;
+        // CF Access JWT is only required for admin endpoints.
+        // Public API paths (/events, /announcements, etc.) are authenticated by ApiKeyAuth alone.
+        if (!ctx.path().startsWith("/admin")) return;
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
         if (token == null || token.isBlank()) {
             ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
