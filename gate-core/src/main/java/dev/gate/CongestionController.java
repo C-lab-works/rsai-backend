@@ -49,7 +49,8 @@ public class CongestionController {
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("locations error", e);
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
+                    "detail", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
 
@@ -70,7 +71,8 @@ public class CongestionController {
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("getCongestion error", e);
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
+                    "detail", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
 
@@ -105,7 +107,8 @@ public class CongestionController {
             ctx.status(400).json(Map.of("error", "Invalid id"));
         } catch (Exception e) {
             logger.error("updateCongestion error", e);
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
+                    "detail", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
         }
     }
 }
