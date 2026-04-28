@@ -32,7 +32,7 @@ public class Gate {
     private final Logger logger = new Logger(Gate.class);
     private final List<Handler> beforeFilters = new CopyOnWriteArrayList<>();
     private final List<Handler> afterFilters = new CopyOnWriteArrayList<>();
-    private String corsOrigin = null;
+    private java.util.Set<String> corsOrigins = null;
     private int wsMaxMessageSize = 64 * 1024;
     private int idleTimeoutMs = 30_000;
     private volatile boolean started = false;
@@ -87,11 +87,18 @@ public class Gate {
         scanner.scan(controller);
     }
 
-    public Gate cors(String allowedOrigin) {
-        if ("*".equals(allowedOrigin)) {
+    public Gate cors(String allowedOrigins) {
+        if (allowedOrigins == null || allowedOrigins.isBlank()) return this;
+        java.util.Set<String> parsed = new java.util.LinkedHashSet<>();
+        for (String o : allowedOrigins.split(",")) {
+            String trimmed = o.strip();
+            if (!trimmed.isEmpty()) parsed.add(trimmed);
+        }
+        if (parsed.contains("*")) {
             logger.warn("CORS configured with wildcard '*' — credentials cannot be used with this origin");
         }
-        this.corsOrigin = allowedOrigin;
+        this.corsOrigins = java.util.Collections.unmodifiableSet(parsed);
+        logger.info("CORS allowed origins: {}", this.corsOrigins);
         return this;
     }
 
@@ -137,7 +144,7 @@ public class Gate {
             });
         });
 
-        final String finalCorsOrigin = this.corsOrigin;
+        final java.util.Set<String> finalCorsOrigins = this.corsOrigins;
         context.addServlet(new ServletHolder(new HttpServlet() {
             @Override
             protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -149,13 +156,23 @@ public class Gate {
                 Context ctx = new Context(path, request);
 
                 try {
-                    if (finalCorsOrigin != null) {
-                        response.setHeader("Access-Control-Allow-Origin", finalCorsOrigin);
-                        response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-                        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
-                        response.setHeader("Access-Control-Max-Age", "86400");
-                        if (!"*".equals(finalCorsOrigin)) {
-                            response.setHeader("Access-Control-Allow-Credentials", "true");
+                    if (finalCorsOrigins != null && !finalCorsOrigins.isEmpty()) {
+                        String requestOrigin = request.getHeader("Origin");
+                        String matchedOrigin = null;
+                        if (finalCorsOrigins.contains("*")) {
+                            matchedOrigin = "*";
+                        } else if (requestOrigin != null && finalCorsOrigins.contains(requestOrigin)) {
+                            matchedOrigin = requestOrigin;
+                        }
+                        if (matchedOrigin != null) {
+                            response.setHeader("Access-Control-Allow-Origin", matchedOrigin);
+                            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+                            response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
+                            response.setHeader("Access-Control-Max-Age", "86400");
+                            response.setHeader("Vary", "Origin");
+                            if (!"*".equals(matchedOrigin)) {
+                                response.setHeader("Access-Control-Allow-Credentials", "true");
+                            }
                         }
                     }
 

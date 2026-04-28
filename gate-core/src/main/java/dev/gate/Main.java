@@ -32,10 +32,18 @@ public class Main {
                 new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
 
         Gate gate = new Gate();
+        // CORS_ALLOWED_ORIGIN accepts comma-separated origins.
+        // Append CORS_ALLOWED_EXTRA_ORIGINS for dev-only additions (e.g. http://localhost:8081)
+        // without touching the production value.
         String allowedOrigin = System.getenv("CORS_ALLOWED_ORIGIN");
-        gate.cors(allowedOrigin != null && !allowedOrigin.isBlank()
+        String extraOrigins  = System.getenv("CORS_ALLOWED_EXTRA_ORIGINS");
+        String baseOrigin    = (allowedOrigin != null && !allowedOrigin.isBlank())
                 ? allowedOrigin
-                : "https://admin.r-sai2026.site");
+                : "https://admin.r-sai2026.site";
+        String corsValue = (extraOrigins != null && !extraOrigins.isBlank())
+                ? baseOrigin + "," + extraOrigins
+                : baseOrigin;
+        gate.cors(corsValue);
         gate.before(RequestMetrics.get()::startTimer);
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
