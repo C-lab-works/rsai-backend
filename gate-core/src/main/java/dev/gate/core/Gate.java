@@ -163,6 +163,17 @@ public class Gate {
                             matchedOrigin = "*";
                         } else if (requestOrigin != null && finalCorsOrigins.contains(requestOrigin)) {
                             matchedOrigin = requestOrigin;
+                        } else if (requestOrigin != null) {
+                            // Support "http://localhost:*" / "https://localhost:*" wildcard patterns
+                            // for local development (any port on localhost).
+                            // The browser sees its own origin echoed back, not the pattern itself.
+                            if (finalCorsOrigins.contains("http://localhost:*")
+                                    && requestOrigin.startsWith("http://localhost:")) {
+                                matchedOrigin = requestOrigin;
+                            } else if (finalCorsOrigins.contains("https://localhost:*")
+                                    && requestOrigin.startsWith("https://localhost:")) {
+                                matchedOrigin = requestOrigin;
+                            }
                         }
                         if (matchedOrigin != null) {
                             response.setHeader("Access-Control-Allow-Origin", matchedOrigin);
