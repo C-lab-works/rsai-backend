@@ -11,12 +11,12 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 3) {
-                logger.info("Seed data v3 already present — skipping");
+            if (v >= 4) {
+                logger.info("Seed data v4 already present — skipping");
                 return;
             }
             if (v == 1) {
-                logger.info("Migrating schema v1 -> v3");
+                logger.info("Migrating schema v1 -> v4");
                 migrateV1(conn);
             }
             if (v <= 1) {
@@ -31,8 +31,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v2 -> v3");
                 migrateV2(conn);
             }
-            setSeedVersion(conn, 3);
-            logger.info("Seed data v3 ready");
+            if (v <= 3) {
+                logger.info("Migrating schema v3 -> v4");
+                migrateV3(conn);
+            }
+            setSeedVersion(conn, 4);
+            logger.info("Seed data v4 ready");
         }
     }
 
@@ -73,6 +77,15 @@ public class DataSeeder {
         try {
             exec(conn, "ALTER TABLE locations ADD COLUMN tracks_congestion TINYINT(1) NOT NULL DEFAULT 1");
             logger.info("Added tracks_congestion column to locations");
+        } catch (Exception ignored) {
+            // column already exists
+        }
+    }
+
+    private static void migrateV3(Connection conn) throws Exception {
+        try {
+            exec(conn, "ALTER TABLE locations ADD COLUMN svg_id VARCHAR(255)");
+            logger.info("Added svg_id column to locations");
         } catch (Exception ignored) {
             // column already exists
         }
