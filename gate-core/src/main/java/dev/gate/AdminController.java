@@ -115,7 +115,7 @@ public class AdminController {
             try (PreparedStatement ps = conn.prepareStatement(
                     "UPDATE `" + table + "` SET " + setClauses + " WHERE `" + pkCol + "` = ?")) {
                 int i = 1;
-                for (String col : updateCols) ps.setObject(i++, body.get(col));
+                for (String col : updateCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 ps.setString(i, pkVal);
                 ctx.json(Map.of("updated", ps.executeUpdate()));
             }
@@ -179,7 +179,7 @@ public class AdminController {
                     "INSERT INTO `" + table + "` (" + colList + ") VALUES (" + placeholders + ")",
                     Statement.RETURN_GENERATED_KEYS)) {
                 int i = 1;
-                for (String col : insertCols) ps.setObject(i++, body.get(col));
+                for (String col : insertCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 ps.executeUpdate();
                 try (ResultSet gen = ps.getGeneratedKeys()) {
                     if (gen.next()) ctx.json(Map.of("id", gen.getLong(1)));
@@ -313,6 +313,12 @@ public class AdminController {
 
     private boolean isValidIdentifier(String s) {
         return s != null && s.matches("[a-zA-Z0-9_]+");
+    }
+
+    /** Converts JSON-deserialized booleans to integers so MySQL TINYINT columns accept them. */
+    private Object normalizeValue(Object val) {
+        if (val instanceof Boolean b) return b ? 1 : 0;
+        return val;
     }
 
     private String toUserMessage(SQLIntegrityConstraintViolationException e) {
