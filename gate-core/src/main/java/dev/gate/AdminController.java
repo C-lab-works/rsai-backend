@@ -125,8 +125,16 @@ public class AdminController {
         } catch (SQLSyntaxErrorException e) {
             logger.warn("updateRow syntax error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", "Invalid SQL syntax"));
+        } catch (SQLException e) {
+            if (isDataTypeError(e)) {
+                logger.warn("updateRow data type error: {}", e.getMessage());
+                ctx.status(400).json(Map.of("error", toDataTypeMessage(e)));
+            } else {
+                logger.error("updateRow error", e);
+                ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            }
         } catch (Exception e) {
-            logger.error("updateRow error", e);
+            logger.error("updateRow error (non-SQL)", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
@@ -184,8 +192,16 @@ public class AdminController {
         } catch (SQLSyntaxErrorException e) {
             logger.warn("insertRow syntax error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", "Invalid SQL syntax"));
+        } catch (SQLException e) {
+            if (isDataTypeError(e)) {
+                logger.warn("insertRow data type error: {}", e.getMessage());
+                ctx.status(400).json(Map.of("error", toDataTypeMessage(e)));
+            } else {
+                logger.error("insertRow error", e);
+                ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            }
         } catch (Exception e) {
-            logger.error("insertRow error", e);
+            logger.error("insertRow error (non-SQL)", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
@@ -307,6 +323,19 @@ public class AdminController {
         if (code == 1216 || code == 1217 || code == 1451 || code == 1452)
             return "Foreign key constraint violation";
         return "Constraint violation";
+    }
+
+    // MySQL 1292 = Incorrect datetime/date value
+    // MySQL 1366 = Incorrect integer value (e.g. string 'true' for TINYINT)
+    private boolean isDataTypeError(SQLException e) {
+        int code = e.getErrorCode();
+        return code == 1292 || code == 1366;
+    }
+
+    private String toDataTypeMessage(SQLException e) {
+        // MySQL message already contains the column name and offending value
+        String msg = e.getMessage();
+        return msg != null ? "Invalid value: " + msg : "Incorrect value for column type";
     }
 
     private String extractDuplicateValue(String msg) {
