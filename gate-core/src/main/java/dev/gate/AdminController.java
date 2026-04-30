@@ -40,6 +40,7 @@ public class AdminController {
 
     @GetMapping("/admin/tables")
     public void listTables(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
                  "SELECT TABLE_NAME, IFNULL(TABLE_ROWS, 0) AS TABLE_ROWS " +
