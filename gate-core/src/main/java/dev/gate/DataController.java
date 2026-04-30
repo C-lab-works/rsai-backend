@@ -74,13 +74,15 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor, svg_id FROM locations ORDER BY floor, id")) {
+                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
-                l.put("id",    rs.getInt("id"));
-                l.put("name",  rs.getString("name"));
-                l.put("floor", rs.getInt("floor"));
+                l.put("id",               rs.getInt("id"));
+                l.put("name",             rs.getString("name"));
+                l.put("floor",            rs.getInt("floor"));
                 putStringOrNull(l, "svgId", rs.getString("svg_id"));
+                l.put("isStage",          rs.getInt("is_stage") == 1);
+                l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
             }
         }
 
@@ -161,13 +163,15 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor, svg_id FROM locations ORDER BY floor, id")) {
+                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
-                l.put("id",    rs.getInt("id"));
-                l.put("name",  rs.getString("name"));
-                l.put("floor", rs.getInt("floor"));
+                l.put("id",               rs.getInt("id"));
+                l.put("name",             rs.getString("name"));
+                l.put("floor",            rs.getInt("floor"));
                 putStringOrNull(l, "svgId", rs.getString("svg_id"));
+                l.put("isStage",          rs.getInt("is_stage") == 1);
+                l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
             }
         }
 
