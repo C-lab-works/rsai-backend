@@ -351,7 +351,8 @@ public class AdminController {
             ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
         } catch (Exception e) {
             logger.error("execSql error", e);
-            ctx.status(400).json(Map.of("error", "Query execution failed"));
+            String msg = e.getMessage() != null ? e.getMessage() : "Query execution failed";
+            ctx.status(400).json(Map.of("error", msg));
         }
     }
 
