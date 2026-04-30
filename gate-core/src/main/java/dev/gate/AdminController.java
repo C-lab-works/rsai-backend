@@ -13,6 +13,7 @@ import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
 
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,12 @@ public class AdminController {
 
     private static final Logger logger = new Logger(AdminController.class);
     private final ObjectMapper mapper = new ObjectMapper();
+
+    // Allowlist for DDL column types – prevents SQL injection via type field
+    private static final Set<String> ALLOWED_COL_TYPES = Set.of(
+        "INT", "BIGINT", "VARCHAR(255)", "VARCHAR(100)", "TEXT",
+        "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
+    );
 
     @GetMapping("/admin/tables")
     public void listTables(Context ctx) {
@@ -206,9 +213,106 @@ public class AdminController {
         }
     }
 
-    @PostMapping("/admin/sql")
-    public void execSql(Context ctx) {
+    // POST /admin/ddl/tables
+    // Body: { "name": "tbl", "columns": [{ "name":"id","type":"INT","pk":true,"autoIncrement":true,"notNull":true }, ...] }
+    @PostMapping("/admin/ddl/tables")
+    public void createTable(Context ctx) {
         try (Connection conn = Database.getConnection()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = ctx.bodyAs(Map.class);
+            String tableName = (String) body.get("name");
+            if (!isValidIdentifier(tableName)) {
+                ctx.status(400).json(Map.of("error", "テーブル名が無効です")); return;
+            }
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> columns = (List<Map<String, Object>>) body.get("columns");
+            if (columns == null || columns.isEmpty()) {
+                ctx.status(400).json(Map.of("error", "カラムが必要です")); return;
+            }
+
+            StringBuilder sb = new StringBuilder("CREATE TABLE `").append(tableName).append("` (");
+            List<String> pkCols = new ArrayList<>();
+            for (int i = 0; i < columns.size(); i++) {
+                Map<String, Object> col = columns.get(i);
+                String colName = (String) col.get("name");
+                String colType = (String) col.get("type");
+                boolean pk            = Boolean.TRUE.equals(col.get("pk"));
+                boolean autoIncrement = Boolean.TRUE.equals(col.get("autoIncrement"));
+                boolean notNull       = Boolean.TRUE.equals(col.get("notNull")) || pk;
+                if (!isValidIdentifier(colName)) {
+                    ctx.status(400).json(Map.of("error", "カラム名が無効です: " + colName)); return;
+                }
+                if (!ALLOWED_COL_TYPES.contains(colType)) {
+                    ctx.status(400).json(Map.of("error", "サポートされていない型: " + colType)); return;
+                }
+                if (i > 0) sb.append(", ");
+                sb.append("`").append(colName).append("` ").append(colType);
+                if (notNull)       sb.append(" NOT NULL");
+                if (autoIncrement) sb.append(" AUTO_INCREMENT");
+                if (pk)            pkCols.add(colName);
+            }
+            if (!pkCols.isEmpty()) {
+                sb.append(", PRIMARY KEY (")
+                  .append(pkCols.stream().map(c -> "`" + c + "`").collect(Collectors.joining(", ")))
+                  .append(")");
+            }
+            sb.append(")");
+            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
+            ctx.json(Map.of("ok", true));
+        } catch (SQLSyntaxErrorException e) {
+            logger.warn("createTable syntax error: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", "SQL エラー: " + e.getMessage()));
+        } catch (Exception e) {
+            logger.error("createTable error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+        }
+    }
+
+    // POST /admin/ddl/tables/{table}/columns
+    // Body: { "name": "col", "type": "VARCHAR(255)", "notNull": false, "defaultValue": "" }
+    @PostMapping("/admin/ddl/tables/{table}/columns")
+    public void addColumn(Context ctx) {
+        String table = ctx.pathParam("table");
+        if (!isValidTableName(table, ctx)) return;
+        try (Connection conn = Database.getConnection()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = ctx.bodyAs(Map.class);
+            String colName   = (String) body.get("name");
+            String colType   = (String) body.get("type");
+            boolean notNull  = Boolean.TRUE.equals(body.get("notNull"));
+            String defaultVal = body.get("defaultValue") instanceof String s ? s.strip() : null;
+
+            if (!isValidIdentifier(colName)) {
+                ctx.status(400).json(Map.of("error", "カラム名が無効です")); return;
+            }
+            if (!ALLOWED_COL_TYPES.contains(colType)) {
+                ctx.status(400).json(Map.of("error", "サポートされていない型: " + colType)); return;
+            }
+
+            StringBuilder sb = new StringBuilder("ALTER TABLE `")
+                .append(table).append("` ADD COLUMN `")
+                .append(colName).append("` ").append(colType);
+            if (notNull) sb.append(" NOT NULL");
+            if (defaultVal != null && !defaultVal.isEmpty()) {
+                // Only allow safe default values (alphanumeric, dots, dashes, underscores)
+                if (!defaultVal.matches("[a-zA-Z0-9._\\-]+")) {
+                    ctx.status(400).json(Map.of("error", "デフォルト値に使えない文字が含まれています")); return;
+                }
+                sb.append(" DEFAULT '").append(defaultVal).append("'");
+            }
+            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
+            ctx.json(Map.of("ok", true));
+        } catch (SQLSyntaxErrorException e) {
+            logger.warn("addColumn syntax error: {}", e.getMessage());
+            ctx.status(400).json(Map.of("error", "SQL エラー: " + e.getMessage()));
+        } catch (Exception e) {
+            logger.error("addColumn error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+        }
+    }
+
+    @PostMapping("/admin/sql")
+    public void execSql(Context ctx) {        try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             String sql = (String) body.get("sql");
