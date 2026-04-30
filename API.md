@@ -1,6 +1,6 @@
 # rsai-backend API リファレンス
 
-Base URL: `https://api.r-sai2026.site`  
+Base URL: `https://azure.c-lab.works`  
 すべてのエンドポイントは `X-API-Key` ヘッダーによる認証が必要です。
 
 ---
