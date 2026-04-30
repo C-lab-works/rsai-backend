@@ -111,6 +111,7 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
             String pkCol = getPkColumn(conn, table);
             if (pkCol == null) { ctx.status(400).json(Map.of("error", "No PK found")); return; }
 
@@ -176,6 +177,7 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
             List<String> insertCols = body.keySet().stream()
                     .filter(this::isValidIdentifier)
                     .collect(Collectors.toList());
@@ -221,6 +223,7 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
             String tableName = (String) body.get("name");
             if (!isValidIdentifier(tableName)) {
                 ctx.status(400).json(Map.of("error", "テーブル名が無効です")); return;
@@ -243,7 +246,7 @@ public class AdminController {
                 if (!isValidIdentifier(colName)) {
                     ctx.status(400).json(Map.of("error", "カラム名が無効です: " + colName)); return;
                 }
-                if (!ALLOWED_COL_TYPES.contains(colType)) {
+                if (colType == null || !ALLOWED_COL_TYPES.contains(colType)) {
                     ctx.status(400).json(Map.of("error", "サポートされていない型: " + colType)); return;
                 }
                 if (i > 0) sb.append(", ");
@@ -278,6 +281,7 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
             String colName   = (String) body.get("name");
             String colType   = (String) body.get("type");
             boolean notNull  = Boolean.TRUE.equals(body.get("notNull"));
@@ -286,7 +290,7 @@ public class AdminController {
             if (!isValidIdentifier(colName)) {
                 ctx.status(400).json(Map.of("error", "カラム名が無効です")); return;
             }
-            if (!ALLOWED_COL_TYPES.contains(colType)) {
+            if (colType == null || !ALLOWED_COL_TYPES.contains(colType)) {
                 ctx.status(400).json(Map.of("error", "サポートされていない型: " + colType)); return;
             }
 
