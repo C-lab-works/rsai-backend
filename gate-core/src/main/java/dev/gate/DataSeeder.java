@@ -231,11 +231,11 @@ public class DataSeeder {
     private static void seedCategories(Connection conn) throws Exception {
         exec(conn,
             "INSERT IGNORE INTO categories (id, name) VALUES " +
-            "(1, 'ステージ企画'), " +
+            "(1, 'ステージ系'), " +
             "(2, 'クラス企画'), " +
-            "(3, '演劇'), " +
-            "(4, '展示・体験'), " +
-            "(5, '飲食')");
+            "(3, '部活'), " +
+            "(4, '展示'), " +
+            "(5, 'フード')");
     }
 
     private static void seedLocations(Connection conn) throws Exception {
