@@ -114,10 +114,17 @@ public class DataController {
                 putStringOrNull(p, "imageUrl",    rs.getString("image_url"));
                 int locId = rs.getInt("location_id");
                 if (!rs.wasNull()) p.put("locationId", locId);
-                ArrayNode catIds = p.putArray("categoryIds");
-                for (int catId : catMap.getOrDefault(id, List.of())) catIds.add(catId);
             }
         }
+
+        ArrayNode projectCategories = root.putArray("projectCategories");
+        catMap.forEach((projectId, catIds) ->
+            catIds.forEach(catId -> {
+                ObjectNode pc = projectCategories.addObject();
+                pc.put("projectId",  projectId);
+                pc.put("categoryId", catId);
+            })
+        );
 
         ArrayNode timetables = root.putArray("timetables");
         try (Statement s = conn.createStatement();
