@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 5) {
-                logger.info("Seed data v5 already present — skipping");
+            if (v >= 6) {
+                logger.info("Seed data v6 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -26,6 +26,9 @@ public class DataSeeder {
                 seedProjects(conn);
                 seedTimetables(conn);
                 seedAnnouncements(conn);
+                seedFoods(conn);
+                seedMenus(conn);
+                seedProjectCategories(conn);
             }
             if (v == 2) {
                 logger.info("Migrating schema v2 -> v3");
@@ -39,8 +42,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v4 -> v5");
                 migrateV4(conn);
             }
-            setSeedVersion(conn, 5);
-            logger.info("Seed data v5 ready");
+            if (v <= 5) {
+                logger.info("Migrating schema v5 -> v6");
+                migrateV5(conn);
+            }
+            setSeedVersion(conn, 6);
+            logger.info("Seed data v6 ready");
         }
     }
 
@@ -104,6 +111,47 @@ public class DataSeeder {
         }
     }
 
+    private static void migrateV5(Connection conn) throws Exception {
+        try {
+            exec(conn, "ALTER TABLE projects DROP COLUMN category_id");
+            logger.info("Dropped category_id from projects");
+        } catch (Exception ignored) {
+            // column already removed
+        }
+        try {
+            exec(conn, "ALTER TABLE projects ADD COLUMN location_id INT");
+            logger.info("Added location_id to projects");
+        } catch (Exception ignored) {
+            // column already exists
+        }
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foods (" +
+            "  id          INT  PRIMARY KEY AUTO_INCREMENT," +
+            "  name        TEXT NOT NULL," +
+            "  description TEXT," +
+            "  image_url   TEXT" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS menus (" +
+            "  id          INT        PRIMARY KEY AUTO_INCREMENT," +
+            "  food_id     INT        NOT NULL," +
+            "  name        TEXT       NOT NULL," +
+            "  price       INT," +
+            "  description TEXT," +
+            "  is_sold_out TINYINT(1)," +
+            "  FOREIGN KEY (food_id) REFERENCES foods(id)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS project_categories (" +
+            "  project_id  INT NOT NULL," +
+            "  category_id INT NOT NULL," +
+            "  PRIMARY KEY (project_id, category_id)," +
+            "  FOREIGN KEY (project_id)  REFERENCES projects(id)," +
+            "  FOREIGN KEY (category_id) REFERENCES categories(id)" +
+            ")");
+        logger.info("Created foods, menus, project_categories tables");
+    }
+
     // ── DDL ───────────────────────────────────────────────────
 
     private static void createTables(Connection conn) throws Exception {
@@ -124,11 +172,19 @@ public class DataSeeder {
         exec(conn,
             "CREATE TABLE IF NOT EXISTS projects (" +
             "  id          INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  category_id INT," +
             "  title       VARCHAR(255) NOT NULL," +
             "  organizer   VARCHAR(255)," +
             "  description TEXT," +
             "  image_url   VARCHAR(255)," +
+            "  location_id INT," +
+            "  FOREIGN KEY (location_id) REFERENCES locations(id)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS project_categories (" +
+            "  project_id  INT NOT NULL," +
+            "  category_id INT NOT NULL," +
+            "  PRIMARY KEY (project_id, category_id)," +
+            "  FOREIGN KEY (project_id)  REFERENCES projects(id)," +
             "  FOREIGN KEY (category_id) REFERENCES categories(id)" +
             ")");
         exec(conn,
@@ -150,6 +206,23 @@ public class DataSeeder {
             "  is_emergency  TINYINT(1) NOT NULL DEFAULT 0," +
             "  display_from  DATETIME," +
             "  display_until DATETIME" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foods (" +
+            "  id          INT  PRIMARY KEY AUTO_INCREMENT," +
+            "  name        TEXT NOT NULL," +
+            "  description TEXT," +
+            "  image_url   TEXT" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS menus (" +
+            "  id          INT        PRIMARY KEY AUTO_INCREMENT," +
+            "  food_id     INT        NOT NULL," +
+            "  name        TEXT       NOT NULL," +
+            "  price       INT," +
+            "  description TEXT," +
+            "  is_sold_out TINYINT(1)," +
+            "  FOREIGN KEY (food_id) REFERENCES foods(id)" +
             ")");
     }
 
@@ -182,12 +255,22 @@ public class DataSeeder {
 
     private static void seedProjects(Connection conn) throws Exception {
         exec(conn,
-            "INSERT IGNORE INTO projects (id, category_id, title, organizer) VALUES " +
-            "(1, 1, 'ステージ企画（タイトル未定）', '実行委員会'), " +
-            "(2, 2, '3-Aクラス企画（未定）',       '3年A組'),     " +
-            "(3, 3, '演劇（タイトル未定）',         '演劇部'),     " +
-            "(4, 4, '展示企画（未定）',             '4年A組'),     " +
-            "(5, 5, '飲食企画（未定）',             '模擬店委員会')");
+            "INSERT IGNORE INTO projects (id, title, organizer, location_id) VALUES " +
+            "(1, 'ステージ企画（タイトル未定）', '実行委員会',   2), " +
+            "(2, '3-Aクラス企画（未定）',       '3年A組',       3), " +
+            "(3, '演劇（タイトル未定）',         '演劇部',       1), " +
+            "(4, '展示企画（未定）',             '4年A組',       6), " +
+            "(5, '飲食企画（未定）',             '模擬店委員会', 9)");
+    }
+
+    private static void seedProjectCategories(Connection conn) throws Exception {
+        exec(conn,
+            "INSERT IGNORE INTO project_categories (project_id, category_id) VALUES " +
+            "(1, 1), " +
+            "(2, 2), " +
+            "(3, 3), " +
+            "(4, 4), " +
+            "(5, 5)");
     }
 
     private static void seedTimetables(Connection conn) throws Exception {
@@ -205,6 +288,18 @@ public class DataSeeder {
             "INSERT IGNORE INTO announcements (id, content, is_emergency) VALUES " +
             "(1, 'ここにお知らせを表示できます（テスト表示）', 0), " +
             "(2, '【緊急】ここに緊急お知らせを表示できます（テスト表示）', 1)");
+    }
+
+    private static void seedFoods(Connection conn) throws Exception {
+        exec(conn,
+            "INSERT IGNORE INTO foods (id, name, description) VALUES " +
+            "(1, 'キッチンカー店舗（未定）', 'ここに店舗説明を入力できます')");
+    }
+
+    private static void seedMenus(Connection conn) throws Exception {
+        exec(conn,
+            "INSERT IGNORE INTO menus (id, food_id, name, price) VALUES " +
+            "(1, 1, 'メニュー（未定）', NULL)");
     }
 
     // ── util ──────────────────────────────────────────────────

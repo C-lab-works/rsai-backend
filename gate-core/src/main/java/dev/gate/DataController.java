@@ -12,6 +12,9 @@ import dev.gate.mapping.GetMapping;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -86,20 +89,33 @@ public class DataController {
             }
         }
 
+        Map<Integer, List<Integer>> catMap = new HashMap<>();
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                "SELECT project_id, category_id FROM project_categories ORDER BY project_id, category_id")) {
+            while (rs.next()) {
+                catMap.computeIfAbsent(rs.getInt("project_id"), k -> new ArrayList<>())
+                      .add(rs.getInt("category_id"));
+            }
+        }
+
         ArrayNode projects = root.putArray("projects");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, category_id, title, organizer, description, image_url " +
+                "SELECT id, title, organizer, description, image_url, location_id " +
                 "FROM projects ORDER BY id")) {
             while (rs.next()) {
                 ObjectNode p = projects.addObject();
-                p.put("id", rs.getInt("id"));
-                int catId = rs.getInt("category_id");
-                if (!rs.wasNull()) p.put("categoryId", catId);
+                int id = rs.getInt("id");
+                p.put("id", id);
                 p.put("title", rs.getString("title"));
                 putStringOrNull(p, "organizer",   rs.getString("organizer"));
                 putStringOrNull(p, "description", rs.getString("description"));
                 putStringOrNull(p, "imageUrl",    rs.getString("image_url"));
+                int locId = rs.getInt("location_id");
+                if (!rs.wasNull()) p.put("locationId", locId);
+                ArrayNode catIds = p.putArray("categoryIds");
+                for (int catId : catMap.getOrDefault(id, List.of())) catIds.add(catId);
             }
         }
 
@@ -121,34 +137,34 @@ public class DataController {
     private Object buildFood(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
 
-        ArrayNode projects = root.putArray("projects");
+        ArrayNode foods = root.putArray("foods");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT p.id, p.title, p.organizer, p.description " +
-                "FROM projects p " +
-                "JOIN categories c ON c.id = p.category_id " +
-                "WHERE c.name = '飲食' " +
-                "ORDER BY p.id")) {
+                "SELECT id, name, description, image_url FROM foods ORDER BY id")) {
             while (rs.next()) {
-                ObjectNode p = projects.addObject();
-                p.put("id",    rs.getInt("id"));
-                p.put("title", rs.getString("title"));
-                putStringOrNull(p, "organizer",   rs.getString("organizer"));
-                putStringOrNull(p, "description", rs.getString("description"));
+                ObjectNode f = foods.addObject();
+                f.put("id",   rs.getInt("id"));
+                f.put("name", rs.getString("name"));
+                putStringOrNull(f, "description", rs.getString("description"));
+                putStringOrNull(f, "imageUrl",    rs.getString("image_url"));
             }
         }
 
-        ArrayNode timetables = root.putArray("timetables");
+        ArrayNode menus = root.putArray("menus");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT t.id, t.project_id, t.location_id, t.event_date, t.is_all_day, t.start_time, t.end_time " +
-                "FROM timetables t " +
-                "JOIN projects p ON p.id = t.project_id " +
-                "JOIN categories c ON c.id = p.category_id " +
-                "WHERE c.name = '飲食' " +
-                "ORDER BY t.event_date, t.start_time")) {
+                "SELECT id, food_id, name, price, description, is_sold_out " +
+                "FROM menus ORDER BY food_id, id")) {
             while (rs.next()) {
-                addTimetableRow(timetables.addObject(), rs);
+                ObjectNode m = menus.addObject();
+                m.put("id",     rs.getInt("id"));
+                m.put("foodId", rs.getInt("food_id"));
+                m.put("name",   rs.getString("name"));
+                int price = rs.getInt("price");
+                if (!rs.wasNull()) m.put("price", price);
+                putStringOrNull(m, "description", rs.getString("description"));
+                int soldOut = rs.getInt("is_sold_out");
+                if (!rs.wasNull()) m.put("isSoldOut", soldOut == 1);
             }
         }
 
