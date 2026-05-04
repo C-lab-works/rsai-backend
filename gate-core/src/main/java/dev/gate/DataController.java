@@ -77,7 +77,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion FROM locations ORDER BY floor, id")) {
+                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",               rs.getInt("id"));
@@ -86,6 +86,8 @@ public class DataController {
                 putStringOrNull(l, "svgId", rs.getString("svg_id"));
                 l.put("isStage",          rs.getInt("is_stage") == 1);
                 l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
+                putDoubleOrNull(l, "x", rs);
+                putDoubleOrNull(l, "y", rs);
             }
         }
 
@@ -186,7 +188,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion FROM locations ORDER BY floor, id")) {
+                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",               rs.getInt("id"));
@@ -195,6 +197,8 @@ public class DataController {
                 putStringOrNull(l, "svgId", rs.getString("svg_id"));
                 l.put("isStage",          rs.getInt("is_stage") == 1);
                 l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
+                putDoubleOrNull(l, "x", rs);
+                putDoubleOrNull(l, "y", rs);
             }
         }
 
@@ -215,5 +219,10 @@ public class DataController {
 
     private void putStringOrNull(ObjectNode node, String key, String value) {
         if (value != null) node.put(key, value);
+    }
+
+    private void putDoubleOrNull(ObjectNode node, String key, ResultSet rs) throws Exception {
+        double v = rs.getDouble(key);
+        if (!rs.wasNull()) node.put(key, v);
     }
 }

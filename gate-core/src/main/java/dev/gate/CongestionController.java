@@ -27,7 +27,7 @@ public class CongestionController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT l.id, l.name, l.floor, l.svg_id, " +
+                 "SELECT l.id, l.name, l.floor, l.svg_id, l.x, l.y, " +
                  "  (SELECT p.title FROM timetables t " +
                  "   JOIN projects p ON p.id = t.project_id " +
                  "   WHERE t.location_id = l.id " +
@@ -43,6 +43,10 @@ public class CongestionController {
                 n.put("floor", rs.getInt("floor"));
                 String svgId = rs.getString("svg_id");
                 if (svgId != null) n.put("svgId", svgId);
+                double x = rs.getDouble("x");
+                if (!rs.wasNull()) n.put("x", x);
+                double y = rs.getDouble("y");
+                if (!rs.wasNull()) n.put("y", y);
                 String project = rs.getString("project");
                 if (project != null) n.put("project", project);
             }
