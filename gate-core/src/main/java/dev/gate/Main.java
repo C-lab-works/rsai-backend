@@ -27,6 +27,10 @@ public class Main {
 
         Database.init(config.getDatabase());
         DataSeeder.seed();
+
+        CfAccessAuth cfAccessAuth = new CfAccessAuth();
+        cfAccessAuth.prefetchJwks();
+
         RequestMetrics.get().init();
         Runtime.getRuntime().addShutdownHook(
                 new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
@@ -47,7 +51,7 @@ public class Main {
         gate.before(RequestMetrics.get()::startTimer);
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
-        gate.before(new CfAccessAuth());
+        gate.before(cfAccessAuth);
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
         gate.register(new DataController());
         gate.register(new CongestionController());

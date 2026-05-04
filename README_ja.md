@@ -274,7 +274,7 @@ after フィルタ内でスローされた例外はログに記録されて握�
 
 ## データベース
 
-HikariCP を使った PostgreSQL サポートが組み込まれています。
+HikariCP を使った MySQL サポートが組み込まれています。
 
 ```java
 // 起動時に初期化（gate.start() より前に呼ぶこと）
@@ -299,10 +299,10 @@ Database.close();
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-    id         SERIAL PRIMARY KEY,
+    id         INT          PRIMARY KEY AUTO_INCREMENT,
     name       VARCHAR(255) NOT NULL,
     email      VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -331,9 +331,9 @@ env: development
 name: MyApp
 database:
   host: localhost
-  port: 5432
+  port: 3306
   name: mydb
-  user: postgres
+  user: root
   password: ""
   cloudSqlInstance: ""   # GCP Cloud SQL インスタンス（project:region:instance）
   maxPoolSize: 10

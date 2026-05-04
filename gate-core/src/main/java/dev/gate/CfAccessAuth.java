@@ -19,6 +19,7 @@ import java.security.spec.RSAPublicKeySpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -61,9 +62,9 @@ public class CfAccessAuth implements Handler {
     private final boolean enabled;
 
     public CfAccessAuth() {
-        String aud      = System.getenv("CF_ACCESS_AUD");
-        String domain   = System.getenv("CF_ACCESS_TEAM_DOMAIN");
-        String devFlag  = System.getenv("CF_ACCESS_DEV_DISABLE");
+        String aud     = System.getenv("CF_ACCESS_AUD");
+        String domain  = System.getenv("CF_ACCESS_TEAM_DOMAIN");
+        String devFlag = System.getenv("CF_ACCESS_DEV_DISABLE");
 
         if (aud == null || aud.isBlank() || domain == null || domain.isBlank()) {
             if (!"true".equalsIgnoreCase(devFlag)) {
@@ -72,9 +73,9 @@ public class CfAccessAuth implements Handler {
                     "To disable CF Access JWT validation in development, set CF_ACCESS_DEV_DISABLE=true.");
             }
             logger.warn("CfAccessAuth: JWT validation DISABLED (CF_ACCESS_DEV_DISABLE=true)");
-            this.audience  = null;
-            this.certsUrl  = null;
-            this.enabled   = false;
+            this.audience = null;
+            this.certsUrl = null;
+            this.enabled  = false;
         } else {
             this.audience = aud.strip();
             String d = domain.strip();
@@ -88,6 +89,26 @@ public class CfAccessAuth implements Handler {
         }
     }
 
+    /**
+     * Eagerly fetches and caches the JWKS public keys.
+     *
+     * <p>Call this once at startup (after {@code DataSeeder.seed()}) to eliminate the
+     * cold-start latency on the first {@code /admin} request. Failures are logged as
+     * warnings and do not abort startup — the cache will be populated on the first
+     * incoming request instead.</p>
+     */
+    public void prefetchJwks() {
+        if (!enabled) return;
+        try {
+            synchronized (this) {
+                refreshKeysLocked();
+            }
+            logger.info("JWKS prefetch complete ({} keys cached)", keyCache.size());
+        } catch (Exception e) {
+            logger.warn("JWKS prefetch failed (will retry on first request): {}", e.getMessage());
+        }
+    }
+
     @Override
     public void handle(Context ctx) {
         if (!enabled) return;
@@ -97,6 +118,7 @@ public class CfAccessAuth implements Handler {
         // CF Access JWT is only required for admin endpoints.
         // Public API paths (/events, /announcements, etc.) are authenticated by ApiKeyAuth alone.
         if (!ctx.path().startsWith("/admin")) return;
+
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
         if (token == null || token.isBlank()) {
             ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
@@ -180,37 +202,44 @@ public class CfAccessAuth implements Handler {
                 if (cached != null) return cached;
             }
 
-            logger.info("Refreshing JWKS from {}", certsUrl);
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(certsUrl))
-                    .timeout(Duration.ofSeconds(5))
-                    .GET()
-                    .build();
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                throw new RuntimeException("Failed to fetch JWKS: HTTP " + resp.statusCode());
-            }
-
-            // Build new cache atomically — clear only after successful parse
-            Map<String, PublicKey> newCache = new java.util.HashMap<>();
-            JsonNode jwks = mapper.readTree(resp.body());
-            for (JsonNode jwk : jwks.path("keys")) {
-                if (!"RSA".equals(jwk.path("kty").asText())) continue;
-                String  k = jwk.path("kid").asText();
-                byte[] n  = Base64.getUrlDecoder().decode(jwk.path("n").asText());
-                byte[] e  = Base64.getUrlDecoder().decode(jwk.path("e").asText());
-                RSAPublicKeySpec spec = new RSAPublicKeySpec(new BigInteger(1, n), new BigInteger(1, e));
-                PublicKey pubKey = KeyFactory.getInstance("RSA").generatePublic(spec);
-                newCache.put(k, pubKey);
-            }
-            keyCache.clear();
-            keyCache.putAll(newCache);
-            keysCachedAt = Instant.now();
+            refreshKeysLocked();
 
             PublicKey key = keyCache.get(kid);
             if (key == null) throw new SecurityException("No JWK found for kid=" + kid);
             return key;
         }
+    }
+
+    /**
+     * Fetches JWKS and repopulates the key cache. Must be called under {@code synchronized(this)}.
+     */
+    private void refreshKeysLocked() throws Exception {
+        logger.info("Refreshing JWKS from {}", certsUrl);
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(certsUrl))
+                .timeout(Duration.ofSeconds(5))
+                .GET()
+                .build();
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        if (resp.statusCode() != 200) {
+            throw new RuntimeException("Failed to fetch JWKS: HTTP " + resp.statusCode());
+        }
+
+        // Build new cache atomically — clear only after successful parse
+        Map<String, PublicKey> newCache = new HashMap<>();
+        JsonNode jwks = mapper.readTree(resp.body());
+        for (JsonNode jwk : jwks.path("keys")) {
+            if (!"RSA".equals(jwk.path("kty").asText())) continue;
+            String  k = jwk.path("kid").asText();
+            byte[] n  = Base64.getUrlDecoder().decode(jwk.path("n").asText());
+            byte[] e  = Base64.getUrlDecoder().decode(jwk.path("e").asText());
+            RSAPublicKeySpec spec = new RSAPublicKeySpec(new BigInteger(1, n), new BigInteger(1, e));
+            PublicKey pubKey = KeyFactory.getInstance("RSA").generatePublic(spec);
+            newCache.put(k, pubKey);
+        }
+        keyCache.clear();
+        keyCache.putAll(newCache);
+        keysCachedAt = Instant.now();
     }
 
     // ── util ──────────────────────────────────────────────────────────────────

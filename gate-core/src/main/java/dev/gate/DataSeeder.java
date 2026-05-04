@@ -20,7 +20,7 @@ public class DataSeeder {
                 migrateV1(conn);
             }
             if (v <= 1) {
-                createTables(conn);
+                defineTables(conn);
                 seedCategories(conn);
                 seedLocations(conn);
                 seedProjects(conn);
@@ -124,37 +124,14 @@ public class DataSeeder {
         } catch (Exception ignored) {
             // column already exists
         }
-        exec(conn,
-            "CREATE TABLE IF NOT EXISTS foods (" +
-            "  id          INT  PRIMARY KEY AUTO_INCREMENT," +
-            "  name        TEXT NOT NULL," +
-            "  description TEXT," +
-            "  image_url   TEXT" +
-            ")");
-        exec(conn,
-            "CREATE TABLE IF NOT EXISTS menus (" +
-            "  id          INT        PRIMARY KEY AUTO_INCREMENT," +
-            "  food_id     INT        NOT NULL," +
-            "  name        TEXT       NOT NULL," +
-            "  price       INT," +
-            "  description TEXT," +
-            "  is_sold_out TINYINT(1)," +
-            "  FOREIGN KEY (food_id) REFERENCES foods(id)" +
-            ")");
-        exec(conn,
-            "CREATE TABLE IF NOT EXISTS project_categories (" +
-            "  project_id  INT NOT NULL," +
-            "  category_id INT NOT NULL," +
-            "  PRIMARY KEY (project_id, category_id)," +
-            "  FOREIGN KEY (project_id)  REFERENCES projects(id)," +
-            "  FOREIGN KEY (category_id) REFERENCES categories(id)" +
-            ")");
+        defineTables(conn);
         logger.info("Created foods, menus, project_categories tables");
     }
 
     // ── DDL ───────────────────────────────────────────────────
 
-    private static void createTables(Connection conn) throws Exception {
+    /** Canonical latest schema. Idempotent — safe to call on any existing database. */
+    private static void defineTables(Connection conn) throws Exception {
         exec(conn,
             "CREATE TABLE IF NOT EXISTS categories (" +
             "  id   INT          PRIMARY KEY AUTO_INCREMENT," +

@@ -114,18 +114,9 @@ public class CloudflareIpFilter implements Handler {
                     return ip;
                 }
             }
-            // Fallback: try CF-Connecting-IP (set by Cloudflare for the original client)
-            // This header alone is not reliable for source verification but used as hint
         }
 
-        // If no XFF header present, try Cf-Connecting-IP as last resort
-        String cfConnectingIp = ctx.requestHeader("Cf-Connecting-IP");
-        if (cfConnectingIp != null && !cfConnectingIp.isBlank()) {
-            // Presence of this header without XFF means Cloudflare is not proxying
-            // Return null to trigger 403
-            return null;
-        }
-
+        // If no XFF header present, Cloudflare is not proxying — reject
         return null;
     }
 
@@ -150,8 +141,8 @@ public class CloudflareIpFilter implements Handler {
         byte[] networkBytes = block.network().getAddress();
         int    prefix       = block.prefix();
 
-        int fullBytes  = prefix / 8;
-        int remainder  = prefix % 8;
+        int fullBytes = prefix / 8;
+        int remainder = prefix % 8;
 
         for (int i = 0; i < fullBytes; i++) {
             if (addrBytes[i] != networkBytes[i]) return false;
@@ -166,27 +157,10 @@ public class CloudflareIpFilter implements Handler {
     private boolean isPrivateOrLoopback(String ipStr) {
         try {
             InetAddress addr = InetAddress.getByName(ipStr);
+            // isSiteLocalAddress covers RFC1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
             return addr.isLoopbackAddress()
                     || addr.isSiteLocalAddress()
-                    || addr.isLinkLocalAddress()
-                    || ipStr.startsWith("10.")
-                    || ipStr.startsWith("172.16.")
-                    || ipStr.startsWith("172.17.")
-                    || ipStr.startsWith("172.18.")
-                    || ipStr.startsWith("172.19.")
-                    || ipStr.startsWith("172.20.")
-                    || ipStr.startsWith("172.21.")
-                    || ipStr.startsWith("172.22.")
-                    || ipStr.startsWith("172.23.")
-                    || ipStr.startsWith("172.24.")
-                    || ipStr.startsWith("172.25.")
-                    || ipStr.startsWith("172.26.")
-                    || ipStr.startsWith("172.27.")
-                    || ipStr.startsWith("172.28.")
-                    || ipStr.startsWith("172.29.")
-                    || ipStr.startsWith("172.30.")
-                    || ipStr.startsWith("172.31.")
-                    || ipStr.startsWith("192.168.");
+                    || addr.isLinkLocalAddress();
         } catch (UnknownHostException e) {
             return false;
         }
