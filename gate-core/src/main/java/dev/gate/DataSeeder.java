@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 6) {
-                logger.info("Seed data v6 already present — skipping");
+            if (v >= 7) {
+                logger.info("Seed data v7 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -46,8 +46,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v5 -> v6");
                 migrateV5(conn);
             }
-            setSeedVersion(conn, 6);
-            logger.info("Seed data v6 ready");
+            if (v <= 6) {
+                logger.info("Migrating schema v6 -> v7");
+                migrateV6(conn);
+            }
+            setSeedVersion(conn, 7);
+            logger.info("Seed data v7 ready");
         }
     }
 
@@ -109,6 +113,11 @@ public class DataSeeder {
         } catch (Exception ignored) {
             // column already exists
         }
+    }
+
+    private static void migrateV6(Connection conn) throws Exception {
+        exec(conn, "ALTER TABLE congestion_status MODIFY COLUMN level TINYINT(4) NOT NULL DEFAULT 0");
+        logger.info("Fixed congestion_status.level type (TINYINT -> TINYINT(4))");
     }
 
     private static void migrateV5(Connection conn) throws Exception {

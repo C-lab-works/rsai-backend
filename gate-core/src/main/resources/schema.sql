@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS seed_version (
 
 CREATE TABLE IF NOT EXISTS congestion_status (
     location_id INT          PRIMARY KEY,
-    level       TINYINT      NOT NULL DEFAULT 0,
+    level       TINYINT(4)   NOT NULL DEFAULT 0,
     updated_at  DATETIME     NOT NULL,
     updated_by  VARCHAR(100) NOT NULL
 );
