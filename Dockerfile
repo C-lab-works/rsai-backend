@@ -1,26 +1,13 @@
-FROM eclipse-temurin:21-jdk AS build
+FROM ghcr.io/graalvm/native-image-community:21 AS build
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,target=/root/.gradle ./gradlew :gate-core:shadowJar --no-daemon -q
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-FROM eclipse-temurin:21-jre AS cds
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=build /app/gate-core/build/libs/*-all.jar app.jar
-ARG ENABLE_CDS=false
-RUN if [ "$ENABLE_CDS" = "true" ]; then \
-      java -XX:ArchiveClassesAtExit=app-cds.jsa -jar app.jar || true; \
-    else \
-      touch app-cds.jsa; \
-    fi
-
-FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /app/gate-core/build/libs/*-all.jar app.jar
-COPY --from=cds /app/app-cds.jsa app-cds.jsa
-ARG ENABLE_CDS=false
+COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080
-CMD if [ -s app-cds.jsa ]; then \
-      exec java -XX:SharedArchiveFile=app-cds.jsa -jar app.jar; \
-    else \
-      exec java -jar app.jar; \
-    fi
+CMD ["./app"]

@@ -1,0 +1,12 @@
+{
+  "resources": {
+    "includes": [
+      { "pattern": "config\\.yml" },
+      { "pattern": "schema\\.sql" },
+      { "pattern": "version\\.txt" },
+      { "pattern": "logback\\.xml" },
+      { "pattern": "META-INF/services/.*" },
+      { "pattern": "META-INF/native-image/.*" }
+    ]
+  }
+}

@@ -25,11 +25,12 @@ public class Database {
         int    poolSize  = config.getMaxPoolSize();
 
         if (!cloudSqlInstance.isBlank()) {
+            // Cloud SQL Auth Proxy sidecar listens on 127.0.0.1:3306
             hikari.setJdbcUrl(String.format(
-                "jdbc:mysql:///%s?cloudSqlInstance=%s&socketFactory=com.google.cloud.sql.mysql.SocketFactory&useSSL=false",
-                dbName, cloudSqlInstance
+                "jdbc:mysql://127.0.0.1:3306/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&connectTimeout=5000&socketTimeout=30000",
+                dbName
             ));
-            logger.info("Connecting to Cloud SQL (MySQL): {}/{}", cloudSqlInstance, dbName);
+            logger.info("Connecting via Cloud SQL Auth Proxy sidecar: {}/{}", cloudSqlInstance, dbName);
         } else {
             String host = envOrDefault("DB_HOST", config.getHost());
             int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));

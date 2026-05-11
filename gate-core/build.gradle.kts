@@ -1,7 +1,7 @@
 plugins {
-    id("java-library")
     id("application")
     id("io.github.goooler.shadow") version "8.1.8"
+    id("org.graalvm.buildtools.native") version "0.10.3"
 }
 
 application {
@@ -32,8 +32,21 @@ dependencies {
     // Database (framework dependency - required to compile gate-core)
     implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("com.mysql:mysql-connector-j:8.3.0")
-    implementation("com.google.cloud.sql:mysql-socket-factory-connector-j-8:1.22.0")
 
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+}
+
+graalvmNative {
+    binaries {
+        named("main") {
+            imageName.set("app")
+            mainClass.set("dev.gate.Main")
+            buildArgs.addAll(
+                "--no-fallback",
+                "--initialize-at-build-time=org.slf4j",
+                "-H:+ReportExceptionStackTraces"
+            )
+        }
+    }
 }
