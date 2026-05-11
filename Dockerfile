@@ -1,7 +1,7 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY . .
-RUN ./gradlew :gate-core:shadowJar --no-daemon -q
+RUN --mount=type=cache,target=/root/.gradle ./gradlew :gate-core:shadowJar --no-daemon -q
 
 FROM eclipse-temurin:21-jre AS cds
 WORKDIR /app
