@@ -43,7 +43,7 @@ public class Database {
         hikari.setUsername(user);
         hikari.setPassword(password);
         hikari.setMaximumPoolSize(poolSize);
-        hikari.setMinimumIdle(poolSize / 2);
+        hikari.setMinimumIdle(1);
         hikari.setPoolName("gate-pool");
         hikari.setInitializationFailTimeout(10_000);
         hikari.setConnectionTimeout(5_000);

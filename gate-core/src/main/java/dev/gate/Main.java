@@ -9,6 +9,8 @@ import dev.gate.core.GateServer;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 public class Main {
     public static void main(String[] args) throws Exception {
@@ -25,11 +27,26 @@ public class Main {
                 ? Integer.parseInt(portEnv.trim())
                 : config.getPort();
 
-        Database.init(config.getDatabase());
-        DataSeeder.seed();
-
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
+
+        Config.DatabaseConfig dbConfig = config.getDatabase();
+        CompletableFuture<Void> dbFuture = CompletableFuture.runAsync(() -> {
+            try {
+                Database.init(dbConfig);
+                DataSeeder.seed();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+
         cfAccessAuth.prefetchJwks();
+
+        try {
+            dbFuture.join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause();
+            throw (cause instanceof Exception ex) ? ex : new RuntimeException(cause);
+        }
 
         RequestMetrics.get().init();
         Runtime.getRuntime().addShutdownHook(
