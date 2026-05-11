@@ -17,5 +17,9 @@ out/
 .DS_Store
 .omc/
 
+### Secrets ###
+*-key.json
+deployer-key.json
+
 
 *graphify*
