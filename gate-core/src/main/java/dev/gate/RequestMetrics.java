@@ -111,7 +111,7 @@ public class RequestMetrics {
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
                      "INSERT INTO metrics_hourly(hour, requests) VALUES(?, ?) AS new " +
-                     "ON DUPLICATE KEY UPDATE requests = GREATEST(requests, new.requests)")) {
+                     "ON DUPLICATE KEY UPDATE requests = GREATEST(metrics_hourly.requests, new.requests)")) {
             long currentHour = epochHour();
             for (int i = 0; i < HOURS; i++) {
                 long targetHour = currentHour - (HOURS - 1) + i;
@@ -138,7 +138,7 @@ public class RequestMetrics {
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
                      "INSERT INTO metrics_endpoints(endpoint, hits) VALUES(?, ?) AS new " +
-                     "ON DUPLICATE KEY UPDATE hits = GREATEST(hits, new.hits)")) {
+                     "ON DUPLICATE KEY UPDATE hits = GREATEST(metrics_endpoints.hits, new.hits)")) {
             for (Map.Entry<String, LongAdder> e : endpointCounts.entrySet()) {
                 ps.setString(1, e.getKey());
                 ps.setLong(2, e.getValue().sum());
