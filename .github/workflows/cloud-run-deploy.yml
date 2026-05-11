@@ -43,6 +43,7 @@ jobs:
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: ENABLE_CDS=${{ vars.ENABLE_CDS || 'false' }}
 
       - name: Deploy to Cloud Run
         run: |
@@ -57,6 +58,7 @@ jobs:
             --max-instances=10 \
             --concurrency=80 \
             --timeout=60 \
+            --cpu-boost \
             --allow-unauthenticated \
             --add-cloudsql-instances="${{ secrets.CLOUD_SQL_INSTANCE }}" \
             --set-env-vars="CLOUD_SQL_INSTANCE=${{ secrets.CLOUD_SQL_INSTANCE }},DB_NAME=${{ secrets.DB_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},CORS_ALLOWED_ORIGIN=${{ vars.CORS_ALLOWED_ORIGIN }},API_KEY=${{ secrets.API_KEY }},READ_ONLY_KEY=${{ secrets.READ_ONLY_KEY }},SKIP_CF_IP_CHECK=true,CF_ACCESS_AUD=${{ secrets.CF_ACCESS_AUD }},CF_ACCESS_TEAM_DOMAIN=${{ secrets.CF_ACCESS_TEAM_DOMAIN }}" \
