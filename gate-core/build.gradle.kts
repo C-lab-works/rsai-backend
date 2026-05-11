@@ -1,5 +1,4 @@
 plugins {
-    id("java-library")
     id("application")
     id("io.github.goooler.shadow") version "8.1.8"
     id("org.graalvm.buildtools.native") version "0.10.3"
