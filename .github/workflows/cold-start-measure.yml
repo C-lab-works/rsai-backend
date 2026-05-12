@@ -1,0 +1,53 @@
+name: Measure Cold Start
+
+on:
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  SERVICE_NAME: rsai-backend
+  SERVICE_URL: https://rsai-backend-owe3trpwtq-an.a.run.app
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Force scale to 0
+        run: |
+          echo "Setting max-instances=0 to drain all instances..."
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --max-instances=0 \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+          echo "Waiting 10s for drain..."
+          sleep 10
+          echo "Restoring max-instances=10..."
+          gcloud run services update ${{ env.SERVICE_NAME }} \
+            --max-instances=10 \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Measure cold start
+        run: |
+          echo "=== Cold Start Measurement ==="
+          echo "Endpoint: ${{ env.SERVICE_URL }}/health"
+          echo ""
+          for i in 1 2 3; do
+            echo "--- Trial $i ---"
+            curl -s -o /dev/null \
+              -w "HTTP %{http_code}  total=%{time_total}s  connect=%{time_connect}s  ttfb=%{time_starttransfer}s\n" \
+              "${{ env.SERVICE_URL }}/health"
+            sleep 2
+          done
