@@ -40,5 +40,21 @@
   { "name": "org.eclipse.jetty.server.ServerConnector",
     "allDeclaredConstructors": true, "allDeclaredMethods": true },
   { "name": "org.eclipse.jetty.util.thread.QueuedThreadPool",
-    "allDeclaredConstructors": true, "allDeclaredMethods": true }
+    "allDeclaredConstructors": true, "allDeclaredMethods": true },
+
+  { "name": "dev.gate.DataController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.CongestionController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.AdminController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.AnnouncementsController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+
+  { "name": "dev.gate.mapping.GetMapping",    "allPublicMethods": true },
+  { "name": "dev.gate.mapping.PostMapping",   "allPublicMethods": true },
+  { "name": "dev.gate.mapping.PutMapping",    "allPublicMethods": true },
+  { "name": "dev.gate.mapping.DeleteMapping", "allPublicMethods": true },
+  { "name": "dev.gate.mapping.PatchMapping",  "allPublicMethods": true },
+  { "name": "dev.gate.mapping.WsMapping",     "allPublicMethods": true }
 ]
