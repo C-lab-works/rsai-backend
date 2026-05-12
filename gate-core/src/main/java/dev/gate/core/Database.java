@@ -27,7 +27,7 @@ public class Database {
         if (!cloudSqlInstance.isBlank()) {
             // Cloud SQL Auth Proxy sidecar listens on 127.0.0.1:3306
             hikari.setJdbcUrl(String.format(
-                "jdbc:mysql://127.0.0.1:3306/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&useUnicode=true&characterEncoding=utf8mb4&connectTimeout=5000&socketTimeout=30000",
+                "jdbc:mysql://127.0.0.1:3306/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000",
                 dbName
             ));
             logger.info("Connecting via Cloud SQL Auth Proxy sidecar: {}/{}", cloudSqlInstance, dbName);
@@ -35,7 +35,7 @@ public class Database {
             String host = envOrDefault("DB_HOST", config.getHost());
             int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
             hikari.setJdbcUrl(String.format(
-                "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&useUnicode=true&characterEncoding=utf8mb4&connectTimeout=5000&socketTimeout=30000",
+                "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000",
                 host, port, dbName
             ));
             logger.info("Connecting to MySQL at {}:{}/{}", host, port, dbName);
