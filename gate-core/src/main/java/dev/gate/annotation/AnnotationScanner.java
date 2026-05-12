@@ -2,13 +2,11 @@ package dev.gate.annotation;
 
 import dev.gate.core.Context;
 import dev.gate.core.Router;
-import dev.gate.core.WsContext;
 import dev.gate.mapping.DeleteMapping;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PatchMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
-import dev.gate.mapping.WsMapping;
 
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
@@ -39,20 +37,6 @@ public class AnnotationScanner {
             registerHttp(method, controller, DeleteMapping.class, "DELETE");
             registerHttp(method, controller, PatchMapping.class, "PATCH");
 
-            if (method.isAnnotationPresent(WsMapping.class)) {
-                validateWsSignature(method);
-                String path = method.getAnnotation(WsMapping.class).value();
-                MethodHandle mh = bindHandle(method, controller);
-                router.registerWs(path, (ctx, message) -> {
-                    try {
-                        mh.invoke(ctx, message);
-                    } catch (RuntimeException | Error e) {
-                        throw e;
-                    } catch (Throwable t) {
-                        throw new RuntimeException(t);
-                    }
-                });
-            }
         }
     }
 
@@ -75,16 +59,6 @@ public class AnnotationScanner {
             throw new IllegalStateException(
                 "HTTP handler " + method.getDeclaringClass().getSimpleName() + "." + method.getName()
                 + " must accept exactly one Context parameter"
-            );
-        }
-    }
-
-    private void validateWsSignature(Method method) {
-        Class<?>[] params = method.getParameterTypes();
-        if (params.length != 2 || !WsContext.class.isAssignableFrom(params[0]) || !String.class.isAssignableFrom(params[1])) {
-            throw new IllegalStateException(
-                "WebSocket handler " + method.getDeclaringClass().getSimpleName() + "." + method.getName()
-                + " must accept (WsContext, String) parameters"
             );
         }
     }
