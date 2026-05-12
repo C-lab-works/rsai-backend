@@ -26,16 +26,8 @@ jobs:
 
       - name: Fetch recent Cloud Run logs
         run: |
-          REVISION=$(gcloud run revisions list \
-            --service="${{ env.SERVICE_NAME }}" \
+          echo "=== Recent Cloud Run logs ==="
+          gcloud beta run services logs read ${{ env.SERVICE_NAME }} \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}" \
-            --format="value(metadata.name)" \
-            --limit=1)
-          echo "=== Recent logs for revision: $REVISION ==="
-          gcloud logging read \
-            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${{ env.SERVICE_NAME }}\" AND resource.labels.revision_name=\"$REVISION\" AND severity>=WARNING" \
-            --project="${{ env.PROJECT_ID }}" \
-            --limit=50 \
-            --order=desc \
-            --format="table(timestamp,textPayload,jsonPayload.message)" 2>&1 || true
+            --limit=50 2>&1 || true
