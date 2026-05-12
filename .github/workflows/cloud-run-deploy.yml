@@ -101,14 +101,11 @@ jobs:
                     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
                     args:
                       - "--port=3306"
-                      - "--health-check"
-                      - "--http-port=9090"
                       - "${{ secrets.CLOUD_SQL_INSTANCE }}"
                     startupProbe:
-                      httpGet:
-                        path: /startup
-                        port: 9090
-                      initialDelaySeconds: 2
+                      tcpSocket:
+                        port: 3306
+                      initialDelaySeconds: 1
                       periodSeconds: 2
                       failureThreshold: 15
                     resources:
