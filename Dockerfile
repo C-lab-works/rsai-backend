@@ -1,4 +1,5 @@
 FROM ghcr.io/graalvm/native-image-community:21 AS build
+RUN microdnf install -y findutils && microdnf clean all
 WORKDIR /app
 COPY . .
 RUN --mount=type=cache,target=/root/.gradle \
