@@ -26,8 +26,24 @@ jobs:
 
       - name: Fetch recent Cloud Run logs
         run: |
-          echo "=== Recent Cloud Run logs ==="
-          gcloud beta run services logs read ${{ env.SERVICE_NAME }} \
+          REVISION=$(gcloud run revisions list \
+            --service="${{ env.SERVICE_NAME }}" \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}" \
-            --limit=50 2>&1 || true
+            --format="value(metadata.name)" \
+            --limit=1)
+          echo "=== Logs for revision: $REVISION ==="
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${{ env.SERVICE_NAME }}\" AND resource.labels.revision_name=\"$REVISION\"" \
+            --project="${{ env.PROJECT_ID }}" \
+            --limit=20 \
+            --order=desc \
+            --format=json 2>&1 | python3 -c "
+import sys, json
+entries = json.load(sys.stdin)
+for e in reversed(entries):
+    ts = e.get('timestamp','')
+    text = e.get('textPayload') or e.get('jsonPayload',{}).get('message','') or str(e.get('jsonPayload',''))
+    if text:
+        print(ts[:19], text[:200])
+" 2>&1 || true
