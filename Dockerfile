@@ -1,11 +1,12 @@
 FROM ghcr.io/graalvm/native-image-community:21 AS build
-RUN microdnf install -y findutils && microdnf clean all
 WORKDIR /app
 COPY . .
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-FROM gcr.io/distroless/cc-debian12
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080

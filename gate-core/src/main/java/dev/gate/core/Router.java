@@ -27,6 +27,7 @@ public class Router {
 
     private final Map<String, Handler> exactRoutes = new ConcurrentHashMap<>();
     private final List<PatternRoute> patternRoutes = new CopyOnWriteArrayList<>();
+    private final Map<String, WsHandler> wsRoutes = new ConcurrentHashMap<>();
     private final Map<String, CachedMatch> patternCache = new ConcurrentHashMap<>();
 
     private static String normalizePath(String path) {
@@ -151,4 +152,11 @@ public class Router {
         return Optional.empty();
     }
 
+    public void registerWs(String path, WsHandler handler) {
+        wsRoutes.put(path, handler);
+    }
+
+    public Map<String, WsHandler> getWsRoutes() {
+        return Map.copyOf(wsRoutes);
+    }
 }
