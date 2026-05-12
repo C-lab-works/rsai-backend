@@ -24,21 +24,6 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Force scale to 0
-        run: |
-          echo "Setting max-instances=0 to drain all instances..."
-          gcloud run services update ${{ env.SERVICE_NAME }} \
-            --max-instances=0 \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-          echo "Waiting 10s for drain..."
-          sleep 10
-          echo "Restoring max-instances=10..."
-          gcloud run services update ${{ env.SERVICE_NAME }} \
-            --max-instances=10 \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-
       - name: Measure cold start
         run: |
           echo "=== Cold Start Measurement ==="
