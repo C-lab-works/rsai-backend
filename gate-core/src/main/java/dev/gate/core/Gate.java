@@ -10,7 +10,6 @@ import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
-import org.eclipse.jetty.websocket.server.config.JettyWebSocketServletContainerInitializer;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,7 +32,6 @@ public class Gate {
     private final List<Handler> beforeFilters = new CopyOnWriteArrayList<>();
     private final List<Handler> afterFilters = new CopyOnWriteArrayList<>();
     private java.util.Set<String> corsOrigins = null;
-    private int wsMaxMessageSize = 64 * 1024;
     private int idleTimeoutMs = 30_000;
     private volatile boolean started = false;
 
@@ -102,14 +100,6 @@ public class Gate {
         return this;
     }
 
-    public Gate wsMaxMessageSize(int bytes) {
-        if (started) {
-            throw new IllegalStateException("wsMaxMessageSize() must be called before start()");
-        }
-        this.wsMaxMessageSize = bytes;
-        return this;
-    }
-
     public Gate timeout(int ms) {
         this.idleTimeoutMs = ms;
         return this;
@@ -135,14 +125,6 @@ public class Gate {
 
         ServletContextHandler context = new ServletContextHandler();
         context.setContextPath("/");
-
-        final int finalWsMaxSize = this.wsMaxMessageSize;
-        JettyWebSocketServletContainerInitializer.configure(context, (servletContext, wsContainer) -> {
-            wsContainer.setMaxTextMessageSize(finalWsMaxSize);
-            router.getWsRoutes().forEach((path, wsHandler) -> {
-                wsContainer.addMapping(path, (req, res) -> new WsAdapter(wsHandler));
-            });
-        });
 
         final java.util.Set<String> finalCorsOrigins = this.corsOrigins;
         context.addServlet(new ServletHolder(new HttpServlet() {
