@@ -10,8 +10,7 @@ env:
   REGION: ${{ vars.GCP_REGION }}
   SERVICE_NAME: rsai-backend
   REPOSITORY: rsai-backend
-  VPC_NETWORK: ${{ vars.GCP_VPC_NETWORK || 'default' }}
-  VPC_SUBNETWORK: ${{ vars.GCP_VPC_SUBNETWORK || 'default' }}
+  VPC_CONNECTOR: ${{ vars.GCP_VPC_CONNECTOR }}
 
 jobs:
   deploy:
@@ -65,7 +64,7 @@ jobs:
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/execution-environment: gen2
                   run.googleapis.com/container-dependencies: '{"app":["cloud-sql-proxy"]}'
-                  run.googleapis.com/network-interfaces: '[{"network":"${{ env.VPC_NETWORK }}","subnetwork":"${{ env.VPC_SUBNETWORK }}"}]'
+                  run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
                   run.googleapis.com/vpc-access-egress: private-ranges-only
               spec:
                 containerConcurrency: 80
@@ -106,6 +105,7 @@ jobs:
                     args:
                       - "--port=3306"
                       - "--address=0.0.0.0"
+                      - "--private-ip"
                       - "${{ secrets.CLOUD_SQL_INSTANCE }}"
                     startupProbe:
                       tcpSocket:
