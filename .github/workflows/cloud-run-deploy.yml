@@ -145,13 +145,18 @@ jobs:
             --format="value(metadata.name)" \
             --limit=1)
           echo "=== Startup logs for revision: $REVISION ==="
-          sleep 5
+          sleep 30
           gcloud logging read \
             "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${{ env.SERVICE_NAME }}\" AND resource.labels.revision_name=\"$REVISION\"" \
             --project="${{ env.PROJECT_ID }}" \
             --limit=50 \
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
+          echo ""
+          echo "=== DB connectivity test ==="
+          curl -s -w "\nHTTP %{http_code}\n" \
+            -H "X-API-Key: ${{ secrets.READ_ONLY_KEY }}" \
+            "https://rsai-backend-owe3trpwtq-an.a.run.app/events" | head -5
 
       - name: Fetch Cloud Run logs on failure
         if: failure()
