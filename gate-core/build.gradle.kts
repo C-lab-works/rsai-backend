@@ -45,7 +45,8 @@ graalvmNative {
             buildArgs.addAll(
                 "--no-fallback",
                 "--initialize-at-build-time=org.slf4j",
-                "-H:+ReportExceptionStackTraces"
+                "-H:+ReportExceptionStackTraces",
+                "-H:+StaticExecutableWithDynamicLibC"
             )
         }
     }

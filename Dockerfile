@@ -4,9 +4,7 @@ COPY . .
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libstdc++6 ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM gcr.io/distroless/base-debian12
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080

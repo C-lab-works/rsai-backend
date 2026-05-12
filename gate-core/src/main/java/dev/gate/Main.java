@@ -41,13 +41,6 @@ public class Main {
 
         cfAccessAuth.prefetchJwks();
 
-        try {
-            dbFuture.join();
-        } catch (CompletionException e) {
-            Throwable cause = e.getCause();
-            throw (cause instanceof Exception ex) ? ex : new RuntimeException(cause);
-        }
-
         RequestMetrics.get().init();
         Runtime.getRuntime().addShutdownHook(
                 new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
@@ -70,14 +63,26 @@ public class Main {
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
         gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
+
+        gate.after(SecurityHeaders.get()::handle);
+        gate.after(RequestMetrics.get()::record);
+
+        // Start server immediately so Cloud Run health check passes.
+        // DB routes are registered once the Cloud SQL proxy connection is ready.
+        GateServer server = gate.start(port);
+
+        try {
+            dbFuture.join();
+        } catch (CompletionException e) {
+            Throwable cause = e.getCause();
+            throw (cause instanceof Exception ex) ? ex : new RuntimeException(cause);
+        }
+
         gate.register(new DataController());
         gate.register(new CongestionController());
         gate.register(new AdminController());
         gate.register(new AnnouncementsController());
 
-        gate.after(SecurityHeaders.get()::handle);
-        gate.after(RequestMetrics.get()::record);
-        GateServer server = gate.start(port);
         server.join();
     }
 }

@@ -46,7 +46,7 @@ public class Database {
         hikari.setMaximumPoolSize(poolSize);
         hikari.setMinimumIdle(1);
         hikari.setPoolName("gate-pool");
-        hikari.setInitializationFailTimeout(10_000);
+        hikari.setInitializationFailTimeout(-1);
         hikari.setConnectionTimeout(5_000);
         hikari.setIdleTimeout(600_000);
         hikari.setMaxLifetime(1_800_000);
