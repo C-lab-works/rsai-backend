@@ -1,6 +1,6 @@
 # rsai-backend API リファレンス
 
-Base URL: `https://azure.c-lab.works`
+Base URL: `https://api.r-sai2026.site`
 
 ---
 
