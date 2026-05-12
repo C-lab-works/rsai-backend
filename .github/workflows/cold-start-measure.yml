@@ -24,15 +24,18 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Measure cold start
+      - name: Fetch recent Cloud Run logs
         run: |
-          echo "=== Cold Start Measurement ==="
-          echo "Endpoint: ${{ env.SERVICE_URL }}/health"
-          echo ""
-          for i in 1 2 3; do
-            echo "--- Trial $i ---"
-            curl -s -o /dev/null \
-              -w "HTTP %{http_code}  total=%{time_total}s  connect=%{time_connect}s  ttfb=%{time_starttransfer}s\n" \
-              "${{ env.SERVICE_URL }}/health"
-            sleep 2
-          done
+          REVISION=$(gcloud run revisions list \
+            --service="${{ env.SERVICE_NAME }}" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --format="value(metadata.name)" \
+            --limit=1)
+          echo "=== Recent logs for revision: $REVISION ==="
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${{ env.SERVICE_NAME }}\" AND resource.labels.revision_name=\"$REVISION\" AND severity>=WARNING" \
+            --project="${{ env.PROJECT_ID }}" \
+            --limit=50 \
+            --order=desc \
+            --format="table(timestamp,textPayload)" 2>&1 || true
