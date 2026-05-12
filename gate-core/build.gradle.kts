@@ -47,6 +47,7 @@ graalvmNative {
                 "--initialize-at-build-time=org.slf4j",
                 "-H:+ReportExceptionStackTraces",
                 "-H:+UnlockExperimentalVMOptions",
+                "-H:+AddAllCharsets",
                 "-H:+StaticExecutableWithDynamicLibC"
             )
         }
