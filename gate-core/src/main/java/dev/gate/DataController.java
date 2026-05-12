@@ -46,12 +46,14 @@ public class DataController {
     private void serve(Context ctx, String key, Builder builder) {
         CacheEntry entry = cache.get(key);
         if (entry != null && System.currentTimeMillis() < entry.expiresAt()) {
+            ctx.header("Cache-Control", "public, max-age=300");
             ctx.json(entry.data());
             return;
         }
         try (Connection conn = Database.getConnection()) {
             Object data = builder.build(conn);
             cache.put(key, new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
+            ctx.header("Cache-Control", "public, max-age=300");
             ctx.json(data);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());

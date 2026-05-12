@@ -50,6 +50,7 @@ public class CongestionController {
                 String project = rs.getString("project");
                 if (project != null) n.put("project", project);
             }
+            ctx.header("Cache-Control", "public, max-age=3600");
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("locations error", e);
@@ -72,6 +73,7 @@ public class CongestionController {
                 n.put("updated_at",  rs.getString("updated_at"));
                 n.put("updated_by",  rs.getString("updated_by"));
             }
+            ctx.header("Cache-Control", "no-store");
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("getCongestion error", e);

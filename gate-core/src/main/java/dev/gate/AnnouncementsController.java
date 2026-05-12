@@ -43,6 +43,7 @@ public class AnnouncementsController {
                 if (from  != null) n.put("displayFrom",  from);
                 if (until != null) n.put("displayUntil", until);
             }
+            ctx.header("Cache-Control", "public, max-age=60");
             ctx.json(root);
         } catch (Exception e) {
             logger.error("announcements error", e);
