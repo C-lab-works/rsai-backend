@@ -62,6 +62,7 @@ jobs:
                   autoscaling.knative.dev/minScale: "0"
                   autoscaling.knative.dev/maxScale: "10"
                   run.googleapis.com/cpu-throttling: "false"
+                  run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
                   run.googleapis.com/container-dependencies: '{"app":["cloud-sql-proxy"]}'
                   run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
