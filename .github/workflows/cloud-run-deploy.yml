@@ -101,6 +101,7 @@ jobs:
                     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
                     args:
                       - "--port=3306"
+                      - "--address=0.0.0.0"
                       - "${{ secrets.CLOUD_SQL_INSTANCE }}"
                     startupProbe:
                       tcpSocket:
