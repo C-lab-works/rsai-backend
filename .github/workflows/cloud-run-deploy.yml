@@ -106,7 +106,6 @@ jobs:
                     args:
                       - "--port=3306"
                       - "--address=0.0.0.0"
-                      - "--private-ip"
                       - "${{ secrets.CLOUD_SQL_INSTANCE }}"
                     startupProbe:
                       tcpSocket:
