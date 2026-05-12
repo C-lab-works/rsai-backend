@@ -38,4 +38,4 @@ jobs:
             --project="${{ env.PROJECT_ID }}" \
             --limit=50 \
             --order=desc \
-            --format="table(timestamp,textPayload)" 2>&1 || true
+            --format="table(timestamp,textPayload,jsonPayload.message)" 2>&1 || true
