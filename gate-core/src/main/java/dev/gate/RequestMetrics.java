@@ -13,20 +13,26 @@ import java.util.stream.Collectors;
 public class RequestMetrics {
     private static final Logger logger      = new Logger(RequestMetrics.class);
     private static final int    HOURS       = 24;
-    private static final int    SAMPLE_SIZE = 1000;
     private static final int    MAX_KEYS    = 100;
+    private static final int[]  BUCKETS     = {0, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000};
     private static final RequestMetrics INSTANCE = new RequestMetrics();
 
-    private final AtomicLong[] hourlyCounts = new AtomicLong[HOURS];
-    private final long[]       slotHour     = new long[HOURS];
-    private final Object[]     slotLocks    = new Object[HOURS];
+    // ── hourly ring buffer ────────────────────────────────────────────────────
+    private final AtomicLong[] hourlyCounts  = new AtomicLong[HOURS];
+    private final AtomicLong[] hourlyErrors  = new AtomicLong[HOURS];
+    private final long[]       slotHour      = new long[HOURS];
+    private final Object[]     slotLocks     = new Object[HOURS];
+    // last value flushed to DB (for diff calculation)
+    private final long[]       lastFlushedReq = new long[HOURS];
+    private final long[]       lastFlushedErr = new long[HOURS];
 
-    private final ConcurrentHashMap<String, LongAdder> endpointCounts = new ConcurrentHashMap<>();
-    private final LongAdder totalRequests = new LongAdder();
-    private final LongAdder errorCount    = new LongAdder();
+    // ── endpoint counts ───────────────────────────────────────────────────────
+    private final ConcurrentHashMap<String, LongAdder> endpointCounts    = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, LongAdder> lastFlushedEp     = new ConcurrentHashMap<>();
 
-    private final long[]        responseSamples = new long[SAMPLE_SIZE];
-    private final AtomicInteger samplePos       = new AtomicInteger(0);
+    // ── latency histogram (index = BUCKETS index) ─────────────────────────────
+    private final AtomicLong[]  histogram         = new AtomicLong[BUCKETS.length];
+    private final AtomicLong[]  lastFlushedHisto  = new AtomicLong[BUCKETS.length];
 
     private final ThreadLocal<Long> requestStart = new ThreadLocal<>();
 
@@ -40,9 +46,14 @@ public class RequestMetrics {
     private RequestMetrics() {
         long currentHour = epochHour();
         for (int i = 0; i < HOURS; i++) {
-            hourlyCounts[i] = new AtomicLong(0);
-            slotHour[i]     = currentHour - (HOURS - 1 - i);
-            slotLocks[i]    = new Object();
+            hourlyCounts[i]   = new AtomicLong(0);
+            hourlyErrors[i]   = new AtomicLong(0);
+            slotHour[i]       = currentHour - (HOURS - 1 - i);
+            slotLocks[i]      = new Object();
+        }
+        for (int i = 0; i < BUCKETS.length; i++) {
+            histogram[i]        = new AtomicLong(0);
+            lastFlushedHisto[i] = new AtomicLong(0);
         }
     }
 
@@ -52,14 +63,12 @@ public class RequestMetrics {
 
     // ── persistence ───────────────────────────────────────────────────────────
 
-    /** Loads persisted metrics from DB and starts the periodic flush scheduler. */
     public void init() {
         loadFromDb();
         scheduler.scheduleAtFixedRate(this::flushAll, 5, 5, TimeUnit.MINUTES);
         logger.info("RequestMetrics persistence enabled (5-min flush)");
     }
 
-    /** Performs a final flush and stops the scheduler on graceful shutdown. */
     public void shutdown() {
         scheduler.shutdown();
         flushAll();
@@ -70,29 +79,47 @@ public class RequestMetrics {
         try (Connection conn = Database.getConnection()) {
             long since = epochHour() - (HOURS - 1);
             try (PreparedStatement ps = conn.prepareStatement(
-                    "SELECT hour, requests FROM metrics_hourly WHERE hour >= ?")) {
+                    "SELECT hour, requests, errors FROM metrics_hourly WHERE hour >= ?")) {
                 ps.setLong(1, since);
                 try (ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         long h   = rs.getLong("hour");
                         long req = rs.getLong("requests");
+                        long err = rs.getLong("errors");
                         int  s   = (int)(h % HOURS);
                         if (s < 0) s += HOURS;
                         synchronized (slotLocks[s]) {
                             slotHour[s] = h;
                             hourlyCounts[s].set(req);
+                            hourlyErrors[s].set(err);
+                            lastFlushedReq[s] = req;
+                            lastFlushedErr[s] = err;
                         }
                     }
                 }
             }
             try (Statement st = conn.createStatement();
-                 ResultSet rs = st.executeQuery(
-                         "SELECT endpoint, hits FROM metrics_endpoints")) {
+                 ResultSet rs = st.executeQuery("SELECT endpoint, hits FROM metrics_endpoints")) {
                 while (rs.next()) {
                     String ep   = rs.getString("endpoint");
                     long   hits = rs.getLong("hits");
                     if (endpointCounts.size() < MAX_KEYS) {
-                        endpointCounts.computeIfAbsent(ep, k -> new LongAdder()).add(hits);
+                        LongAdder la = endpointCounts.computeIfAbsent(ep, k -> new LongAdder());
+                        la.add(hits);
+                        lastFlushedEp.computeIfAbsent(ep, k -> new LongAdder()).add(hits);
+                    }
+                }
+            }
+            try (Statement st = conn.createStatement();
+                 ResultSet rs = st.executeQuery(
+                         "SELECT bucket_ms, count FROM metrics_latency_histogram ORDER BY bucket_ms")) {
+                while (rs.next()) {
+                    int  bms   = rs.getInt("bucket_ms");
+                    long count = rs.getLong("count");
+                    int  idx   = bucketIndex(bms);
+                    if (idx >= 0) {
+                        histogram[idx].set(count);
+                        lastFlushedHisto[idx].set(count);
                     }
                 }
             }
@@ -105,27 +132,36 @@ public class RequestMetrics {
     private void flushAll() {
         flushHourly();
         flushEndpoints();
+        flushHistogram();
     }
 
     private void flushHourly() {
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO metrics_hourly(hour, requests) VALUES(?, ?) AS new " +
-                     "ON DUPLICATE KEY UPDATE requests = GREATEST(metrics_hourly.requests, new.requests)")) {
+                     "INSERT INTO metrics_hourly(hour, requests, errors) VALUES(?, ?, ?) AS new " +
+                     "ON DUPLICATE KEY UPDATE " +
+                     "requests = metrics_hourly.requests + new.requests, " +
+                     "errors   = metrics_hourly.errors   + new.errors")) {
             long currentHour = epochHour();
             for (int i = 0; i < HOURS; i++) {
                 long targetHour = currentHour - (HOURS - 1) + i;
                 int  s          = (int)(targetHour % HOURS);
                 if (s < 0) s += HOURS;
-                long count;
+                long req, err, diffReq, diffErr;
                 synchronized (slotLocks[s]) {
-                    count = slotHour[s] == targetHour ? hourlyCounts[s].get() : 0L;
+                    if (slotHour[s] != targetHour) continue;
+                    req     = hourlyCounts[s].get();
+                    err     = hourlyErrors[s].get();
+                    diffReq = req - lastFlushedReq[s];
+                    diffErr = err - lastFlushedErr[s];
+                    if (diffReq <= 0 && diffErr <= 0) continue;
+                    lastFlushedReq[s] = req;
+                    lastFlushedErr[s] = err;
                 }
-                if (count > 0) {
-                    ps.setLong(1, targetHour);
-                    ps.setLong(2, count);
-                    ps.addBatch();
-                }
+                ps.setLong(1, targetHour);
+                ps.setLong(2, diffReq > 0 ? diffReq : 0);
+                ps.setLong(3, diffErr > 0 ? diffErr : 0);
+                ps.addBatch();
             }
             ps.executeBatch();
         } catch (Exception e) {
@@ -138,11 +174,16 @@ public class RequestMetrics {
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
                      "INSERT INTO metrics_endpoints(endpoint, hits) VALUES(?, ?) AS new " +
-                     "ON DUPLICATE KEY UPDATE hits = GREATEST(metrics_endpoints.hits, new.hits)")) {
+                     "ON DUPLICATE KEY UPDATE hits = metrics_endpoints.hits + new.hits")) {
             for (Map.Entry<String, LongAdder> e : endpointCounts.entrySet()) {
+                long current  = e.getValue().sum();
+                long flushed  = lastFlushedEp.computeIfAbsent(e.getKey(), k -> new LongAdder()).sum();
+                long diff     = current - flushed;
+                if (diff <= 0) continue;
                 ps.setString(1, e.getKey());
-                ps.setLong(2, e.getValue().sum());
+                ps.setLong(2, diff);
                 ps.addBatch();
+                lastFlushedEp.get(e.getKey()).add(diff);
             }
             ps.executeBatch();
         } catch (Exception e) {
@@ -150,13 +191,34 @@ public class RequestMetrics {
         }
     }
 
-    // ── before filter: record start time ─────────────────────────────────────
+    private void flushHistogram() {
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "INSERT INTO metrics_latency_histogram(bucket_ms, count) VALUES(?, ?) AS new " +
+                     "ON DUPLICATE KEY UPDATE count = metrics_latency_histogram.count + new.count")) {
+            for (int i = 0; i < BUCKETS.length; i++) {
+                long current = histogram[i].get();
+                long flushed = lastFlushedHisto[i].get();
+                long diff    = current - flushed;
+                if (diff <= 0) continue;
+                ps.setInt(1, BUCKETS[i]);
+                ps.setLong(2, diff);
+                ps.addBatch();
+                lastFlushedHisto[i].addAndGet(diff);
+            }
+            ps.executeBatch();
+        } catch (Exception e) {
+            logger.warn("metrics histogram flush failed: {}", e.getMessage());
+        }
+    }
+
+    // ── before filter ─────────────────────────────────────────────────────────
 
     public void startTimer(Context ctx) {
         requestStart.set(System.nanoTime());
     }
 
-    // ── after filter: record metrics ──────────────────────────────────────────
+    // ── after filter ──────────────────────────────────────────────────────────
 
     public void record(Context ctx) {
         if (ctx.path().startsWith("/admin")) {
@@ -164,26 +226,34 @@ public class RequestMetrics {
             return;
         }
 
-        totalRequests.increment();
-        if (ctx.statusCode() >= 500) errorCount.increment();
+        boolean isError = ctx.statusCode() >= 500;
 
         long hour = epochHour();
         int  slot = (int)(hour % HOURS);
         synchronized (slotLocks[slot]) {
             if (slotHour[slot] != hour) {
                 hourlyCounts[slot].set(1);
+                hourlyErrors[slot].set(isError ? 1 : 0);
                 slotHour[slot] = hour;
+                lastFlushedReq[slot] = 0;
+                lastFlushedErr[slot] = 0;
             } else {
                 hourlyCounts[slot].incrementAndGet();
+                if (isError) hourlyErrors[slot].incrementAndGet();
             }
+        }
+
+        if (isError) {
+            DiscordWebhook.sendError(
+                ctx.method(), ctx.path(), ctx.statusCode(), ctx.errorMessage());
         }
 
         Long start = requestStart.get();
         if (start != null) {
-            long ms = (System.nanoTime() - start) / 1_000_000L;
+            long ms  = (System.nanoTime() - start) / 1_000_000L;
             requestStart.remove();
-            int pos = samplePos.getAndUpdate(p -> (p + 1) % SAMPLE_SIZE);
-            responseSamples[pos] = ms;
+            int idx = upperBucketIndex(ms);
+            histogram[idx].incrementAndGet();
         }
 
         String key = ctx.method().toUpperCase() + " " + ctx.path();
@@ -194,50 +264,124 @@ public class RequestMetrics {
         }
     }
 
-    // ── read methods ──────────────────────────────────────────────────────────
+    // ── read (DB-backed, multi-instance safe) ──────────────────────────────────
 
-    public long getTotalRequests() { return totalRequests.sum(); }
-    public long getErrorCount()    { return errorCount.sum(); }
+    public long getTotalRequests() {
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT COALESCE(SUM(requests),0) FROM metrics_hourly WHERE hour >= ?")) {
+            ps.setLong(1, epochHour() - (HOURS - 1));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong(1) : 0L;
+            }
+        } catch (Exception e) {
+            logger.warn("getTotalRequests DB error: {}", e.getMessage());
+            return 0L;
+        }
+    }
+
+    public long getErrorCount() {
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT COALESCE(SUM(errors),0) FROM metrics_hourly WHERE hour >= ?")) {
+            ps.setLong(1, epochHour() - (HOURS - 1));
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getLong(1) : 0L;
+            }
+        } catch (Exception e) {
+            logger.warn("getErrorCount DB error: {}", e.getMessage());
+            return 0L;
+        }
+    }
 
     public double getErrorRate() {
         long total = getTotalRequests();
-        return total == 0 ? 0.0 : (getErrorCount() * 100.0) / total;
+        long err   = getErrorCount();
+        return total == 0 ? 0.0 : (err * 100.0) / total;
     }
 
-    /** Returns request counts for the last 24 hours, oldest slot first. */
     public long[] getHourlyCounts() {
-        long currentHour = epochHour();
-        long[] result = new long[HOURS];
-        for (int i = 0; i < HOURS; i++) {
-            long targetHour = currentHour - (HOURS - 1) + i;
-            int  s          = (int)(targetHour % HOURS);
-            if (s < 0) s += HOURS;
-            synchronized (slotLocks[s]) {
-                result[i] = slotHour[s] == targetHour ? hourlyCounts[s].get() : 0L;
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT hour, requests FROM metrics_hourly WHERE hour >= ? ORDER BY hour ASC")) {
+            long currentHour = epochHour();
+            ps.setLong(1, currentHour - (HOURS - 1));
+            long[] result = new long[HOURS];
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    long h   = rs.getLong("hour");
+                    int  idx = (int)(h - (currentHour - (HOURS - 1)));
+                    if (idx >= 0 && idx < HOURS) result[idx] = rs.getLong("requests");
+                }
             }
+            return result;
+        } catch (Exception e) {
+            logger.warn("getHourlyCounts DB error: {}", e.getMessage());
+            return new long[HOURS];
         }
-        return result;
     }
 
-    /** Returns {@code [p50ms, p95ms]} over the last {@value #SAMPLE_SIZE} requests. */
+    /** Returns [p50ms, p95ms] computed from the histogram stored in DB. */
     public long[] getPercentiles() {
-        long[] samples = Arrays.copyOf(responseSamples, SAMPLE_SIZE);
-        Arrays.sort(samples);
-        int start = 0;
-        while (start < samples.length && samples[start] == 0) start++;
-        int count = samples.length - start;
-        if (count == 0) return new long[]{0, 0};
-        long p50 = samples[start + (int)(count * 0.50)];
-        long p95 = samples[start + Math.min((int)(count * 0.95), count - 1)];
-        return new long[]{p50, p95};
+        try (Connection conn = Database.getConnection();
+             Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery(
+                     "SELECT bucket_ms, count FROM metrics_latency_histogram ORDER BY bucket_ms")) {
+            long[] counts = new long[BUCKETS.length];
+            long total    = 0;
+            while (rs.next()) {
+                int idx = bucketIndex(rs.getInt("bucket_ms"));
+                if (idx >= 0) { counts[idx] = rs.getLong("count"); total += counts[idx]; }
+            }
+            if (total == 0) return new long[]{0, 0};
+            long p50 = percentileFromHistogram(counts, total, 50);
+            long p95 = percentileFromHistogram(counts, total, 95);
+            return new long[]{p50, p95};
+        } catch (Exception e) {
+            logger.warn("getPercentiles DB error: {}", e.getMessage());
+            return new long[]{0, 0};
+        }
     }
 
-    /** Returns the top {@code n} endpoints sorted by hit count descending. */
+    private long percentileFromHistogram(long[] counts, long total, int pct) {
+        long target = (long) Math.ceil(total * pct / 100.0);
+        long cumul  = 0;
+        for (int i = 0; i < BUCKETS.length; i++) {
+            cumul += counts[i];
+            if (cumul >= target) return BUCKETS[i];
+        }
+        return BUCKETS[BUCKETS.length - 1];
+    }
+
     public List<Map.Entry<String, Long>> getTopEndpoints(int n) {
-        return endpointCounts.entrySet().stream()
-                .map(e -> Map.entry(e.getKey(), e.getValue().sum()))
-                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
-                .limit(n)
-                .collect(Collectors.toList());
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT endpoint, hits FROM metrics_endpoints ORDER BY hits DESC LIMIT ?")) {
+            ps.setInt(1, n);
+            List<Map.Entry<String, Long>> result = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(Map.entry(rs.getString("endpoint"), rs.getLong("hits")));
+            }
+            return result;
+        } catch (Exception e) {
+            logger.warn("getTopEndpoints DB error: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    // ── bucket helpers ────────────────────────────────────────────────────────
+
+    private int upperBucketIndex(long ms) {
+        for (int i = BUCKETS.length - 1; i >= 0; i--) {
+            if (ms >= BUCKETS[i]) return i;
+        }
+        return 0;
+    }
+
+    private int bucketIndex(int bucketMs) {
+        for (int i = 0; i < BUCKETS.length; i++) {
+            if (BUCKETS[i] == bucketMs) return i;
+        }
+        return -1;
     }
 }

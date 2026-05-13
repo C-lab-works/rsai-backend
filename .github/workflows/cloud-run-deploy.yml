@@ -99,6 +99,8 @@ jobs:
                         value: "${{ secrets.CF_ACCESS_AUD }}"
                       - name: CF_ACCESS_TEAM_DOMAIN
                         value: "${{ secrets.CF_ACCESS_TEAM_DOMAIN }}"
+                      - name: DISCORD_WEBHOOK_URL
+                        value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                   - name: cloud-sql-proxy
                     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
                     args:

@@ -32,7 +32,6 @@ public class AdminController {
     private static final Logger logger = new Logger(AdminController.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
-    // Allowlist for DDL column types – prevents SQL injection via type field
     private static final Set<String> ALLOWED_COL_TYPES = Set.of(
         "INT", "BIGINT", "VARCHAR(255)", "VARCHAR(100)", "TEXT",
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
@@ -222,7 +221,7 @@ public class AdminController {
     @PostMapping("/admin/ddl/tables")
     public void createTable(Context ctx) {
         if (!isValidTableName(ctx.pathParam("table") != null ? ctx.pathParam("table") : "_", ctx)) {
-            // path param not used for this endpoint — validate via body instead
+            // path param not used for this endpoint
         }
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
@@ -251,9 +250,9 @@ public class AdminController {
                     ctx.status(400).json(Map.of("error", "サポートされていない型: " + type)); return;
                 }
                 StringBuilder colDef = new StringBuilder("`").append(name).append("` ").append(type);
-                if (Boolean.TRUE.equals(col.get("notNull")))    colDef.append(" NOT NULL");
+                if (Boolean.TRUE.equals(col.get("notNull")))       colDef.append(" NOT NULL");
                 if (Boolean.TRUE.equals(col.get("autoIncrement"))) colDef.append(" AUTO_INCREMENT");
-                if (Boolean.TRUE.equals(col.get("pk")))         colDef.append(" PRIMARY KEY");
+                if (Boolean.TRUE.equals(col.get("pk")))            colDef.append(" PRIMARY KEY");
                 colDefs.add(colDef.toString());
             }
             sb.append(String.join(", ", colDefs)).append(")");
@@ -277,9 +276,9 @@ public class AdminController {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
-            String colName   = (String) body.get("name");
-            String colType   = (String) body.get("type");
-            boolean notNull  = Boolean.TRUE.equals(body.get("notNull"));
+            String colName    = (String) body.get("name");
+            String colType    = (String) body.get("type");
+            boolean notNull   = Boolean.TRUE.equals(body.get("notNull"));
             String defaultVal = body.get("defaultValue") instanceof String s ? s.strip() : null;
 
             if (!isValidIdentifier(colName)) {
@@ -359,15 +358,19 @@ public class AdminController {
 
     @GetMapping("/admin/stats")
     public void stats(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
         RequestMetrics m = RequestMetrics.get();
-        long[] perc = m.getPercentiles();
+        long   total    = m.getTotalRequests();
+        long   errors   = m.getErrorCount();
+        double errRate  = total == 0 ? 0.0 : Math.round((errors * 100.0 / total) * 100.0) / 100.0;
+        long[] perc     = m.getPercentiles();
 
         ObjectNode root = mapper.createObjectNode();
-        root.put("totalRequests", m.getTotalRequests());
-        root.put("errorRate",     Math.round(m.getErrorRate() * 100.0) / 100.0);
+        root.put("totalRequests", total);
+        root.put("errorCount",    errors);
+        root.put("errorRate",     errRate);
         root.put("p50ms",         perc[0]);
         root.put("p95ms",         perc[1]);
-        root.put("instances",     1);
         root.put("maxInstances",  10);
 
         ArrayNode chart = root.putArray("chart");
@@ -421,7 +424,6 @@ public class AdminController {
         return s != null && s.matches("[a-zA-Z0-9_]+");
     }
 
-    /** Converts JSON-deserialized booleans to integers so MySQL TINYINT columns accept them. */
     private Object normalizeValue(Object val) {
         if (val instanceof Boolean b) return b ? 1 : 0;
         if (val instanceof String s) {
