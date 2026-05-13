@@ -22,17 +22,16 @@ public class RequestMetrics {
     private final AtomicLong[] hourlyErrors  = new AtomicLong[HOURS];
     private final long[]       slotHour      = new long[HOURS];
     private final Object[]     slotLocks     = new Object[HOURS];
-    // last value flushed to DB (for diff calculation)
     private final long[]       lastFlushedReq = new long[HOURS];
     private final long[]       lastFlushedErr = new long[HOURS];
 
     // ── endpoint counts ───────────────────────────────────────────────────────
-    private final ConcurrentHashMap<String, LongAdder> endpointCounts    = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, LongAdder> lastFlushedEp     = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, LongAdder> endpointCounts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, LongAdder> lastFlushedEp  = new ConcurrentHashMap<>();
 
-    // ── latency histogram (index = BUCKETS index) ─────────────────────────────
-    private final AtomicLong[]  histogram         = new AtomicLong[BUCKETS.length];
-    private final AtomicLong[]  lastFlushedHisto  = new AtomicLong[BUCKETS.length];
+    // ── latency histogram ─────────────────────────────────────────────────────
+    private final AtomicLong[] histogram        = new AtomicLong[BUCKETS.length];
+    private final AtomicLong[] lastFlushedHisto = new AtomicLong[BUCKETS.length];
 
     private final ThreadLocal<Long> requestStart = new ThreadLocal<>();
 
@@ -176,9 +175,9 @@ public class RequestMetrics {
                      "INSERT INTO metrics_endpoints(endpoint, hits) VALUES(?, ?) AS new " +
                      "ON DUPLICATE KEY UPDATE hits = metrics_endpoints.hits + new.hits")) {
             for (Map.Entry<String, LongAdder> e : endpointCounts.entrySet()) {
-                long current  = e.getValue().sum();
-                long flushed  = lastFlushedEp.computeIfAbsent(e.getKey(), k -> new LongAdder()).sum();
-                long diff     = current - flushed;
+                long current = e.getValue().sum();
+                long flushed = lastFlushedEp.computeIfAbsent(e.getKey(), k -> new LongAdder()).sum();
+                long diff    = current - flushed;
                 if (diff <= 0) continue;
                 ps.setString(1, e.getKey());
                 ps.setLong(2, diff);
@@ -221,7 +220,8 @@ public class RequestMetrics {
     // ── after filter ──────────────────────────────────────────────────────────
 
     public void record(Context ctx) {
-        if (ctx.path().startsWith("/admin")) {
+        // Skip /admin/* except /admin/debug/* (debug endpoints need metrics + Discord)
+        if (ctx.path().startsWith("/admin") && !ctx.path().startsWith("/admin/debug/")) {
             requestStart.remove();
             return;
         }
@@ -264,7 +264,7 @@ public class RequestMetrics {
         }
     }
 
-    // ── read (DB-backed, multi-instance safe) ──────────────────────────────────
+    // ── read (DB-backed, multi-instance safe) ─────────────────────────────────
 
     public long getTotalRequests() {
         try (Connection conn = Database.getConnection();
@@ -321,7 +321,6 @@ public class RequestMetrics {
         }
     }
 
-    /** Returns [p50ms, p95ms] computed from the histogram stored in DB. */
     public long[] getPercentiles() {
         try (Connection conn = Database.getConnection();
              Statement st = conn.createStatement();

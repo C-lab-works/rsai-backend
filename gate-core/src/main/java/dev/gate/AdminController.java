@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,6 +37,16 @@ public class AdminController {
         "INT", "BIGINT", "VARCHAR(255)", "VARCHAR(100)", "TEXT",
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
     );
+
+    // ── debug ─────────────────────────────────────────────────────────────────
+
+    @GetMapping("/admin/debug/503")
+    public void debug503(Context ctx) {
+        String instanceId = Optional.ofNullable(System.getenv("HOSTNAME")).orElse("local");
+        ctx.status(503).json(Map.of("error", "Debug: intentional 503 (instance: " + instanceId + ")"));
+    }
+
+    // ── tables ────────────────────────────────────────────────────────────────
 
     @GetMapping("/admin/tables")
     public void listTables(Context ctx) {
