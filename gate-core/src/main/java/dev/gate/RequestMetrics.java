@@ -17,7 +17,7 @@ public class RequestMetrics {
     private static final int[]  BUCKETS     = {0, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000};
     private static final RequestMetrics INSTANCE = new RequestMetrics();
 
-    // ── hourly ring buffer ────────────────────────────────────────────────────
+    // ── hourly ring buffer ──────────────────────────────────────────────
     private final AtomicLong[] hourlyCounts  = new AtomicLong[HOURS];
     private final AtomicLong[] hourlyErrors  = new AtomicLong[HOURS];
     private final long[]       slotHour      = new long[HOURS];
@@ -25,11 +25,11 @@ public class RequestMetrics {
     private final long[]       lastFlushedReq = new long[HOURS];
     private final long[]       lastFlushedErr = new long[HOURS];
 
-    // ── endpoint counts ───────────────────────────────────────────────────────
+    // ── endpoint counts ────────────────────────────────────────────────
     private final ConcurrentHashMap<String, LongAdder> endpointCounts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LongAdder> lastFlushedEp  = new ConcurrentHashMap<>();
 
-    // ── latency histogram ─────────────────────────────────────────────────────
+    // ── latency histogram ──────────────────────────────────────────────
     private final AtomicLong[] histogram        = new AtomicLong[BUCKETS.length];
     private final AtomicLong[] lastFlushedHisto = new AtomicLong[BUCKETS.length];
 
@@ -60,7 +60,7 @@ public class RequestMetrics {
 
     private long epochHour() { return System.currentTimeMillis() / 3_600_000L; }
 
-    // ── persistence ───────────────────────────────────────────────────────────
+    // ── persistence ────────────────────────────────────────────────────
 
     public void init() {
         loadFromDb();
@@ -211,13 +211,13 @@ public class RequestMetrics {
         }
     }
 
-    // ── before filter ─────────────────────────────────────────────────────────
+    // ── before filter ──────────────────────────────────────────────────
 
     public void startTimer(Context ctx) {
         requestStart.set(System.nanoTime());
     }
 
-    // ── after filter ──────────────────────────────────────────────────────────
+    // ── after filter ───────────────────────────────────────────────────
 
     public void record(Context ctx) {
         // Skip /admin/* except /admin/debug/* (debug endpoints need metrics + Discord)
@@ -244,8 +244,9 @@ public class RequestMetrics {
         }
 
         if (isError) {
+            // ctx.responseBody() contains the JSON error message (e.g. {"error":"..."})
             DiscordWebhook.sendError(
-                ctx.method(), ctx.path(), ctx.statusCode(), ctx.errorMessage());
+                ctx.method(), ctx.path(), ctx.statusCode(), ctx.responseBody());
         }
 
         Long start = requestStart.get();
@@ -264,7 +265,7 @@ public class RequestMetrics {
         }
     }
 
-    // ── read (DB-backed, multi-instance safe) ─────────────────────────────────
+    // ── read (DB-backed, multi-instance safe) ───────────────────────────
 
     public long getTotalRequests() {
         try (Connection conn = Database.getConnection();
@@ -368,7 +369,7 @@ public class RequestMetrics {
         }
     }
 
-    // ── bucket helpers ────────────────────────────────────────────────────────
+    // ── bucket helpers ──────────────────────────────────────────────────
 
     private int upperBucketIndex(long ms) {
         for (int i = BUCKETS.length - 1; i >= 0; i--) {
