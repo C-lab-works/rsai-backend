@@ -216,10 +216,11 @@ public class AdminController {
         }
     }
 
-    // POST /admin/ddl/tables
-    // Body: { "name": "tbl", "columns": [{ "name":"id","type":"INT","pk":true,"autoIncrement":true,"notNull":true }, ...] }
     @PostMapping("/admin/ddl/tables")
     public void createTable(Context ctx) {
+        if (!isValidTableName(ctx.pathParam("table") != null ? ctx.pathParam("table") : "_", ctx)) {
+            // path param not used for this endpoint — validate via body instead
+        }
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
@@ -228,39 +229,32 @@ public class AdminController {
             if (!isValidIdentifier(tableName)) {
                 ctx.status(400).json(Map.of("error", "テーブル名が無効です")); return;
             }
+
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> columns = (List<Map<String, Object>>) body.get("columns");
             if (columns == null || columns.isEmpty()) {
-                ctx.status(400).json(Map.of("error", "カラムが必要です")); return;
+                ctx.status(400).json(Map.of("error", "columns required")); return;
             }
 
             StringBuilder sb = new StringBuilder("CREATE TABLE `").append(tableName).append("` (");
-            List<String> pkCols = new ArrayList<>();
-            for (int i = 0; i < columns.size(); i++) {
-                Map<String, Object> col = columns.get(i);
-                String colName = (String) col.get("name");
-                String colType = (String) col.get("type");
-                boolean pk            = Boolean.TRUE.equals(col.get("pk"));
-                boolean autoIncrement = Boolean.TRUE.equals(col.get("autoIncrement"));
-                boolean notNull       = Boolean.TRUE.equals(col.get("notNull")) || pk;
-                if (!isValidIdentifier(colName)) {
-                    ctx.status(400).json(Map.of("error", "カラム名が無効です: " + colName)); return;
+            List<String> colDefs = new ArrayList<>();
+            for (Map<String, Object> col : columns) {
+                String name = (String) col.get("name");
+                String type = (String) col.get("type");
+                if (!isValidIdentifier(name)) {
+                    ctx.status(400).json(Map.of("error", "カラム名が無効です: " + name)); return;
                 }
-                if (colType == null || !ALLOWED_COL_TYPES.contains(colType)) {
-                    ctx.status(400).json(Map.of("error", "サポートされていない型: " + colType)); return;
+                if (type == null || !ALLOWED_COL_TYPES.contains(type)) {
+                    ctx.status(400).json(Map.of("error", "サポートされていない型: " + type)); return;
                 }
-                if (i > 0) sb.append(", ");
-                sb.append("`").append(colName).append("` ").append(colType);
-                if (notNull)       sb.append(" NOT NULL");
-                if (autoIncrement) sb.append(" AUTO_INCREMENT");
-                if (pk)            pkCols.add(colName);
+                StringBuilder colDef = new StringBuilder("`").append(name).append("` ").append(type);
+                if (Boolean.TRUE.equals(col.get("notNull")))    colDef.append(" NOT NULL");
+                if (Boolean.TRUE.equals(col.get("autoIncrement"))) colDef.append(" AUTO_INCREMENT");
+                if (Boolean.TRUE.equals(col.get("pk")))         colDef.append(" PRIMARY KEY");
+                colDefs.add(colDef.toString());
             }
-            if (!pkCols.isEmpty()) {
-                sb.append(", PRIMARY KEY (")
-                  .append(pkCols.stream().map(c -> "`" + c + "`").collect(Collectors.joining(", ")))
-                  .append(")");
-            }
-            sb.append(")");
+            sb.append(String.join(", ", colDefs)).append(")");
+
             try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
@@ -272,8 +266,6 @@ public class AdminController {
         }
     }
 
-    // POST /admin/ddl/tables/{table}/columns
-    // Body: { "name": "col", "type": "VARCHAR(255)", "notNull": false, "defaultValue": "" }
     @PostMapping("/admin/ddl/tables/{table}/columns")
     public void addColumn(Context ctx) {
         String table = ctx.pathParam("table");
@@ -317,9 +309,11 @@ public class AdminController {
     }
 
     @PostMapping("/admin/sql")
-    public void execSql(Context ctx) {        try (Connection conn = Database.getConnection()) {
+    public void execSql(Context ctx) {
+        try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
             String sql = (String) body.get("sql");
             if (sql == null || sql.isBlank()) { ctx.status(400).json(Map.of("error", "sql required")); return; }
 
@@ -391,7 +385,7 @@ public class AdminController {
         ctx.json(root);
     }
 
-    // ── util ────────────────────────────────────────────────────────────────
+    // ── util ─────────────────────────────────────────────────────────────────────
 
     private void putValue(ObjectNode row, String col, Object val) {
         if (val == null)              { row.putNull(col); return; }

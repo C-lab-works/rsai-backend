@@ -89,9 +89,15 @@ public class CongestionController {
             int locationId = Integer.parseInt(idStr);
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
             Object levelObj = body.get("level");
             if (levelObj == null) { ctx.status(400).json(Map.of("error", "level required")); return; }
-            int level = ((Number) levelObj).intValue();
+            int level;
+            try {
+                level = Integer.parseInt(levelObj.toString());
+            } catch (NumberFormatException e) {
+                ctx.status(400).json(Map.of("error", "level must be a number")); return;
+            }
             if (level < 0 || level > 2) { ctx.status(400).json(Map.of("error", "level must be 0-2")); return; }
 
             String updatedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
