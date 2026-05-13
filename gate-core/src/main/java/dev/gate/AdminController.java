@@ -79,7 +79,10 @@ public class AdminController {
                     ObjectNode col = cols.addObject();
                     String name = rs.getString("COLUMN_NAME");
                     col.put("name", name);
-                    col.put("type", rs.getString("TYPE_NAME"));
+                    col.put("type", normalizeColumnType(
+                        rs.getString("TYPE_NAME"),
+                        rs.getInt("COLUMN_SIZE")
+                    ));
                     if (pks.contains(name)) col.put("pk", true);
                 }
             }
@@ -291,7 +294,6 @@ public class AdminController {
                 .append(colName).append("` ").append(colType);
             if (notNull) sb.append(" NOT NULL");
             if (defaultVal != null && !defaultVal.isEmpty()) {
-                // Only allow safe default values (alphanumeric, dots, dashes, underscores)
                 if (!defaultVal.matches("[a-zA-Z0-9._\\-]+")) {
                     ctx.status(400).json(Map.of("error", "デフォルト値に使えない文字が含まれています")); return;
                 }
@@ -385,7 +387,7 @@ public class AdminController {
         ctx.json(root);
     }
 
-    // ── util ─────────────────────────────────────────────────────────────────────
+    // ── util ──────────────────────────────────────────────────────────────────
 
     private void putValue(ObjectNode row, String col, Object val) {
         if (val == null)              { row.putNull(col); return; }
@@ -429,6 +431,27 @@ public class AdminController {
         return val;
     }
 
+    private String normalizeColumnType(String typeName, int size) {
+        if (typeName == null) return "unknown";
+        String t = typeName.toUpperCase();
+        return switch (t) {
+            case "VARCHAR", "NVARCHAR"           -> "VARCHAR(" + size + ")";
+            case "CHAR", "NCHAR"                 -> "CHAR(" + size + ")";
+            case "INT", "INTEGER"                -> "INT";
+            case "TINYINT"                       -> "TINYINT(1)";
+            case "BIGINT"                        -> "BIGINT";
+            case "FLOAT"                         -> "FLOAT";
+            case "DOUBLE", "DOUBLE PRECISION"    -> "DOUBLE";
+            case "DECIMAL", "NUMERIC"            -> "DECIMAL";
+            case "TEXT", "LONGTEXT",
+                 "MEDIUMTEXT", "TINYTEXT"        -> t;
+            case "DATE"                          -> "DATE";
+            case "DATETIME", "TIMESTAMP"         -> "DATETIME";
+            case "TIME"                          -> "TIME";
+            default                              -> typeName.toLowerCase();
+        };
+    }
+
     private String toUserMessage(SQLIntegrityConstraintViolationException e) {
         int code = e.getErrorCode();
         String msg = e.getMessage();
@@ -439,27 +462,22 @@ public class AdminController {
         return "Constraint violation";
     }
 
-    // MySQL 1292 = Incorrect datetime/date value
-    // MySQL 1366 = Incorrect integer value (e.g. string 'true' for TINYINT)
     private boolean isDataTypeError(SQLException e) {
         int code = e.getErrorCode();
         return code == 1292 || code == 1366;
     }
 
     private String toDataTypeMessage(SQLException e) {
-        // MySQL message already contains the column name and offending value
         String msg = e.getMessage();
         return msg != null ? "Invalid value: " + msg : "Incorrect value for column type";
     }
 
     private String extractDuplicateValue(String msg) {
-        // MySQL: Duplicate entry 'X' for key 'Y'
         int s = msg.indexOf("'"), e = msg.indexOf("'", s + 1);
         return (s >= 0 && e > s) ? msg.substring(s + 1, e) : msg;
     }
 
     private String extractColumnName(String msg) {
-        // MySQL: Column 'X' cannot be null
         int s = msg.indexOf("'"), e = msg.indexOf("'", s + 1);
         return (s >= 0 && e > s) ? msg.substring(s + 1, e) : msg;
     }

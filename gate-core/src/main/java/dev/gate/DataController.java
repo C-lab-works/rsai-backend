@@ -57,6 +57,13 @@ public class DataController {
             ctx.json(data);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());
+            // stale fallback: DB障害時に古いキャッシュがあればそれを返す
+            if (entry != null) {
+                logger.warn("Serving stale cache for '{}' due to DB error", key);
+                ctx.header("Cache-Control", "no-store");
+                ctx.json(entry.data());
+                return;
+            }
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
@@ -79,7 +86,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",               rs.getInt("id"));
@@ -96,7 +103,7 @@ public class DataController {
         Map<Integer, List<Integer>> catMap = new HashMap<>();
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT project_id, category_id FROM project_categories ORDER BY project_id, category_id")) {
+               "SELECT project_id, category_id FROM project_categories ORDER BY project_id, category_id")) {
             while (rs.next()) {
                 catMap.computeIfAbsent(rs.getInt("project_id"), k -> new ArrayList<>())
                       .add(rs.getInt("category_id"));
@@ -106,8 +113,8 @@ public class DataController {
         ArrayNode projects = root.putArray("projects");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, title, organizer, description, image_url, location_id " +
-                "FROM projects ORDER BY id")) {
+               "SELECT id, title, organizer, description, image_url, location_id " +
+               "FROM projects ORDER BY id")) {
             while (rs.next()) {
                 ObjectNode p = projects.addObject();
                 int id = rs.getInt("id");
@@ -133,8 +140,8 @@ public class DataController {
         ArrayNode timetables = root.putArray("timetables");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, project_id, location_id, event_date, is_all_day, start_time, end_time " +
-                "FROM timetables ORDER BY event_date, start_time")) {
+               "SELECT id, project_id, location_id, event_date, is_all_day, start_time, end_time " +
+               "FROM timetables ORDER BY event_date, start_time")) {
             while (rs.next()) {
                 addTimetableRow(timetables.addObject(), rs);
             }
@@ -151,7 +158,7 @@ public class DataController {
         ArrayNode foods = root.putArray("foods");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, description, image_url FROM foods ORDER BY id")) {
+               "SELECT id, name, description, image_url FROM foods ORDER BY id")) {
             while (rs.next()) {
                 ObjectNode f = foods.addObject();
                 f.put("id",   rs.getInt("id"));
@@ -164,8 +171,8 @@ public class DataController {
         ArrayNode menus = root.putArray("menus");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, food_id, name, price, description, is_sold_out " +
-                "FROM menus ORDER BY food_id, id")) {
+               "SELECT id, food_id, name, price, description, is_sold_out " +
+               "FROM menus ORDER BY food_id, id")) {
             while (rs.next()) {
                 ObjectNode m = menus.addObject();
                 m.put("id",     rs.getInt("id"));
@@ -190,7 +197,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",               rs.getInt("id"));
