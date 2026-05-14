@@ -20,7 +20,7 @@ spec:
         # Cloud SQL Unix-socket connection
         run.googleapis.com/cloudsql-instances: PROJECT_ID:REGION:INSTANCE_NAME
         autoscaling.knative.dev/minScale: "0"
-        autoscaling.knative.dev/maxScale: "10"
+        autoscaling.knative.dev/maxScale: "0"
     spec:
       containerConcurrency: 80
       timeoutSeconds: 60
