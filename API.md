@@ -38,23 +38,25 @@ Base URL: `https://api.r-sai2026.site`
     { "id": 1, "name": "ステージ系" }
   ],
   "locations": [
-    { "id": 1, "name": "体育館", "floor": 1, "svgId": "gym", "isStage": true, "tracksCongestion": true }
+    { "id": 2, "name": "Co-tan", "floor": 1, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
   ],
   "projects": [
-    { "id": 1, "title": "ステージ企画", "organizer": "実行委員会", "description": null, "imageUrl": null, "locationId": 2 }
+    { "id": 1, "title": "中一企画1", "organizer": "1-1", "locationId": 15 }
   ],
   "projectCategories": [
-    { "projectId": 1, "categoryId": 1 }
+    { "projectId": 1, "categoryId": 2 }
   ],
   "timetables": [
-    { "id": 1, "projectId": 1, "locationId": 2, "date": "2026-07-04", "isAllDay": false, "start": "10:00:00", "end": "11:00:00" }
+    { "id": 16, "projectId": 30, "locationId": 2, "date": "2026-07-04", "isAllDay": false, "start": "10:00:00", "end": "10:20:00" }
   ]
 }
 ```
 
 > `projects[].locationId` — 拠点が未設定の場合は省略される。  
+> `projects[].description` / `.imageUrl` — 設定されている場合のみ含まれる。  
 > `timetables[].start` / `.end` — `isAllDay` が `true` の場合は省略される。  
-> `projectCategories` — project と category の多対多リレーション。
+> `projectCategories` — project と category の多対多リレーション。  
+> `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
 
@@ -87,10 +89,12 @@ Base URL: `https://api.r-sai2026.site`
 ```json
 {
   "locations": [
-    { "id": 1, "name": "体育館", "floor": 1, "svgId": "gym", "isStage": true, "tracksCongestion": true }
+    { "id": 2, "name": "Co-tan", "floor": 1, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
   ]
 }
 ```
+
+> `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
 
@@ -121,11 +125,11 @@ Base URL: `https://api.r-sai2026.site`
 **レスポンス**
 ```json
 [
-  { "id": 1, "name": "体育館", "floor": 1, "svgId": "gym", "project": "演劇" }
+  { "id": 2, "name": "Co-tan", "floor": 1, "x": 43.02042086431134, "y": 141.52233128287835, "project": "高2企画4" }
 ]
 ```
 
-> `svgId` / `project` — 設定されていない場合は省略される。
+> `x` / `y` / `project` — 設定されていない場合は省略される。
 
 ---
 
@@ -136,7 +140,7 @@ Base URL: `https://api.r-sai2026.site`
 **レスポンス**
 ```json
 [
-  { "location_id": 1, "level": 1, "updated_at": "2026-07-04 10:30:00" }
+  { "location_id": 1, "level": 1, "updated_at": "2026-07-04 10:30:00", "updated_by": "user@example.com" }
 ]
 ```
 
