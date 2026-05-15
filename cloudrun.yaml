@@ -40,6 +40,13 @@ spec:
               value: REPLACE_ME
             - name: CORS_ALLOWED_ORIGIN
               value: https://admin.r-sai2026.site
+          startupProbe:
+            httpGet:
+              path: /health
+            initialDelaySeconds: 0
+            periodSeconds: 1
+            failureThreshold: 60   # 最大60秒待つ（Cloud SQL接続 + スキーマ適用を想定）
+            timeoutSeconds: 2
           resources:
             limits:
               cpu: "1"
