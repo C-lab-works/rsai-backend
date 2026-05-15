@@ -8,7 +8,7 @@ Base URL: `https://azure.c-lab.works`
 
 | ヘッダー | 必須 | 説明 |
 |---|---|---|
-| `X-API-Key` | 全エンドポイント（`/health` を除く） | 管理キーは全操作可能、読み取り専用キーは GET のみ許可 |
+| `X-API-Key` | 全エンドポイント（`/health` を除く） | |
 
 ---
 
