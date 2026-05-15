@@ -63,14 +63,13 @@ public class CongestionController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT location_id, level, updated_at, updated_by FROM congestion_status")) {
+                 "SELECT location_id, level, updated_at FROM congestion_status")) {
             ArrayNode arr = mapper.createArrayNode();
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
                 n.put("location_id", rs.getInt("location_id"));
                 n.put("level",       rs.getInt("level"));
                 n.put("updated_at",  rs.getString("updated_at"));
-                n.put("updated_by",  rs.getString("updated_by"));
             }
             ctx.json(arr);
         } catch (Exception e) {
