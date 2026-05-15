@@ -12,6 +12,7 @@ out/
 
 ### Claude Code ###
 .claude/
+tools/
 
 ### OS ###
 .DS_Store

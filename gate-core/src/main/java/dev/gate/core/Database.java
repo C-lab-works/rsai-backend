@@ -14,6 +14,9 @@ import java.util.stream.Collectors;
 public class Database {
     private static final Logger logger = new Logger(Database.class);
     private static volatile HikariDataSource dataSource;
+    private static volatile boolean ready = false;
+
+    public static boolean isReady() { return ready; }
 
     public static void init(Config.DatabaseConfig config) throws Exception {
         HikariConfig hikari = new HikariConfig();
@@ -62,6 +65,7 @@ public class Database {
             throw e;
         }
         logger.info("Database connection pool initialized");
+        ready = true;
     }
 
     public static Connection getConnection() throws SQLException {

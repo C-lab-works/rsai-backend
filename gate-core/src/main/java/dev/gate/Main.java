@@ -62,7 +62,13 @@ public class Main {
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
-        gate.get("/health", ctx -> ctx.json(Map.of("status", "ok")));
+        gate.get("/health", ctx -> {
+            if (!Database.isReady()) {
+                ctx.status(503).json(Map.of("status", "starting"));
+            } else {
+                ctx.json(Map.of("status", "ok"));
+            }
+        });
 
         gate.after(SecurityHeaders.get()::handle);
         gate.after(RequestMetrics.get()::record);
