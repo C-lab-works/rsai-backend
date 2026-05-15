@@ -53,9 +53,10 @@ Base URL: `https://api.r-sai2026.site`
 ```
 
 > `projects[].locationId` — 拠点が未設定の場合は省略される。  
-> `projects[].description` / `.imageUrl` — 設定されている場合のみ含まれる。  
+> `projects[].organizer` / `.description` / `.imageUrl` — 設定されている場合のみ含まれる。  
 > `timetables[].start` / `.end` — `isAllDay` が `true` の場合は省略される。  
 > `projectCategories` — project と category の多対多リレーション。  
+> `locations[].svgId` — SVG 要素 ID。設定されている場合のみ含まれる。  
 > `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
@@ -68,16 +69,18 @@ Base URL: `https://api.r-sai2026.site`
 ```json
 {
   "foods": [
-    { "id": 1, "name": "キッチンカー店舗", "description": "店舗説明", "imageUrl": null }
+    { "id": 1, "name": "保護者会", "description": "店舗の説明", "imageUrl": "https://example.com/image.jpg" },
+    { "id": 2, "name": "test商店" }
   ],
   "menus": [
-    { "id": 1, "foodId": 1, "name": "メニュー名", "price": 500, "description": null, "isSoldOut": false }
+    { "id": 1, "foodId": 1, "name": "フランクフルト", "price": 200, "description": "美味しい", "isSoldOut": false },
+    { "id": 3, "foodId": 2, "name": "いろはす", "price": 700, "isSoldOut": false }
   ]
 }
 ```
 
-> `menus[].price` — 未設定の場合は省略される。  
-> `menus[].isSoldOut` — 未設定の場合は省略される。
+> `foods[].description` / `.imageUrl` — 設定されている場合のみ含まれる。  
+> `menus[].price` / `.description` / `.isSoldOut` — 設定されている場合のみ含まれる。
 
 ---
 
@@ -94,6 +97,7 @@ Base URL: `https://api.r-sai2026.site`
 }
 ```
 
+> `locations[].svgId` — SVG 要素 ID。設定されている場合のみ含まれる。  
 > `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
@@ -129,7 +133,7 @@ Base URL: `https://api.r-sai2026.site`
 ]
 ```
 
-> `x` / `y` / `project` — 設定されていない場合は省略される。
+> `svgId` / `x` / `y` / `project` — 設定されていない場合は省略される。
 
 ---
 
