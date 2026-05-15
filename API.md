@@ -140,7 +140,7 @@ Base URL: `https://api.r-sai2026.site`
 **レスポンス**
 ```json
 [
-  { "location_id": 1, "level": 1, "updated_at": "2026-07-04 10:30:00", "updated_by": "user@example.com" }
+  { "location_id": 1, "level": 1, "updated_at": "2026-07-04 10:30:00" }
 ]
 ```
 
