@@ -148,28 +148,6 @@ Base URL: `https://azure.c-lab.works`
 
 ---
 
-### `POST /congestion/{id}`
-
-場所の混雑レベルを更新する（upsert）。`updated_by` には CF Access JWT のメールアドレスが記録される。
-
-**パスパラメータ**
-
-| パラメータ | 型 | 説明 |
-|---|---|---|
-| `id` | integer | 場所 ID |
-
-**リクエストボディ**
-```json
-{ "level": 1 }
-```
-
-**レスポンス**
-```json
-{ "ok": true, "location_id": 1, "level": 1 }
-```
-
----
-
 ## エラーレスポンス
 
 | ステータス | 意味 |
