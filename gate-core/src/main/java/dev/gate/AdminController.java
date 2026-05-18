@@ -105,7 +105,7 @@ public class AdminController {
                 while (rs.next()) {
                     ObjectNode row = rows.addObject();
                     for (int i = 1; i <= colCount; i++) {
-                        putValue(row, rsMeta.getColumnName(i), rs.getObject(i));
+                        putValue(row, rsMeta.getColumnName(i), getColumnValue(rs, rsMeta, i));
                     }
                 }
             }
@@ -350,7 +350,7 @@ public class AdminController {
                             while (rs.next()) {
                                 ObjectNode row = rowsNode.addObject();
                                 for (int i = 1; i <= colCount; i++) {
-                                    putValue(row, meta.getColumnName(i), rs.getObject(i));
+                                    putValue(row, meta.getColumnName(i), getColumnValue(rs, meta, i));
                                 }
                             }
                         }
@@ -402,6 +402,15 @@ public class AdminController {
     }
 
     // ── util ──────────────────────────────────────────────────────────────────
+
+    private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throws SQLException {
+        int type = meta.getColumnType(i);
+        if (type == Types.TINYINT || type == Types.BIT) {
+            int v = rs.getInt(i);
+            return rs.wasNull() ? null : v;
+        }
+        return rs.getObject(i);
+    }
 
     private void putValue(ObjectNode row, String col, Object val) {
         if (val == null)              { row.putNull(col); return; }
