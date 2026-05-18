@@ -116,8 +116,10 @@ public class DataSeeder {
     }
 
     private static void migrateV6(Connection conn) throws Exception {
-        exec(conn, "ALTER TABLE congestion_status MODIFY COLUMN level TINYINT(4) NOT NULL DEFAULT 0");
-        logger.info("Fixed congestion_status.level type (TINYINT -> TINYINT(4))");
+        try {
+            exec(conn, "ALTER TABLE congestion_status MODIFY COLUMN level TINYINT(4) NOT NULL DEFAULT 0");
+            logger.info("Fixed congestion_status.level type (TINYINT -> TINYINT(4))");
+        } catch (Exception ignored) {}
     }
 
     private static void migrateV5(Connection conn) throws Exception {

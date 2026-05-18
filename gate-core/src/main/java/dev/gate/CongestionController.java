@@ -73,7 +73,7 @@ public class CongestionController {
                 return;
             }
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
-                    "detail", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                    "detail", "DB error"));
         }
     }
 
@@ -95,7 +95,7 @@ public class CongestionController {
         } catch (Exception e) {
             logger.error("getCongestion error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
-                    "detail", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                    "detail", "DB error"));
         }
     }
 
@@ -140,7 +140,7 @@ public class CongestionController {
         } catch (Exception e) {
             logger.error("updateCongestion error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
-                    "detail", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                    "detail", "DB error"));
         }
     }
 }

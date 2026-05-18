@@ -33,8 +33,8 @@ public class DiscordWebhook {
         String key = method + " " + path + " " + status;
         long now   = System.currentTimeMillis();
         AtomicLong ts = lastSent.computeIfAbsent(key, k -> new AtomicLong(0L));
-        if (now - ts.get() < DEBOUNCE_MS) return;
-        ts.set(now);
+        long prev = ts.getAndSet(now);
+        if (now - prev < DEBOUNCE_MS) return;
 
         int color = status >= 500 ? 15158332 : 16776960; // red : yellow
         String safeMsg    = escapeJson(message != null ? message : "(no message)");

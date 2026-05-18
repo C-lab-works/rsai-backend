@@ -35,6 +35,12 @@ public class AdminController {
     private static final Logger logger = new Logger(AdminController.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
+    private static final Set<String> BLOCKED_SQL_PREFIXES = Set.of(
+        "DROP", "TRUNCATE", "GRANT", "REVOKE", "CREATE USER", "DROP USER",
+        "ALTER USER", "LOAD DATA", "INTO OUTFILE", "INTO DUMPFILE",
+        "FLUSH", "RESET", "SHUTDOWN", "KILL"
+    );
+
     private static final Set<String> ALLOWED_COL_TYPES = Set.of(
         "INT", "BIGINT", "VARCHAR(255)", "VARCHAR(100)", "TEXT",
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
@@ -101,7 +107,9 @@ public class AdminController {
 
             ArrayNode rows = root.putArray("rows");
             String sort  = ctx.query("sort");
-            String order = "desc".equalsIgnoreCase(sort) ? " ORDER BY id DESC" : "";
+            String pkCol = getPkColumn(conn, table);
+            String order = ("desc".equalsIgnoreCase(sort) && pkCol != null)
+                ? " ORDER BY `" + pkCol + "` DESC" : "";
             try (Statement s = conn.createStatement();
                  ResultSet rs = s.executeQuery("SELECT * FROM `" + table + "`" + order + " LIMIT 500")) {
                 ResultSetMetaData rsMeta = rs.getMetaData();
@@ -273,7 +281,7 @@ public class AdminController {
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("createTable syntax error: {}", e.getMessage());
-            ctx.status(400).json(Map.of("error", "SQL エラー: " + e.getMessage()));
+            ctx.status(400).json(Map.of("error", "テーブル作成に失敗しました"));
         } catch (Exception e) {
             logger.error("createTable error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -314,7 +322,7 @@ public class AdminController {
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("addColumn syntax error: {}", e.getMessage());
-            ctx.status(400).json(Map.of("error", "SQL エラー: " + e.getMessage()));
+            ctx.status(400).json(Map.of("error", "カラム追加に失敗しました"));
         } catch (Exception e) {
             logger.error("addColumn error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -335,6 +343,13 @@ public class AdminController {
             for (String raw : sql.split(";")) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
+                String upper = stmt.toUpperCase().replaceAll("\\s+", " ");
+                for (String blocked : BLOCKED_SQL_PREFIXES) {
+                    if (upper.startsWith(blocked + " ") || upper.equals(blocked)) {
+                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + blocked));
+                        return;
+                    }
+                }
                 logger.info("execSql by={} sql={}", executor, stmt);
                 try (Statement s = conn.createStatement()) {
                     s.setQueryTimeout(30);
@@ -496,8 +511,7 @@ public class AdminController {
     }
 
     private String toDataTypeMessage(SQLException e) {
-        String msg = e.getMessage();
-        return msg != null ? "Invalid value: " + msg : "Incorrect value for column type";
+        return "Incorrect value for column type";
     }
 
     private String extractDuplicateValue(String msg) {

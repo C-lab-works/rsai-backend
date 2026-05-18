@@ -49,12 +49,13 @@ public class Main {
         // without touching the production value.
         String allowedOrigin = System.getenv("CORS_ALLOWED_ORIGIN");
         String extraOrigins  = System.getenv("CORS_ALLOWED_EXTRA_ORIGINS");
-        String baseOrigin    = (allowedOrigin != null && !allowedOrigin.isBlank())
-                ? allowedOrigin
-                : "https://admin.r-sai2026.site";
-        String corsValue = (extraOrigins != null && !extraOrigins.isBlank())
-                ? baseOrigin + "," + extraOrigins
-                : baseOrigin;
+        if (allowedOrigin == null || allowedOrigin.isBlank()) {
+            System.err.println("WARNING: CORS_ALLOWED_ORIGIN is not set — CORS will be disabled");
+        }
+        String baseOrigin = (allowedOrigin != null && !allowedOrigin.isBlank()) ? allowedOrigin : "";
+        String corsValue  = (baseOrigin.isBlank() || extraOrigins == null || extraOrigins.isBlank())
+                ? baseOrigin
+                : baseOrigin + "," + extraOrigins;
         gate.cors(corsValue);
         gate.before(RequestMetrics.get()::startTimer);
         gate.before(new CloudflareIpFilter());
