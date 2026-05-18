@@ -99,7 +99,7 @@ public class CfAccessAuth implements Handler {
             if (!d.contains(".")) {
                 d = d + ".cloudflareaccess.com";
             }
-            this.teamDomain = "https://" + d + "/";
+            this.teamDomain = "https://" + d;
             this.certsUrl   = "https://" + d + "/cdn-cgi/access/certs";
             this.enabled    = true;
             logger.info("CfAccessAuth enabled. Audience={} Certs={} AdminEmails={}", audience, certsUrl, adminEmails.size());
