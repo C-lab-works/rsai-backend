@@ -123,6 +123,7 @@ jobs:
 
       - name: Show startup logs
         if: success()
+        continue-on-error: true
         run: |
           REVISION=$(gcloud run revisions list \
             --service="${{ env.SERVICE_NAME }}" \
@@ -146,6 +147,7 @@ jobs:
 
       - name: Fetch Cloud Run logs on failure
         if: failure()
+        continue-on-error: true
         run: |
           REVISION=$(gcloud run revisions list \
             --service="${{ env.SERVICE_NAME }}" \
