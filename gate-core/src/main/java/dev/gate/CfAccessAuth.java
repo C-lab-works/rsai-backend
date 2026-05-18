@@ -60,11 +60,18 @@ public class CfAccessAuth implements Handler {
     private final String audience;
     private final String certsUrl;
     private final boolean enabled;
+    private final java.util.Set<String> adminEmails;
 
     public CfAccessAuth() {
         String aud     = System.getenv("CF_ACCESS_AUD");
         String domain  = System.getenv("CF_ACCESS_TEAM_DOMAIN");
         String devFlag = System.getenv("CF_ACCESS_DEV_DISABLE");
+        String admins  = System.getenv("ADMIN_EMAILS");
+        this.adminEmails = (admins != null && !admins.isBlank())
+            ? java.util.Arrays.stream(admins.split(","))
+                .map(String::trim).filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet())
+            : java.util.Set.of();
 
         if (aud == null || aud.isBlank() || domain == null || domain.isBlank()) {
             if (!"true".equalsIgnoreCase(devFlag)) {
@@ -85,7 +92,7 @@ public class CfAccessAuth implements Handler {
             }
             this.certsUrl = "https://" + d + "/cdn-cgi/access/certs";
             this.enabled  = true;
-            logger.info("CfAccessAuth enabled. Audience={} Certs={}", audience, certsUrl);
+            logger.info("CfAccessAuth enabled. Audience={} Certs={} AdminEmails={}", audience, certsUrl, adminEmails.size());
         }
     }
 
@@ -115,25 +122,28 @@ public class CfAccessAuth implements Handler {
         if ("/health".equals(ctx.path())) return;
         // CORS preflights do not carry a CF-Access-Jwt-Assertion header — skip JWT check
         if ("OPTIONS".equals(ctx.method())) return;
-        // CF Access JWT is only required for admin endpoints.
-        // Public API paths (/events, /announcements, etc.) are authenticated by ApiKeyAuth alone.
-        if (!ctx.path().startsWith("/admin")) return;
-
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
         if (ctx.path().startsWith("/admin")) {
+            // Admin endpoints: JWT required + must be in ADMIN_EMAILS (if configured)
             if (token == null || token.isBlank()) {
                 ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
                 return;
             }
             try {
                 String email = verifyAndExtractEmail(token);
+                if (!adminEmails.isEmpty() && !adminEmails.contains(email)) {
+                    logger.warn("Admin access denied for email={}", email);
+                    ctx.status(403).json(Map.of("error", "Forbidden: admin access required")).halt();
+                    return;
+                }
                 ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
             } catch (Exception e) {
                 logger.warn("CF Access JWT validation failed: {}", e.getMessage());
                 ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
             }
         } else if (token != null && !token.isBlank()) {
+            // Non-admin endpoints: extract email opportunistically if JWT is present
             try {
                 String email = verifyAndExtractEmail(token);
                 ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
