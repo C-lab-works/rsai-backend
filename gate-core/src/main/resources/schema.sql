@@ -17,7 +17,13 @@ CREATE TABLE IF NOT EXISTS congestion_status (
 
 CREATE TABLE IF NOT EXISTS metrics_hourly (
     hour     BIGINT PRIMARY KEY,
-    requests BIGINT NOT NULL DEFAULT 0
+    requests BIGINT NOT NULL DEFAULT 0,
+    errors   BIGINT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS metrics_latency_histogram (
+    bucket_ms INT    PRIMARY KEY,
+    count     BIGINT NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS metrics_endpoints (
