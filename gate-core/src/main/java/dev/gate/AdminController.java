@@ -409,7 +409,7 @@ public class AdminController {
         if (val instanceof Integer v) { row.put(col, v); return; }
         if (val instanceof Double  v) { row.put(col, v); return; }
         if (val instanceof Float   v) { row.put(col, v); return; }
-        if (val instanceof Boolean v) { row.put(col, v); return; }
+        if (val instanceof Boolean v) { row.put(col, v ? 1 : 0); return; }
         row.put(col, val.toString());
     }
 
