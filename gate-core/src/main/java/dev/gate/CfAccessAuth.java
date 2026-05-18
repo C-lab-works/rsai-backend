@@ -120,17 +120,26 @@ public class CfAccessAuth implements Handler {
         if (!ctx.path().startsWith("/admin")) return;
 
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
-        if (token == null || token.isBlank()) {
-            ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
-            return;
-        }
 
-        try {
-            String email = verifyAndExtractEmail(token);
-            ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
-        } catch (Exception e) {
-            logger.warn("CF Access JWT validation failed: {}", e.getMessage());
-            ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
+        if (ctx.path().startsWith("/admin")) {
+            if (token == null || token.isBlank()) {
+                ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
+                return;
+            }
+            try {
+                String email = verifyAndExtractEmail(token);
+                ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
+            } catch (Exception e) {
+                logger.warn("CF Access JWT validation failed: {}", e.getMessage());
+                ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
+            }
+        } else if (token != null && !token.isBlank()) {
+            try {
+                String email = verifyAndExtractEmail(token);
+                ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
+            } catch (Exception e) {
+                logger.debug("CF Access JWT opportunistic extraction failed: {}", e.getMessage());
+            }
         }
     }
 
