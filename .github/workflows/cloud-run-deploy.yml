@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION }}
   SERVICE_NAME: rsai-backend
   REPOSITORY: rsai-backend
@@ -97,7 +97,7 @@ jobs:
                       - name: READ_ONLY_KEY
                         value: "${{ secrets.READ_ONLY_KEY }}"
                       - name: CORS_ALLOWED_ORIGIN
-                        value: "${{ vars.CORS_ALLOWED_ORIGIN }}"
+                        value: "${{ secrets.CORS_ALLOWED_ORIGIN }}"
                       - name: CF_ACCESS_AUD
                         value: "${{ secrets.CF_ACCESS_AUD }}"
                       - name: CF_ACCESS_TEAM_DOMAIN
