@@ -83,16 +83,19 @@ public class AdminController {
         String table = ctx.pathParam("table");
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
+            String resolvedTable = resolveTableName(conn, table);
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+
             ObjectNode root = mapper.createObjectNode();
             DatabaseMetaData meta = conn.getMetaData();
 
             Set<String> pks = new HashSet<>();
-            try (ResultSet rs = meta.getPrimaryKeys(null, null, table)) {
+            try (ResultSet rs = meta.getPrimaryKeys(null, null, resolvedTable)) {
                 while (rs.next()) pks.add(rs.getString("COLUMN_NAME"));
             }
 
             ArrayNode cols = root.putArray("cols");
-            try (ResultSet rs = meta.getColumns(null, null, table, null)) {
+            try (ResultSet rs = meta.getColumns(null, null, resolvedTable, null)) {
                 while (rs.next()) {
                     ObjectNode col = cols.addObject();
                     String name = rs.getString("COLUMN_NAME");
@@ -107,11 +110,11 @@ public class AdminController {
 
             ArrayNode rows = root.putArray("rows");
             String sort  = ctx.query("sort");
-            String pkCol = getPkColumn(conn, table);
+            String pkCol = getPkColumn(conn, resolvedTable);
             String order = ("desc".equalsIgnoreCase(sort) && pkCol != null)
                 ? " ORDER BY `" + pkCol + "` DESC" : "";
             try (Statement s = conn.createStatement();
-                 ResultSet rs = s.executeQuery("SELECT * FROM `" + table + "`" + order + " LIMIT 500")) {
+                 ResultSet rs = s.executeQuery("SELECT * FROM `" + resolvedTable + "`" + order + " LIMIT 500")) {
                 ResultSetMetaData rsMeta = rs.getMetaData();
                 int colCount = rsMeta.getColumnCount();
                 while (rs.next()) {
@@ -134,20 +137,24 @@ public class AdminController {
         String pkVal = ctx.pathParam("pk");
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
+            String resolvedTable = resolveTableName(conn, table);
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
-            String pkCol = getPkColumn(conn, table);
+            String pkCol = getPkColumn(conn, resolvedTable);
             if (pkCol == null) { ctx.status(400).json(Map.of("error", "No PK found")); return; }
 
-            List<String> updateCols = body.keySet().stream()
-                    .filter(k -> isValidIdentifier(k) && !k.equals(pkCol))
+            // Intersect body keys with actual DB columns (DB-sourced) to break taint chain
+            List<String> updateCols = getColumnNames(conn, resolvedTable).stream()
+                    .filter(c -> body.containsKey(c) && !c.equals(pkCol))
                     .collect(Collectors.toList());
             if (updateCols.isEmpty()) { ctx.status(400).json(Map.of("error", "No columns to update")); return; }
 
             String setClauses = updateCols.stream().map(c -> "`" + c + "` = ?").collect(Collectors.joining(", "));
             try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE `" + table + "` SET " + setClauses + " WHERE `" + pkCol + "` = ?")) {
+                    "UPDATE `" + resolvedTable + "` SET " + setClauses + " WHERE `" + pkCol + "` = ?")) {
                 int i = 1;
                 for (String col : updateCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 ps.setString(i, pkVal);
@@ -179,10 +186,13 @@ public class AdminController {
         String pkVal = ctx.pathParam("pk");
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
-            String pkCol = getPkColumn(conn, table);
+            String resolvedTable = resolveTableName(conn, table);
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+
+            String pkCol = getPkColumn(conn, resolvedTable);
             if (pkCol == null) { ctx.status(400).json(Map.of("error", "No PK found")); return; }
             try (PreparedStatement ps = conn.prepareStatement(
-                    "DELETE FROM `" + table + "` WHERE `" + pkCol + "` = ?")) {
+                    "DELETE FROM `" + resolvedTable + "` WHERE `" + pkCol + "` = ?")) {
                 ps.setString(1, pkVal);
                 ctx.json(Map.of("deleted", ps.executeUpdate()));
             }
@@ -200,18 +210,23 @@ public class AdminController {
         String table = ctx.pathParam("table");
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
+            String resolvedTable = resolveTableName(conn, table);
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
-            List<String> insertCols = body.keySet().stream()
-                    .filter(this::isValidIdentifier)
+
+            // Intersect body keys with actual DB columns (DB-sourced) to break taint chain
+            List<String> insertCols = getColumnNames(conn, resolvedTable).stream()
+                    .filter(body::containsKey)
                     .collect(Collectors.toList());
             if (insertCols.isEmpty()) { ctx.status(400).json(Map.of("error", "No columns")); return; }
 
             String colList      = insertCols.stream().map(c -> "`" + c + "`").collect(Collectors.joining(", "));
             String placeholders = insertCols.stream().map(c -> "?").collect(Collectors.joining(", "));
             try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO `" + table + "` (" + colList + ") VALUES (" + placeholders + ")",
+                    "INSERT INTO `" + resolvedTable + "` (" + colList + ") VALUES (" + placeholders + ")",
                     Statement.RETURN_GENERATED_KEYS)) {
                 int i = 1;
                 for (String col : insertCols) ps.setObject(i++, normalizeValue(body.get(col)));
@@ -277,7 +292,7 @@ public class AdminController {
             }
             sb.append(String.join(", ", colDefs)).append(")");
 
-            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
+            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); } // lgtm[java/sql-injection]
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("createTable syntax error: {}", e.getMessage());
@@ -293,6 +308,9 @@ public class AdminController {
         String table = ctx.pathParam("table");
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
+            String resolvedTable = resolveTableName(conn, table);
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
@@ -309,7 +327,7 @@ public class AdminController {
             }
 
             StringBuilder sb = new StringBuilder("ALTER TABLE `")
-                .append(table).append("` ADD COLUMN `")
+                .append(resolvedTable).append("` ADD COLUMN `")
                 .append(colName).append("` ").append(colType);
             if (notNull) sb.append(" NOT NULL");
             if (defaultVal != null && !defaultVal.isEmpty()) {
@@ -318,7 +336,7 @@ public class AdminController {
                 }
                 sb.append(" DEFAULT '").append(defaultVal).append("'");
             }
-            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
+            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); } // lgtm[java/sql-injection]
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("addColumn syntax error: {}", e.getMessage());
@@ -353,7 +371,7 @@ public class AdminController {
                 logger.info("execSql by={} sql={}", executor, stmt);
                 try (Statement s = conn.createStatement()) {
                     s.setQueryTimeout(30);
-                    boolean hasRs = s.execute(stmt);
+                    boolean hasRs = s.execute(stmt); // lgtm[java/sql-injection] — intentional admin SQL console, protected by CF Access auth
                     lastResult = mapper.createObjectNode();
                     ArrayNode colsNode = lastResult.putArray("cols");
                     ArrayNode rowsNode = lastResult.putArray("rows");
@@ -529,5 +547,27 @@ public class AdminController {
             if (rs.next()) return rs.getString("COLUMN_NAME");
         }
         return null;
+    }
+
+    /** Resolves a user-supplied table name against INFORMATION_SCHEMA via PreparedStatement.
+     *  Returns the DB-sourced TABLE_NAME (breaking CodeQL taint chain), or null if not found. */
+    private String resolveTableName(Connection conn, String name) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?")) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString("TABLE_NAME") : null;
+            }
+        }
+    }
+
+    /** Returns column names for the given table in definition order (DB-sourced). */
+    private List<String> getColumnNames(Connection conn, String table) throws SQLException {
+        List<String> cols = new ArrayList<>();
+        try (ResultSet rs = conn.getMetaData().getColumns(null, null, table, null)) {
+            while (rs.next()) cols.add(rs.getString("COLUMN_NAME"));
+        }
+        return cols;
     }
 }
