@@ -64,8 +64,8 @@ public class RequestMetrics {
 
     public void init() {
         loadFromDb();
-        scheduler.scheduleAtFixedRate(this::flushAll, 5, 5, TimeUnit.MINUTES);
-        logger.info("RequestMetrics persistence enabled (5-min flush)");
+        scheduler.scheduleAtFixedRate(this::flushAll, 45, 45, TimeUnit.SECONDS);
+        logger.info("RequestMetrics persistence enabled (45-sec flush)");
     }
 
     public void shutdown() {
