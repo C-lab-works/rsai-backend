@@ -460,7 +460,7 @@ public class AdminController {
             case "VARCHAR", "NVARCHAR"           -> "VARCHAR(" + size + ")";
             case "CHAR", "NCHAR"                 -> "CHAR(" + size + ")";
             case "INT", "INTEGER"                -> "INT";
-            case "TINYINT"                       -> "TINYINT(1)";
+            case "TINYINT"                       -> "TINYINT(" + size + ")";
             case "BIGINT"                        -> "BIGINT";
             case "FLOAT"                         -> "FLOAT";
             case "DOUBLE", "DOUBLE PRECISION"    -> "DOUBLE";
