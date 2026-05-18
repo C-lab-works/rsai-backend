@@ -40,8 +40,6 @@ public class Main {
         });
 
         cfAccessAuth.prefetchJwks();
-
-        RequestMetrics.get().init();
         Runtime.getRuntime().addShutdownHook(
                 new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
 
@@ -84,6 +82,7 @@ public class Main {
             throw (cause instanceof Exception ex) ? ex : new RuntimeException(cause);
         }
 
+        RequestMetrics.get().init();
         gate.register(new DataController());
         gate.register(new CongestionController());
         gate.register(new AdminController());

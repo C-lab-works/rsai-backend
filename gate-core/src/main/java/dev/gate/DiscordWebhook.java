@@ -23,6 +23,10 @@ public class DiscordWebhook {
 
     private DiscordWebhook() {}
 
+    private static String escapeJson(String s) {
+        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+    }
+
     public static void sendError(String method, String path, int status, String message) {
         if (WEBHOOK == null || WEBHOOK.isBlank()) return;
 
@@ -33,9 +37,9 @@ public class DiscordWebhook {
         ts.set(now);
 
         int color = status >= 500 ? 15158332 : 16776960; // red : yellow
-        String safeMsg = message != null
-                ? message.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ")
-                : "(no message)";
+        String safeMsg    = escapeJson(message != null ? message : "(no message)");
+        String safeMethod = escapeJson(method != null ? method : "");
+        String safePath   = escapeJson(path   != null ? path   : "");
         String body = """
                 {
                   "embeds": [{
@@ -46,7 +50,7 @@ public class DiscordWebhook {
                     "timestamp": "%s"
                   }]
                 }
-                """.formatted(status, method, path, safeMsg, color, INSTANCE, Instant.now());
+                """.formatted(status, safeMethod, safePath, safeMsg, color, INSTANCE, Instant.now());
 
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(WEBHOOK))

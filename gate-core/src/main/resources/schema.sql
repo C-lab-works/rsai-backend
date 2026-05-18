@@ -24,3 +24,17 @@ CREATE TABLE IF NOT EXISTS metrics_endpoints (
     endpoint VARCHAR(250) PRIMARY KEY,
     hits     BIGINT NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS operation_logs (
+    id            BIGINT       AUTO_INCREMENT PRIMARY KEY,
+    user          VARCHAR(255) NOT NULL,
+    action        VARCHAR(50)  NOT NULL,
+    target        VARCHAR(255) NOT NULL DEFAULT '',
+    detail        TEXT,
+    result        VARCHAR(20)  NOT NULL DEFAULT 'ok',
+    error_message TEXT,
+    timestamp     DATETIME     NOT NULL,
+    INDEX idx_timestamp (timestamp),
+    INDEX idx_user      (user),
+    INDEX idx_action    (action)
+);

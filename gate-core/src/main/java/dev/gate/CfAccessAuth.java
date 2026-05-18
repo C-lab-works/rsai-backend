@@ -18,10 +18,14 @@ import java.security.Signature;
 import java.security.spec.RSAPublicKeySpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * Validates Cloudflare Access JWT tokens ({@code CF-Access-Jwt-Assertion} header).
@@ -53,25 +57,30 @@ public class CfAccessAuth implements Handler {
 
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
 
-    /** JWKS kid → RSA PublicKey, refreshed when cache expires. */
-    private final ConcurrentHashMap<String, PublicKey> keyCache = new ConcurrentHashMap<>();
+    /** Atomic reference for lock-free reads; replaced atomically on refresh. */
+    private final AtomicReference<ConcurrentHashMap<String, PublicKey>> keyCacheRef
+            = new AtomicReference<>(new ConcurrentHashMap<>());
     private volatile Instant keysCachedAt = Instant.EPOCH;
 
     private final String audience;
+    private final String teamDomain;
     private final String certsUrl;
     private final boolean enabled;
-    private final java.util.Set<String> adminEmails;
+    private final Set<String> adminEmails;
 
     public CfAccessAuth() {
         String aud     = System.getenv("CF_ACCESS_AUD");
         String domain  = System.getenv("CF_ACCESS_TEAM_DOMAIN");
         String devFlag = System.getenv("CF_ACCESS_DEV_DISABLE");
         String admins  = System.getenv("ADMIN_EMAILS");
+        // Normalise to lowercase so email comparisons are case-insensitive
         this.adminEmails = (admins != null && !admins.isBlank())
-            ? java.util.Arrays.stream(admins.split(","))
-                .map(String::trim).filter(s -> !s.isEmpty())
-                .collect(java.util.stream.Collectors.toUnmodifiableSet())
-            : java.util.Set.of();
+            ? Arrays.stream(admins.split(","))
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toUnmodifiableSet())
+            : Set.of();
 
         if (aud == null || aud.isBlank() || domain == null || domain.isBlank()) {
             if (!"true".equalsIgnoreCase(devFlag)) {
@@ -80,29 +89,25 @@ public class CfAccessAuth implements Handler {
                     "To disable CF Access JWT validation in development, set CF_ACCESS_DEV_DISABLE=true.");
             }
             logger.warn("CfAccessAuth: JWT validation DISABLED (CF_ACCESS_DEV_DISABLE=true)");
-            this.audience = null;
-            this.certsUrl = null;
-            this.enabled  = false;
+            this.audience   = null;
+            this.teamDomain = null;
+            this.certsUrl   = null;
+            this.enabled    = false;
         } else {
             this.audience = aud.strip();
             String d = domain.strip();
-            // Accept either short org name ("tatsut") or full FQDN ("tatsut.cloudflareaccess.com")
             if (!d.contains(".")) {
                 d = d + ".cloudflareaccess.com";
             }
-            this.certsUrl = "https://" + d + "/cdn-cgi/access/certs";
-            this.enabled  = true;
+            this.teamDomain = "https://" + d + "/";
+            this.certsUrl   = "https://" + d + "/cdn-cgi/access/certs";
+            this.enabled    = true;
             logger.info("CfAccessAuth enabled. Audience={} Certs={} AdminEmails={}", audience, certsUrl, adminEmails.size());
         }
     }
 
     /**
      * Eagerly fetches and caches the JWKS public keys.
-     *
-     * <p>Call this once at startup (after {@code DataSeeder.seed()}) to eliminate the
-     * cold-start latency on the first {@code /admin} request. Failures are logged as
-     * warnings and do not abort startup — the cache will be populated on the first
-     * incoming request instead.</p>
      */
     public void prefetchJwks() {
         if (!enabled) return;
@@ -110,7 +115,7 @@ public class CfAccessAuth implements Handler {
             synchronized (this) {
                 refreshKeysLocked();
             }
-            logger.info("JWKS prefetch complete ({} keys cached)", keyCache.size());
+            logger.info("JWKS prefetch complete ({} keys cached)", keyCacheRef.get().size());
         } catch (Exception e) {
             logger.warn("JWKS prefetch failed (will retry on first request): {}", e.getMessage());
         }
@@ -120,8 +125,8 @@ public class CfAccessAuth implements Handler {
     public void handle(Context ctx) {
         if (!enabled) return;
         if ("/health".equals(ctx.path())) return;
-        // CORS preflights do not carry a CF-Access-Jwt-Assertion header — skip JWT check
         if ("OPTIONS".equals(ctx.method())) return;
+
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
         if (ctx.path().startsWith("/admin")) {
@@ -132,7 +137,7 @@ public class CfAccessAuth implements Handler {
             }
             try {
                 String email = verifyAndExtractEmail(token);
-                if (!adminEmails.isEmpty() && !adminEmails.contains(email)) {
+                if (!adminEmails.isEmpty() && !adminEmails.contains(email.toLowerCase())) {
                     logger.warn("Admin access denied for email={}", email);
                     ctx.status(403).json(Map.of("error", "Forbidden: admin access required")).halt();
                     return;
@@ -178,12 +183,16 @@ public class CfAccessAuth implements Handler {
         sig.update(signedData);
         if (!sig.verify(sigBytes)) throw new SecurityException("JWT signature verification failed");
 
-        // Validate claims
+        // Validate time claims
         long now = Instant.now().getEpochSecond();
         long exp = payload.path("exp").asLong(0);
         long nbf = payload.path("nbf").asLong(0);
         if (exp > 0 && now > exp) throw new SecurityException("JWT has expired (exp=" + exp + ")");
         if (nbf > 0 && now < nbf) throw new SecurityException("JWT not yet valid (nbf=" + nbf + ")");
+
+        // Validate issuer
+        String iss = payload.path("iss").asText("");
+        if (!teamDomain.equals(iss)) throw new SecurityException("JWT issuer mismatch: " + iss);
 
         // Validate audience
         JsonNode audNode = payload.get("aud");
@@ -207,30 +216,31 @@ public class CfAccessAuth implements Handler {
     // ── JWKS fetching / caching ───────────────────────────────────────────────
 
     private PublicKey getPublicKey(String kid) throws Exception {
-        // Fast-path: return from cache if still fresh (no lock needed for read)
-        if (!keyCache.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
-            PublicKey cached = keyCache.get(kid);
+        // Fast-path: lock-free read from current cache snapshot
+        ConcurrentHashMap<String, PublicKey> current = keyCacheRef.get();
+        if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
+            PublicKey cached = current.get(kid);
             if (cached != null) return cached;
         }
 
-        // Slow-path: refresh JWKS under a lock to prevent concurrent fetches
+        // Slow-path: refresh under lock
         synchronized (this) {
-            // Re-check after acquiring lock — another thread may have refreshed already
-            if (!keyCache.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
-                PublicKey cached = keyCache.get(kid);
+            current = keyCacheRef.get();
+            if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
+                PublicKey cached = current.get(kid);
                 if (cached != null) return cached;
             }
 
             refreshKeysLocked();
 
-            PublicKey key = keyCache.get(kid);
+            PublicKey key = keyCacheRef.get().get(kid);
             if (key == null) throw new SecurityException("No JWK found for kid=" + kid);
             return key;
         }
     }
 
     /**
-     * Fetches JWKS and repopulates the key cache. Must be called under {@code synchronized(this)}.
+     * Fetches JWKS and atomically replaces the key cache. Must be called under {@code synchronized(this)}.
      */
     private void refreshKeysLocked() throws Exception {
         logger.info("Refreshing JWKS from {}", certsUrl);
@@ -244,8 +254,7 @@ public class CfAccessAuth implements Handler {
             throw new RuntimeException("Failed to fetch JWKS: HTTP " + resp.statusCode());
         }
 
-        // Build new cache atomically — clear only after successful parse
-        Map<String, PublicKey> newCache = new HashMap<>();
+        ConcurrentHashMap<String, PublicKey> fresh = new ConcurrentHashMap<>();
         JsonNode jwks = mapper.readTree(resp.body());
         for (JsonNode jwk : jwks.path("keys")) {
             if (!"RSA".equals(jwk.path("kty").asText())) continue;
@@ -254,10 +263,10 @@ public class CfAccessAuth implements Handler {
             byte[] e  = Base64.getUrlDecoder().decode(jwk.path("e").asText());
             RSAPublicKeySpec spec = new RSAPublicKeySpec(new BigInteger(1, n), new BigInteger(1, e));
             PublicKey pubKey = KeyFactory.getInstance("RSA").generatePublic(spec);
-            newCache.put(k, pubKey);
+            fresh.put(k, pubKey);
         }
-        keyCache.clear();
-        keyCache.putAll(newCache);
+        // Atomic swap — no window where cache is empty
+        keyCacheRef.set(fresh);
         keysCachedAt = Instant.now();
     }
 

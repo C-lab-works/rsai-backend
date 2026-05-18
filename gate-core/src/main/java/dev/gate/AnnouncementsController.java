@@ -13,15 +13,27 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @GateController
 public class AnnouncementsController {
 
     private static final Logger logger = new Logger(AnnouncementsController.class);
+    private static final long CACHE_TTL_MS = 30_000L;
     private final ObjectMapper mapper = new ObjectMapper();
+
+    private record CacheEntry(Object data, long expiresAt) {}
+    private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
     @GetMapping("/announcements")
     public void list(Context ctx) {
+        CacheEntry entry = cache.get("announcements");
+        if (entry != null && System.currentTimeMillis() < entry.expiresAt()) {
+            ctx.header("Cache-Control", "public, max-age=30");
+            ctx.json(entry.data());
+            return;
+        }
+
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -43,10 +55,17 @@ public class AnnouncementsController {
                 if (from  != null) n.put("displayFrom",  from);
                 if (until != null) n.put("displayUntil", until);
             }
-            ctx.header("Cache-Control", "public, max-age=60");
+            cache.put("announcements", new CacheEntry(root, System.currentTimeMillis() + CACHE_TTL_MS));
+            ctx.header("Cache-Control", "public, max-age=30");
             ctx.json(root);
         } catch (Exception e) {
             logger.error("announcements error", e);
+            if (entry != null) {
+                logger.warn("Serving stale cache for announcements due to DB error");
+                ctx.header("Cache-Control", "no-store");
+                ctx.json(entry.data());
+                return;
+            }
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }

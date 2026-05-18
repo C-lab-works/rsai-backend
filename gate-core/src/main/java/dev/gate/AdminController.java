@@ -12,6 +12,8 @@ import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
 
+import dev.gate.CfAccessAuth;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -98,8 +100,10 @@ public class AdminController {
             }
 
             ArrayNode rows = root.putArray("rows");
+            String sort  = ctx.queryParam("sort");
+            String order = "desc".equalsIgnoreCase(sort) ? " ORDER BY id DESC" : "";
             try (Statement s = conn.createStatement();
-                 ResultSet rs = s.executeQuery("SELECT * FROM `" + table + "` LIMIT 500")) {
+                 ResultSet rs = s.executeQuery("SELECT * FROM `" + table + "`" + order + " LIMIT 500")) {
                 ResultSetMetaData rsMeta = rs.getMetaData();
                 int colCount = rsMeta.getColumnCount();
                 while (rs.next()) {
@@ -231,9 +235,6 @@ public class AdminController {
 
     @PostMapping("/admin/ddl/tables")
     public void createTable(Context ctx) {
-        if (!isValidTableName(ctx.pathParam("table") != null ? ctx.pathParam("table") : "_", ctx)) {
-            // path param not used for this endpoint
-        }
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
@@ -322,6 +323,7 @@ public class AdminController {
 
     @PostMapping("/admin/sql")
     public void execSql(Context ctx) {
+        String executor = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
@@ -333,7 +335,9 @@ public class AdminController {
             for (String raw : sql.split(";")) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
+                logger.info("execSql by={} sql={}", executor, stmt);
                 try (Statement s = conn.createStatement()) {
+                    s.setQueryTimeout(30);
                     boolean hasRs = s.execute(stmt);
                     lastResult = mapper.createObjectNode();
                     ArrayNode colsNode = lastResult.putArray("cols");
@@ -361,10 +365,16 @@ public class AdminController {
             }
             ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
         } catch (Exception e) {
-            logger.error("execSql error", e);
-            String msg = e.getMessage() != null ? e.getMessage() : "Query execution failed";
-            ctx.status(400).json(Map.of("error", msg));
+            logger.error("execSql error by={}", executor, e);
+            ctx.status(400).json(Map.of("error", sanitizeSqlError(e)));
         }
+    }
+
+    private String sanitizeSqlError(Exception e) {
+        if (e instanceof SQLSyntaxErrorException)              return "SQL 構文エラー";
+        if (e instanceof SQLIntegrityConstraintViolationException) return "制約違反";
+        if (e instanceof SQLException se && isDataTypeError(se)) return "データ型エラー";
+        return "クエリ実行に失敗しました";
     }
 
     @GetMapping("/admin/stats")
@@ -446,10 +456,6 @@ public class AdminController {
 
     private Object normalizeValue(Object val) {
         if (val instanceof Boolean b) return b ? 1 : 0;
-        if (val instanceof String s) {
-            if ("true".equalsIgnoreCase(s))  return 1;
-            if ("false".equalsIgnoreCase(s)) return 0;
-        }
         return val;
     }
 
