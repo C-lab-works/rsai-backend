@@ -1,0 +1,221 @@
+{
+  "meta": {
+    "title": "rsai-backend ワークフロー",
+    "path": "rsai-backend / gate-core (dev.gate)",
+    "hint": "左のフローを選択 / バッジ・注釈クリックでステップにフォーカス / ホイールでズーム・ドラッグでパン / 数字キーでフロー切替"
+  },
+  "viewBox": { "w": 1680, "h": 980 },
+  "columns": [
+    { "id": "external",    "label": "EXTERNAL",        "x": 130,  "divider": 290 },
+    { "id": "entry",       "label": "ENTRY",           "x": 450,  "divider": 610 },
+    { "id": "filters",     "label": "FILTERS",         "x": 770,  "divider": 930 },
+    { "id": "controllers", "label": "ROUTING / CONTROLLERS", "x": 1090, "divider": 1250 },
+    { "id": "data",        "label": "DATA & CORE",     "x": 1410, "divider": null }
+  ],
+  "groups": [
+    { "id": "ext",  "label": "外部",         "stroke": "#4cc9f0", "fill": "#11242e", "sub": "#7fd7ef" },
+    { "id": "boot", "label": "起動 / 入口",  "stroke": "#b388ff", "fill": "#1e1a2e", "sub": "#c9b3ff" },
+    { "id": "filt", "label": "ミドルウェア", "stroke": "#ffd166", "fill": "#2b2415", "sub": "#ffe3a3" },
+    { "id": "ctrl", "label": "ルート / 制御", "stroke": "#06d6a0", "fill": "#0f2a23", "sub": "#7fe8cf" },
+    { "id": "core", "label": "データ / コア", "stroke": "#ff6b6b", "fill": "#2c1717", "sub": "#ff9e9e" }
+  ],
+  "nodes": [
+    { "id": "browser",       "title": "ユーザーブラウザ",        "subtitle": "公開アプリ (read-only)",       "group": "ext",  "x": 20,   "y": 70,  "w": 220, "h": 56 },
+    { "id": "admin",         "title": "管理画面",                "subtitle": "admin.r-sai2026.site",         "group": "ext",  "x": 20,   "y": 190, "w": 220, "h": 56 },
+    { "id": "cf",            "title": "Cloudflare Edge",         "subtitle": "プロキシ + CF Access",          "group": "ext",  "x": 20,   "y": 310, "w": 220, "h": 56 },
+    { "id": "cfcerts",       "title": "CF Access JWKS",          "subtitle": "/cdn-cgi/access/certs",        "group": "ext",  "x": 20,   "y": 430, "w": 220, "h": 56 },
+    { "id": "platform",      "title": "Cloud Run / Azure",       "subtitle": "ヘルスチェック・PORT注入",      "group": "ext",  "x": 20,   "y": 550, "w": 220, "h": 56 },
+    { "id": "discord",       "title": "Discord Webhook",         "subtitle": "障害通知先",                   "group": "ext",  "x": 20,   "y": 670, "w": 220, "h": 56 },
+
+    { "id": "main",          "title": "Main.main()",             "subtitle": "起動ブートストラップ",          "group": "boot", "x": 340,  "y": 150, "w": 220, "h": 56 },
+    { "id": "config",        "title": "ConfigLoader",            "subtitle": "config.yml + 環境変数",        "group": "boot", "x": 340,  "y": 290, "w": 220, "h": 56 },
+    { "id": "gate",          "title": "Gate + Jetty",            "subtitle": "HTTP入口 / CORS / 仮想スレッド", "group": "boot", "x": 340,  "y": 430, "w": 220, "h": 56 },
+
+    { "id": "mtimer",        "title": "RequestMetrics.startTimer", "subtitle": "before: 計測開始",            "group": "filt", "x": 660,  "y": 80,  "w": 220, "h": 56 },
+    { "id": "cfip",          "title": "CloudflareIpFilter",      "subtitle": "before: CF IP CIDR制限",       "group": "filt", "x": 660,  "y": 200, "w": 220, "h": 56 },
+    { "id": "apikey",        "title": "ApiKeyAuth",              "subtitle": "before: X-API-Key",            "group": "filt", "x": 660,  "y": 320, "w": 220, "h": 56 },
+    { "id": "cfaccess",      "title": "CfAccessAuth",            "subtitle": "before: JWT検証 (/admin)",     "group": "filt", "x": 660,  "y": 440, "w": 220, "h": 56 },
+    { "id": "sec",           "title": "SecurityHeaders",         "subtitle": "after: セキュリティHdr",        "group": "filt", "x": 660,  "y": 620, "w": 220, "h": 56 },
+    { "id": "mrec",          "title": "RequestMetrics.record",   "subtitle": "after: 集計 + 通知",           "group": "filt", "x": 660,  "y": 740, "w": 220, "h": 56 },
+
+    { "id": "router",        "title": "Router",                  "subtitle": "ルート解決 + キャッシュ",       "group": "ctrl", "x": 980,  "y": 70,  "w": 220, "h": 56 },
+    { "id": "scanner",       "title": "AnnotationScanner",       "subtitle": "@*Mapping を登録",             "group": "ctrl", "x": 980,  "y": 190, "w": 220, "h": 56 },
+    { "id": "health",        "title": "/health ハンドラ",         "subtitle": "DB ready 判定",                "group": "ctrl", "x": 980,  "y": 310, "w": 220, "h": 56 },
+    { "id": "data",          "title": "DataController",          "subtitle": "/events /food /map",           "group": "ctrl", "x": 980,  "y": 430, "w": 220, "h": 56 },
+    { "id": "cong",          "title": "CongestionController",    "subtitle": "/locations /congestion",       "group": "ctrl", "x": 980,  "y": 550, "w": 220, "h": 56 },
+    { "id": "adminc",        "title": "AdminController",         "subtitle": "/admin/* CRUD / SQL / 統計",   "group": "ctrl", "x": 980,  "y": 670, "w": 220, "h": 56 },
+    { "id": "announce",      "title": "AnnouncementsController", "subtitle": "/announcements",               "group": "ctrl", "x": 980,  "y": 790, "w": 220, "h": 56 },
+
+    { "id": "seeder",        "title": "DataSeeder",              "subtitle": "スキーマ / シード migration",   "group": "core", "x": 1300, "y": 190, "w": 220, "h": 56 },
+    { "id": "db",            "title": "Database (HikariCP)",     "subtitle": "MySQL 接続プール",             "group": "core", "x": 1300, "y": 330, "w": 220, "h": 56 },
+    { "id": "mysql",         "title": "MySQL",                    "subtitle": "festival DB (パブリックIP)",   "group": "core", "x": 1300, "y": 470, "w": 220, "h": 56 }
+  ],
+  "flows": [
+    {
+      "id": "boot", "icon": "🚀", "name": "1. 起動ブートストラップ", "sub": "Main から全コンポーネント初期化",
+      "description": "Main.main() が設定読込・DB非同期init・シード・JWKSプリフェッチ・メトリクス復元・サーバ起動・コントローラ登録を順に行う。サーバはDB待ちより先に起動しヘルスチェックを通す。",
+      "steps": [
+        { "from": "main", "to": "config",   "passes": "ConfigLoader.load()", "note": "config.yml + 環境変数。PORT env は config.yml より優先" },
+        { "from": "main", "to": "db",       "passes": "CompletableFuture.runAsync(() -> Database.init(dbConfig))", "note": "DB初期化は非同期。サーバ起動をブロックしない" },
+        { "from": "db",   "to": "mysql",    "passes": "HikariDataSource 構築 + runSchema()", "note": "schema.sql を ; 分割で逐次実行。ready=true をセット" },
+        { "from": "main", "to": "seeder",   "passes": "DataSeeder.seed()", "note": "dbFuture 内で init 直後に実行" },
+        { "from": "seeder","to": "mysql",   "passes": "seed_version 判定 → migrate v1..v7 / INSERT IGNORE", "note": "v7 到達済みなら skip。冪等" },
+        { "from": "main", "to": "cfaccess", "passes": "cfAccessAuth.prefetchJwks()", "note": "コールドスタートのJWKS遅延を排除" },
+        { "from": "cfaccess","to": "cfcerts","passes": "GET /cdn-cgi/access/certs", "note": "RSA公開鍵を起動時にキャッシュ。失敗してもwarnのみ" },
+        { "from": "main", "to": "mrec",     "passes": "RequestMetrics.get().init()", "note": "loadFromDb + 5分毎フラッシュ scheduler 起動" },
+        { "from": "mrec", "to": "db",       "passes": "loadFromDb()", "note": "metrics_hourly/endpoints/histogram をメモリへ復元" },
+        { "from": "main", "to": "gate",     "passes": "cors() / before() / after() 登録 → gate.start(port)", "note": "サーバを先に起動 (Cloud Run health 用)" },
+        { "from": "main", "to": "scanner",  "passes": "gate.register(Data/Congestion/Admin/Announcements)", "note": "dbFuture.join() 完了後にDB依存ルートを登録" },
+        { "from": "scanner","to": "router", "passes": "@GetMapping等を解析し register()", "note": "MethodHandle で controller にバインド" }
+      ]
+    },
+    {
+      "id": "health", "icon": "💓", "name": "2. ヘルスチェック", "sub": "/health → DB ready 判定",
+      "description": "Cloud Run / Azure からの定期 GET /health。/health は CF IP・APIキー・JWT を免除。DB未準備なら503を返し、トラフィック投入を遅延させる。",
+      "steps": [
+        { "from": "platform", "to": "gate",   "passes": "GET /health", "note": "プラットフォームの生存監視。CF を経由しない" },
+        { "from": "gate",     "to": "mtimer", "passes": "before: startTimer", "note": "ThreadLocal に開始 nanoTime" },
+        { "from": "gate",     "to": "cfip",   "passes": "before: CloudflareIpFilter", "note": "/health は EXEMPT_PATHS → skip" },
+        { "from": "gate",     "to": "health", "passes": "router.find(\"GET:/health\")", "note": "プログラマティック登録ルート" },
+        { "from": "health",   "to": "db",     "passes": "Database.isReady()", "note": "volatile boolean。init完了で true" },
+        { "from": "health",   "to": "gate",   "passes": "ready? 200{status:ok} : 503{status:starting}", "note": "503でプラットフォームが投入を待機" },
+        { "from": "gate",     "to": "sec",    "passes": "after: SecurityHeaders", "note": "全レスポンスにセキュリティHdr付与" },
+        { "from": "gate",     "to": "mrec",   "passes": "after: record", "note": "/health も集計対象 (/admin のみ除外)" },
+        { "from": "gate",     "to": "platform","passes": "status + headers + body 書き出し", "note": "" }
+      ]
+    },
+    {
+      "id": "pipeline", "icon": "🔁", "name": "3. リクエストパイプライン", "sub": "共通ミドルウェアチェーン",
+      "description": "Gate サーブレットの service() が CORS処理 → before×4 → ルート解決 → after×2 → 書き出しを行う。OPTIONS は before 通過後に204。before が halt するとルート以降をスキップ。",
+      "steps": [
+        { "from": "cf",   "to": "gate",     "passes": "プロキシ済みHTTP (X-Forwarded-For 付き)", "note": "Azure Envoy が getRemoteAddr を書換えるため XFF を使用" },
+        { "from": "gate", "to": "mtimer",   "passes": "before #1", "note": "計測開始" },
+        { "from": "gate", "to": "cfip",     "passes": "before #2: XFF 最右の非プライベートIPを CF CIDR照合", "note": "不一致は 403 halt" },
+        { "from": "gate", "to": "apikey",   "passes": "before #3: X-API-Key 照合", "note": "OPTIONS/health は skip。read-only鍵はGETのみ" },
+        { "from": "gate", "to": "cfaccess", "passes": "before #4: /admin のみ JWT検証", "note": "公開APIは ApiKeyAuth のみで通過" },
+        { "from": "gate", "to": "router",   "passes": "OPTIONS以外: method+':'+path で find()", "note": "完全一致優先 → パターン照合 (キャッシュ付き)" },
+        { "from": "router","to": "data",    "passes": "RouteMatch.handler().handle(ctx)", "note": "pathParams をセットしハンドラ実行 (例: DataController)" },
+        { "from": "gate", "to": "sec",      "passes": "after #1: SecurityHeaders", "note": "finally で必ず実行" },
+        { "from": "gate", "to": "mrec",     "passes": "after #2: RequestMetrics.record", "note": "各 after は個別 try/catch" },
+        { "from": "gate", "to": "cf",       "passes": "status / headers / responseBody を Writer へ", "note": "after 完了後に書き出し" }
+      ]
+    },
+    {
+      "id": "publicread", "icon": "📖", "name": "4. 公開データ取得 + キャッシュ", "sub": "/events /food /map (TTL 5分)",
+      "description": "公開アプリが read-only API キーで取得。コントローラ内 TTLキャッシュにヒットすれば即返却。miss時はDBで構築しキャッシュ。DB障害時は古いキャッシュへフォールバック。",
+      "steps": [
+        { "from": "browser", "to": "cf",      "passes": "GET /events (X-API-Key: read-only)", "note": "" },
+        { "from": "cf",      "to": "gate",    "passes": "プロキシ転送", "note": "" },
+        { "from": "gate",    "to": "apikey",  "passes": "read-only鍵 → GET のみ許可", "note": "非GETは 403 halt" },
+        { "from": "gate",    "to": "data",    "passes": "DataController.events()/food()/map()", "note": "serve() 共通キャッシュ+構築" },
+        { "from": "data",    "to": "db",      "passes": "キャッシュmiss: Database.getConnection()", "note": "ヒット時はDBに触れず即返却 (max-age=300)" },
+        { "from": "db",      "to": "mysql",   "passes": "SELECT categories/locations/projects/timetables", "note": "/food は foods/menus、/map は locations" },
+        { "from": "data",    "to": "browser", "passes": "JSON + Cache-Control: public, max-age=300", "note": "結果を TTL 5分でキャッシュ格納" },
+        { "from": "data",    "to": "browser", "passes": "DB障害時: stale cache (no-store) / 無ければ 503", "note": "可用性優先のフォールバック" }
+      ]
+    },
+    {
+      "id": "congestion", "icon": "🚦", "name": "5. 混雑度更新", "sub": "POST /congestion/{id}",
+      "description": "管理画面から混雑レベル(0-2)を更新。/admin 配下ではないため CF Access JWT は適用されず、ApiKeyAuth の admin 鍵で認可。updated_by は CF検証emailが無ければ \"unknown\"。",
+      "steps": [
+        { "from": "admin",  "to": "cf",    "passes": "POST /congestion/{id} {level}", "note": "" },
+        { "from": "cf",     "to": "gate",  "passes": "プロキシ転送", "note": "" },
+        { "from": "gate",   "to": "apikey","passes": "X-API-Key: admin (POSTは admin鍵必須)", "note": "read-only鍵は 403" },
+        { "from": "gate",   "to": "cong",  "passes": "CongestionController.updateCongestion()", "note": "pathParam id を parseInt" },
+        { "from": "cong",   "to": "cong",  "passes": "level 検証 (数値 / 0..2)", "note": "不正は 400。body無しも 400" },
+        { "from": "cong",   "to": "db",    "passes": "INSERT ... ON DUPLICATE KEY UPDATE", "note": "updated_by = 検証email or 'unknown'" },
+        { "from": "db",     "to": "mysql", "passes": "congestion_status upsert", "note": "" },
+        { "from": "cong",   "to": "admin", "passes": "{ok:true, location_id, level}", "note": "DB障害は 503 + detail" }
+      ]
+    },
+    {
+      "id": "admincrud", "icon": "🗂️", "name": "6. Admin テーブル CRUD", "sub": "/admin/tables/{table}",
+      "description": "管理画面の汎用テーブル編集。CF Access JWT 必須。テーブル/列名は識別子正規表現で検証し、値はPreparedStatementでバインド。制約違反はユーザ向けメッセージに変換し400。",
+      "steps": [
+        { "from": "admin",   "to": "cf",       "passes": "GET/POST/PUT/DELETE /admin/tables/{table}", "note": "一覧 /admin/tables も含む" },
+        { "from": "cf",      "to": "gate",     "passes": "CF-Access-Jwt-Assertion 付きで転送", "note": "" },
+        { "from": "gate",    "to": "cfaccess", "passes": "/admin → JWT検証 + verified email", "note": "未付与は 401 halt" },
+        { "from": "cfaccess","to": "cfcerts",  "passes": "kid 未キャッシュ/TTL切れ時 JWKS再取得", "note": "通常はキャッシュヒット (1h TTL)" },
+        { "from": "gate",    "to": "adminc",   "passes": "getTable/updateRow/deleteRow/insertRow", "note": "" },
+        { "from": "adminc",  "to": "adminc",   "passes": "isValidIdentifier(table/col)", "note": "[a-zA-Z0-9_]+ のみ。SQLインジェクション対策" },
+        { "from": "adminc",  "to": "db",       "passes": "DatabaseMetaData + 動的SQL (PreparedStatement)", "note": "PK は getPrimaryKeys から解決" },
+        { "from": "db",      "to": "mysql",    "passes": "SELECT/UPDATE/DELETE/INSERT (LIMIT 500)", "note": "" },
+        { "from": "adminc",  "to": "admin",    "passes": "JSON 結果 / 制約違反は toUserMessage で 400", "note": "1062重複・1048 NULL・FK 違反を判別" }
+      ]
+    },
+    {
+      "id": "adminsql", "icon": "🛠️", "name": "7. Admin SQL / DDL 実行", "sub": "/admin/sql /admin/ddl/*",
+      "description": "任意SQL実行と CREATE TABLE / ADD COLUMN。型はホワイトリスト(ALLOWED_COL_TYPES)、識別子は正規表現で検証。SQLは ; 分割で逐次実行し最後の結果を返す。",
+      "steps": [
+        { "from": "admin",  "to": "cf",       "passes": "POST /admin/sql | /admin/ddl/tables | /columns", "note": "" },
+        { "from": "cf",     "to": "gate",     "passes": "JWT 付き転送", "note": "" },
+        { "from": "gate",   "to": "cfaccess", "passes": "/admin → JWT検証", "note": "" },
+        { "from": "gate",   "to": "adminc",   "passes": "execSql / createTable / addColumn", "note": "" },
+        { "from": "adminc", "to": "adminc",   "passes": "ALLOWED_COL_TYPES + isValidIdentifier 検証", "note": "デフォルト値も文字種制限" },
+        { "from": "adminc", "to": "db",       "passes": "; 分割 → 逐次 Statement.execute()", "note": "" },
+        { "from": "db",     "to": "mysql",    "passes": "任意SQL / CREATE TABLE / ALTER TABLE", "note": "" },
+        { "from": "adminc", "to": "admin",    "passes": "cols/rows or affected / SQLエラーは 400", "note": "execSql は失敗時も 400 でメッセージ返却" }
+      ]
+    },
+    {
+      "id": "jwt", "icon": "🔐", "name": "8. CF Access JWT 検証 + JWKS更新", "sub": "CfAccessAuth 内部",
+      "description": "/admin リクエストの CF-Access-Jwt-Assertion を RS256 検証。kid に対応する公開鍵を JWKS キャッシュ(1h TTL)から取得、無ければロック下で再取得。exp/nbf/aud/email を検証。",
+      "steps": [
+        { "from": "cf",       "to": "cfaccess", "passes": "CF-Access-Jwt-Assertion ヘッダ", "note": "OPTIONS/health/非admin は素通り" },
+        { "from": "cfaccess", "to": "cfaccess", "passes": "header.payload.sig 分解 / alg=RS256 確認", "note": "3パート以外は例外" },
+        { "from": "cfaccess", "to": "cfcerts",  "passes": "kid 未キャッシュ or TTL切れ時 GET /certs", "note": "synchronized で同時取得を防止 (二重チェック)" },
+        { "from": "cfcerts",  "to": "cfaccess", "passes": "JWKS {kty:RSA, n, e}", "note": "RSAPublicKeySpec → PublicKey を構築しキャッシュ" },
+        { "from": "cfaccess", "to": "cfaccess", "passes": "署名検証 + exp/nbf/aud/email 検証", "note": "audience 配列/単一の両対応" },
+        { "from": "cfaccess", "to": "gate",     "passes": "成功: ctx属性に email / 失敗: 401 halt", "note": "ATTR_VERIFIED_EMAIL を監査ログ用に保存" }
+      ]
+    },
+    {
+      "id": "metricsrec", "icon": "📊", "name": "9. メトリクス記録", "sub": "after filter: record()",
+      "description": "after フィルタで時間スロット集計・レイテンシヒストグラム・エンドポイント別カウントをメモリ上で更新。/admin(debug除く)は除外。5xx は Discord 通知をトリガ。",
+      "steps": [
+        { "from": "gate", "to": "mrec",    "passes": "after: record(ctx)", "note": "" },
+        { "from": "mrec", "to": "mrec",    "passes": "/admin(除 /admin/debug/) は skip / 時間スロット集計", "note": "24時間リングバッファ" },
+        { "from": "mrec", "to": "mrec",    "passes": "レイテンシ histogram + endpoint LongAdder 加算", "note": "MAX_KEYS=100 で上限" },
+        { "from": "mrec", "to": "discord", "passes": "status≥500 → DiscordWebhook.sendError", "note": "詳細はフロー11" },
+        { "from": "mrec", "to": "gate",    "passes": "戻り (集計はメモリ、DBは別途flush)", "note": "" }
+      ]
+    },
+    {
+      "id": "metricspersist", "icon": "💾", "name": "10. メトリクス永続化", "sub": "restore / 5分flush / 終了flush",
+      "description": "マルチインスタンス安全のため集計はDBに永続化。起動時に復元、5分ごとに差分を ON DUPLICATE KEY UPDATE で加算、SIGTERM 時に最終フラッシュ。",
+      "steps": [
+        { "from": "main",     "to": "mrec",  "passes": "init(): loadFromDb + scheduleAtFixedRate(5分)", "note": "" },
+        { "from": "mrec",     "to": "db",    "passes": "loadFromDb: metrics_* SELECT", "note": "起動時1回。失敗してもfresh開始" },
+        { "from": "db",       "to": "mysql", "passes": "metrics_hourly/endpoints/histogram 読込", "note": "" },
+        { "from": "mrec",     "to": "db",    "passes": "flushAll: 差分を ON DUPLICATE KEY UPDATE", "note": "lastFlushed* との差分のみ送信" },
+        { "from": "db",       "to": "mysql", "passes": "metrics_* へ加算 INSERT (batch)", "note": "" },
+        { "from": "platform", "to": "mrec",  "passes": "SIGTERM → shutdownHook → 最終 flushAll", "note": "metrics-shutdown スレッド" }
+      ]
+    },
+    {
+      "id": "errordiscord", "icon": "🚨", "name": "11. エラー → Discord 通知", "sub": "5xx を debounce 通知",
+      "description": "ハンドラ例外は errorHandler が 500 化。after の record が 5xx を検出し DiscordWebhook へ。同一 method+path+status は5秒デバウンス。送信は非同期・失敗はwarnのみ。",
+      "steps": [
+        { "from": "data",  "to": "gate",    "passes": "ハンドラ例外 throw", "note": "DB障害等。任意のコントローラが該当" },
+        { "from": "gate",  "to": "gate",    "passes": "errorHandler → status 500 + error ログ", "note": "after は finally で継続実行" },
+        { "from": "gate",  "to": "mrec",    "passes": "after: record で statusCode≥500 検出", "note": "" },
+        { "from": "mrec",  "to": "discord", "passes": "sendError(method,path,status,body)", "note": "key=METHOD PATH STATUS で 5s デバウンス" },
+        { "from": "discord","to": "mrec",   "passes": "HTTP.sendAsync (discarding)", "note": "失敗時 exceptionally で warn ログ" }
+      ]
+    },
+    {
+      "id": "stats", "icon": "📈", "name": "12. Admin 統計ダッシュボード", "sub": "GET /admin/stats",
+      "description": "管理画面の統計画面。RequestMetrics の集計値をDBから読み出して整形。総リクエスト・エラー率・p50/p95・時系列chart・トップエンドポイント(admin除外)を返す。",
+      "steps": [
+        { "from": "admin",  "to": "cf",       "passes": "GET /admin/stats", "note": "" },
+        { "from": "cf",     "to": "gate",     "passes": "JWT 付き転送", "note": "" },
+        { "from": "gate",   "to": "cfaccess", "passes": "/admin → JWT検証", "note": "" },
+        { "from": "gate",   "to": "adminc",   "passes": "AdminController.stats()", "note": "Cache-Control: no-store" },
+        { "from": "adminc", "to": "mrec",     "passes": "getTotalRequests/ErrorCount/Percentiles/TopEndpoints", "note": "" },
+        { "from": "mrec",   "to": "db",       "passes": "metrics_* を集計 SELECT", "note": "SUM / ORDER BY hits / histogram から百分位" },
+        { "from": "db",     "to": "mysql",    "passes": "集計クエリ実行", "note": "" },
+        { "from": "adminc", "to": "admin",    "passes": "totalRequests/errorRate/p50/p95/chart/endpoints JSON", "note": "/admin パスは endpoints から除外" }
+      ]
+    }
+  ]
+}

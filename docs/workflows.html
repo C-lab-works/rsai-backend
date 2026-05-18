@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rsai-backend ワークフロー</title>
+<style>
+  :root{
+    --bg:#0c1117; --bg-2:#11171f; --panel:#161d27; --line:#2a3340;
+    --text:#d6dde6; --muted:#8a94a3;
+    --edge:#2c3441; --edge-active:#ffd166; --edge-active-glow:rgba(255,209,102,0.55);
+    --anno-h:300px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif;
+    overflow:hidden;
+  }
+  .app{
+    display:grid; height:100vh;
+    grid-template-columns:320px 1fr;
+    grid-template-rows:auto 1fr 6px var(--anno-h);
+    grid-template-areas:
+      "header header"
+      "sidebar canvas"
+      "sidebar resizer"
+      "sidebar annotations";
+  }
+  /* ── header ── */
+  header{
+    grid-area:header; padding:14px 22px;
+    background:linear-gradient(180deg,var(--bg-2),var(--bg));
+    border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:18px; flex-wrap:wrap;
+  }
+  header h1{font-size:17px; letter-spacing:.5px}
+  header .path{color:var(--muted); font-size:12px; font-family:ui-monospace,"SFMono-Regular",Consolas,monospace}
+  header .hint{color:var(--muted); font-size:11.5px; margin-left:auto}
+  /* ── sidebar ── */
+  .sidebar{
+    grid-area:sidebar; background:var(--bg-2); border-right:1px solid var(--line);
+    overflow-y:auto; padding:14px;
+  }
+  .sidebar h2{font-size:11px; letter-spacing:1.5px; color:var(--muted); margin:4px 0 10px}
+  .flow-btn{
+    display:flex; align-items:flex-start; gap:9px; width:100%;
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    border-radius:9px; padding:9px 11px; margin-bottom:7px; cursor:pointer;
+    text-align:left; transition:border-color .15s, background .15s, transform .1s;
+    font:inherit;
+  }
+  .flow-btn:hover{border-color:#3c4a5c; background:#1a222d}
+  .flow-btn.active{border-color:var(--edge-active); background:#211d12; box-shadow:0 0 0 1px var(--edge-active) inset}
+  .flow-btn .ic{font-size:16px; line-height:1.3}
+  .flow-btn .tt{font-size:12.5px; font-weight:600; line-height:1.35}
+  .flow-btn .sb{font-size:11px; color:var(--muted); margin-top:2px}
+  .flow-btn .kbd{margin-left:auto; font-size:10px; color:var(--muted); border:1px solid var(--line);
+    border-radius:4px; padding:1px 5px; font-family:ui-monospace,monospace}
+  .legend{margin-top:16px; border-top:1px solid var(--line); padding-top:12px}
+  .legend .row{display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--muted); margin:6px 0}
+  .legend .sw{width:14px; height:14px; border-radius:4px; border:1.5px solid}
+  .reset{
+    margin-top:14px; width:100%; background:transparent; color:var(--muted);
+    border:1px dashed var(--line); border-radius:8px; padding:8px; cursor:pointer; font:inherit; font-size:12px;
+  }
+  .reset:hover{color:var(--text); border-color:#3c4a5c}
+  /* ── canvas ── */
+  .canvas{grid-area:canvas; position:relative; overflow:hidden; background:
+      radial-gradient(circle at 30% 20%, #131b25 0%, var(--bg) 70%);}
+  svg{width:100%; height:100%; display:block; cursor:grab}
+  svg.panning{cursor:grabbing}
+  /* ── resizer ── */
+  .resizer{grid-area:resizer; background:var(--line); cursor:row-resize; position:relative}
+  .resizer::after{content:""; position:absolute; left:50%; top:-3px; width:46px; height:12px;
+    transform:translateX(-50%); }
+  .resizer:hover{background:var(--edge-active)}
+  /* ── annotations ── */
+  .annotations{
+    grid-area:annotations; background:var(--bg-2); border-top:1px solid var(--line);
+    overflow-y:auto; padding:14px 20px;
+  }
+  .annotations .ahead{display:flex; align-items:baseline; gap:12px; margin-bottom:10px}
+  .annotations .ahead .nm{font-size:14px; font-weight:600}
+  .annotations .ahead .ds{font-size:12px; color:var(--muted); line-height:1.5}
+  ol.steps{list-style:none; counter-reset:step}
+  ol.steps li{
+    counter-increment:step; position:relative; padding:9px 12px 9px 42px;
+    border:1px solid var(--line); border-radius:8px; margin-bottom:7px; background:var(--panel);
+    cursor:pointer; transition:border-color .15s, background .15s;
+  }
+  ol.steps li:hover{border-color:#3c4a5c}
+  ol.steps li::before{
+    content:counter(step); position:absolute; left:10px; top:9px;
+    width:22px; height:22px; border-radius:50%; background:#1d2530; color:var(--edge-active);
+    border:1px solid var(--line); font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  ol.steps li .ft{font-family:ui-monospace,"SFMono-Regular",Consolas,monospace; font-size:12px; color:var(--text)}
+  ol.steps li .ft .arr{color:var(--edge-active); margin:0 7px}
+  ol.steps li .ps{
+    margin-top:6px; font-size:12px; background:#10161e; border-left:2px solid var(--edge-active);
+    padding:5px 9px; border-radius:0 5px 5px 0; font-family:ui-monospace,monospace; color:#cfe3d8;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  ol.steps li .nt{margin-top:5px; font-size:11.5px; color:var(--muted)}
+  ol.steps li.focused{border-color:var(--edge-active); animation:anno-flash 1.2s ease-out}
+  @keyframes anno-flash{
+    0%{background:#4a3c12; box-shadow:0 0 0 2px var(--edge-active) inset}
+    100%{background:#211d12; box-shadow:0 0 0 0 transparent}
+  }
+  /* ── tooltip ── */
+  #tooltip{
+    position:fixed; pointer-events:none; z-index:50; max-width:380px;
+    background:rgba(14,20,28,0.97); border:1px solid var(--edge-active);
+    border-radius:9px; padding:11px 13px; font-size:12px; line-height:1.55;
+    box-shadow:0 8px 28px rgba(0,0,0,.55); backdrop-filter:blur(7px);
+    display:none; color:var(--text);
+  }
+  #tooltip .tf{font-weight:700; color:var(--edge-active); margin-bottom:6px; font-size:12.5px}
+  #tooltip .chip{display:inline-flex; gap:6px; align-items:center; font-family:ui-monospace,monospace;
+    font-size:11px; background:#1a2230; border:1px solid var(--line); padding:2px 7px; border-radius:5px; margin:3px 0}
+  #tooltip .chip .a{color:var(--edge-active)}
+  #tooltip code{display:block; margin-top:5px; background:#0c1117; border-left:2px solid var(--edge-active);
+    padding:5px 8px; border-radius:0 5px 5px 0; font-size:11px; color:#cfe3d8; white-space:pre-wrap}
+  #tooltip .nt{color:var(--muted); font-size:11px; margin-top:5px}
+  #tooltip hr{border:0; border-top:1px dashed var(--line); margin:9px 0}
+  /* ── SVG element styles ── */
+  .col-head{fill:var(--muted); font-size:12px; font-weight:700; letter-spacing:4px; text-anchor:middle}
+  .col-div{stroke:var(--line); stroke-width:1; stroke-dasharray:3 5}
+  .node-rect{stroke-width:1.5; filter:drop-shadow(0 3px 6px rgba(0,0,0,.5)); transition:opacity .25s}
+  .node-title{font-size:12px; font-weight:700; pointer-events:none}
+  .node-sub{font-size:10.5px; pointer-events:none}
+  .node-g.dim{opacity:.18}
+  .node-g.in-flow .node-rect{stroke-width:2.5}
+  .node-g.endpoint .node-rect{stroke-width:3; animation:node-glow 1.1s ease-in-out infinite;
+    transform-origin:center; transform-box:fill-box}
+  @keyframes node-glow{
+    0%,100%{filter:drop-shadow(0 0 5px var(--edge-active-glow))}
+    50%{filter:drop-shadow(0 0 13px #ffffff)}
+  }
+  .edge{fill:none; stroke:var(--edge); stroke-width:1.6; transition:opacity .25s}
+  .edge.dim{opacity:.12}
+  .edge.active{stroke:var(--edge-active); stroke-width:2.4;
+    filter:drop-shadow(0 0 5px var(--edge-active-glow))}
+  .edge.focused-edge{animation:edge-pulse 1.1s ease-in-out infinite}
+  @keyframes edge-pulse{
+    0%,100%{stroke:var(--edge-active); stroke-width:2.8; filter:drop-shadow(0 0 5px var(--edge-active-glow))}
+    50%{stroke:#fff; stroke-width:4.2; filter:drop-shadow(0 0 12px #fff)}
+  }
+  .tether{stroke:var(--edge-active); stroke-width:1; stroke-dasharray:2 4; opacity:.5; fill:none}
+  .edge-step-pill{fill:#211d12; stroke:var(--edge-active); stroke-width:1.3; transition:fill .15s,stroke .15s}
+  .edge-step-badge text{fill:var(--edge-active); font-size:11px; font-weight:700; text-anchor:middle;
+    dominant-baseline:central; pointer-events:none; transition:fill .15s}
+  .edge-step-badge{cursor:pointer}
+  .edge-step-badge:hover .edge-step-pill{fill:#3a3115; stroke:#fff8d6}
+  .edge-step-halo{fill:none; stroke:var(--edge-active); stroke-width:1.5; opacity:0;
+    transform-origin:center; transform-box:fill-box}
+  .edge-step-scale{transform-origin:center; transform-box:fill-box}
+  .edge-step-badge.focused .edge-step-pill{fill:var(--edge-active); stroke:#fff8d6; stroke-width:2}
+  .edge-step-badge.focused text{fill:#1a1100}
+  .edge-step-badge.focused .edge-step-scale{animation:pulse .9s ease-in-out infinite}
+  .edge-step-badge.focused .edge-step-halo{animation:halo-burst 1.3s ease-out infinite}
+  @keyframes pulse{
+    0%,100%{transform:scale(1)}
+    50%{transform:scale(1.42);
+      filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 7px var(--edge-active)) drop-shadow(0 0 16px var(--edge-active-glow))}
+  }
+  @keyframes halo-burst{
+    0%{transform:scale(.55); opacity:.85}
+    100%{transform:scale(3); opacity:0}
+  }
+  @media (max-width:760px){
+    .app{grid-template-columns:0 1fr}
+    .sidebar{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="h-title">rsai-backend ワークフロー</h1>
+    <span class="path" id="h-path"></span>
+    <span class="hint" id="h-hint"></span>
+  </header>
+
+  <aside class="sidebar">
+    <h2>WORKFLOWS</h2>
+    <div id="flow-list"></div>
+    <div class="legend" id="legend"></div>
+    <button class="reset" id="reset-btn">全体表示にリセット (F / Esc)</button>
+  </aside>
+
+  <main class="canvas">
+    <svg id="svg" preserveAspectRatio="xMidYMid meet"></svg>
+  </main>
+
+  <div class="resizer" id="resizer" title="ドラッグで注釈パネルの高さを調整"></div>
+
+  <section class="annotations" id="annotations">
+    <div class="ahead">
+      <span class="nm" id="anno-name">フローを選択してください</span>
+      <span class="ds" id="anno-desc">左のリストからワークフローを選ぶと、ステップ詳細がここに表示されます。数字キー 1〜9 / 0 でも切替できます。</span>
+    </div>
+    <ol class="steps" id="anno-steps"></ol>
+  </section>
+</div>
+<div id="tooltip"></div>
+
+<script type="application/json" id="workflow-data">
+{
+  "meta": {
+    "title": "rsai-backend ワークフロー",
+    "path": "rsai-backend / gate-core (dev.gate)",
+    "hint": "左のフローを選択 / バッジ・注釈クリックでステップにフォーカス / ホイールでズーム・ドラッグでパン / 数字キーでフロー切替"
+  },
+  "viewBox": { "w": 1680, "h": 980 },
+  "columns": [
+    { "id": "external",    "label": "EXTERNAL",        "x": 130,  "divider": 290 },
+    { "id": "entry",       "label": "ENTRY",           "x": 450,  "divider": 610 },
+    { "id": "filters",     "label": "FILTERS",         "x": 770,  "divider": 930 },
+    { "id": "controllers", "label": "ROUTING / CONTROLLERS", "x": 1090, "divider": 1250 },
+    { "id": "data",        "label": "DATA & CORE",     "x": 1410, "divider": null }
+  ],
+  "groups": [
+    { "id": "ext",  "label": "外部",         "stroke": "#4cc9f0", "fill": "#11242e", "sub": "#7fd7ef" },
+    { "id": "boot", "label": "起動 / 入口",  "stroke": "#b388ff", "fill": "#1e1a2e", "sub": "#c9b3ff" },
+    { "id": "filt", "label": "ミドルウェア", "stroke": "#ffd166", "fill": "#2b2415", "sub": "#ffe3a3" },
+    { "id": "ctrl", "label": "ルート / 制御", "stroke": "#06d6a0", "fill": "#0f2a23", "sub": "#7fe8cf" },
+    { "id": "core", "label": "データ / コア", "stroke": "#ff6b6b", "fill": "#2c1717", "sub": "#ff9e9e" }
+  ],
+  "nodes": [
+    { "id": "browser",       "title": "ユーザーブラウザ",        "subtitle": "公開アプリ (read-only)",       "group": "ext",  "x": 20,   "y": 70,  "w": 220, "h": 56 },
+    { "id": "admin",         "title": "管理画面",                "subtitle": "admin.r-sai2026.site",         "group": "ext",  "x": 20,   "y": 190, "w": 220, "h": 56 },
+    { "id": "cf",            "title": "Cloudflare Edge",         "subtitle": "プロキシ + CF Access",          "group": "ext",  "x": 20,   "y": 310, "w": 220, "h": 56 },
+    { "id": "cfcerts",       "title": "CF Access JWKS",          "subtitle": "/cdn-cgi/access/certs",        "group": "ext",  "x": 20,   "y": 430, "w": 220, "h": 56 },
+    { "id": "platform",      "title": "Cloud Run / Azure",       "subtitle": "ヘルスチェック・PORT注入",      "group": "ext",  "x": 20,   "y": 550, "w": 220, "h": 56 },
+    { "id": "discord",       "title": "Discord Webhook",         "subtitle": "障害通知先",                   "group": "ext",  "x": 20,   "y": 670, "w": 220, "h": 56 },
+
+    { "id": "main",          "title": "Main.main()",             "subtitle": "起動ブートストラップ",          "group": "boot", "x": 340,  "y": 150, "w": 220, "h": 56 },
+    { "id": "config",        "title": "ConfigLoader",            "subtitle": "config.yml + 環境変数",        "group": "boot", "x": 340,  "y": 290, "w": 220, "h": 56 },
+    { "id": "gate",          "title": "Gate + Jetty",            "subtitle": "HTTP入口 / CORS / 仮想スレッド", "group": "boot", "x": 340,  "y": 430, "w": 220, "h": 56 },
+
+    { "id": "mtimer",        "title": "RequestMetrics.startTimer", "subtitle": "before: 計測開始",            "group": "filt", "x": 660,  "y": 80,  "w": 220, "h": 56 },
+    { "id": "cfip",          "title": "CloudflareIpFilter",      "subtitle": "before: CF IP CIDR制限",       "group": "filt", "x": 660,  "y": 200, "w": 220, "h": 56 },
+    { "id": "apikey",        "title": "ApiKeyAuth",              "subtitle": "before: X-API-Key",            "group": "filt", "x": 660,  "y": 320, "w": 220, "h": 56 },
+    { "id": "cfaccess",      "title": "CfAccessAuth",            "subtitle": "before: JWT検証 (/admin)",     "group": "filt", "x": 660,  "y": 440, "w": 220, "h": 56 },
+    { "id": "sec",           "title": "SecurityHeaders",         "subtitle": "after: セキュリティHdr",        "group": "filt", "x": 660,  "y": 620, "w": 220, "h": 56 },
+    { "id": "mrec",          "title": "RequestMetrics.record",   "subtitle": "after: 集計 + 通知",           "group": "filt", "x": 660,  "y": 740, "w": 220, "h": 56 },
+
+    { "id": "router",        "title": "Router",                  "subtitle": "ルート解決 + キャッシュ",       "group": "ctrl", "x": 980,  "y": 70,  "w": 220, "h": 56 },
+    { "id": "scanner",       "title": "AnnotationScanner",       "subtitle": "@*Mapping を登録",             "group": "ctrl", "x": 980,  "y": 190, "w": 220, "h": 56 },
+    { "id": "health",        "title": "/health ハンドラ",         "subtitle": "DB ready 判定",                "group": "ctrl", "x": 980,  "y": 310, "w": 220, "h": 56 },
+    { "id": "data",          "title": "DataController",          "subtitle": "/events /food /map",           "group": "ctrl", "x": 980,  "y": 430, "w": 220, "h": 56 },
+    { "id": "cong",          "title": "CongestionController",    "subtitle": "/locations /congestion",       "group": "ctrl", "x": 980,  "y": 550, "w": 220, "h": 56 },
+    { "id": "adminc",        "title": "AdminController",         "subtitle": "/admin/* CRUD / SQL / 統計",   "group": "ctrl", "x": 980,  "y": 670, "w": 220, "h": 56 },
+    { "id": "announce",      "title": "AnnouncementsController", "subtitle": "/announcements",               "group": "ctrl", "x": 980,  "y": 790, "w": 220, "h": 56 },
+
+    { "id": "seeder",        "title": "DataSeeder",              "subtitle": "スキーマ / シード migration",   "group": "core", "x": 1300, "y": 190, "w": 220, "h": 56 },
+    { "id": "db",            "title": "Database (HikariCP)",     "subtitle": "MySQL 接続プール",             "group": "core", "x": 1300, "y": 330, "w": 220, "h": 56 },
+    { "id": "mysql",         "title": "MySQL / Cloud SQL",       "subtitle": "festival DB",                  "group": "core", "x": 1300, "y": 470, "w": 220, "h": 56 }
+  ],
+  "flows": [
+    {
+      "id": "boot", "icon": "🚀", "name": "1. 起動ブートストラップ", "sub": "Main から全コンポーネント初期化",
+      "description": "Main.main() が設定読込・DB非同期init・シード・JWKSプリフェッチ・メトリクス復元・サーバ起動・コントローラ登録を順に行う。サーバはDB待ちより先に起動しヘルスチェックを通す。",
+      "steps": [
+        { "from": "main", "to": "config",   "passes": "ConfigLoader.load()", "note": "config.yml + 環境変数。PORT env は config.yml より優先" },
+        { "from": "main", "to": "db",       "passes": "CompletableFuture.runAsync(() -> Database.init(dbConfig))", "note": "DB初期化は非同期。サーバ起動をブロックしない" },
+        { "from": "db",   "to": "mysql",    "passes": "HikariDataSource 構築 + runSchema()", "note": "schema.sql を ; 分割で逐次実行。ready=true をセット" },
+        { "from": "main", "to": "seeder",   "passes": "DataSeeder.seed()", "note": "dbFuture 内で init 直後に実行" },
+        { "from": "seeder","to": "mysql",   "passes": "seed_version 判定 → migrate v1..v7 / INSERT IGNORE", "note": "v7 到達済みなら skip。冪等" },
+        { "from": "main", "to": "cfaccess", "passes": "cfAccessAuth.prefetchJwks()", "note": "コールドスタートのJWKS遅延を排除" },
+        { "from": "cfaccess","to": "cfcerts","passes": "GET /cdn-cgi/access/certs", "note": "RSA公開鍵を起動時にキャッシュ。失敗してもwarnのみ" },
+        { "from": "main", "to": "mrec",     "passes": "RequestMetrics.get().init()", "note": "loadFromDb + 5分毎フラッシュ scheduler 起動" },
+        { "from": "mrec", "to": "db",       "passes": "loadFromDb()", "note": "metrics_hourly/endpoints/histogram をメモリへ復元" },
+        { "from": "main", "to": "gate",     "passes": "cors() / before() / after() 登録 → gate.start(port)", "note": "サーバを先に起動 (Cloud Run health 用)" },
+        { "from": "main", "to": "scanner",  "passes": "gate.register(Data/Congestion/Admin/Announcements)", "note": "dbFuture.join() 完了後にDB依存ルートを登録" },
+        { "from": "scanner","to": "router", "passes": "@GetMapping等を解析し register()", "note": "MethodHandle で controller にバインド" }
+      ]
+    },
+    {
+      "id": "health", "icon": "💓", "name": "2. ヘルスチェック", "sub": "/health → DB ready 判定",
+      "description": "Cloud Run / Azure からの定期 GET /health。/health は CF IP・APIキー・JWT を免除。DB未準備なら503を返し、トラフィック投入を遅延させる。",
+      "steps": [
+        { "from": "platform", "to": "gate",   "passes": "GET /health", "note": "プラットフォームの生存監視。CF を経由しない" },
+        { "from": "gate",     "to": "mtimer", "passes": "before: startTimer", "note": "ThreadLocal に開始 nanoTime" },
+        { "from": "gate",     "to": "cfip",   "passes": "before: CloudflareIpFilter", "note": "/health は EXEMPT_PATHS → skip" },
+        { "from": "gate",     "to": "health", "passes": "router.find(\"GET:/health\")", "note": "プログラマティック登録ルート" },
+        { "from": "health",   "to": "db",     "passes": "Database.isReady()", "note": "volatile boolean。init完了で true" },
+        { "from": "health",   "to": "gate",   "passes": "ready? 200{status:ok} : 503{status:starting}", "note": "503でプラットフォームが投入を待機" },
+        { "from": "gate",     "to": "sec",    "passes": "after: SecurityHeaders", "note": "全レスポンスにセキュリティHdr付与" },
+        { "from": "gate",     "to": "mrec",   "passes": "after: record", "note": "/health も集計対象 (/admin のみ除外)" },
+        { "from": "gate",     "to": "platform","passes": "status + headers + body 書き出し", "note": "" }
+      ]
+    },
+    {
+      "id": "pipeline", "icon": "🔁", "name": "3. リクエストパイプライン", "sub": "共通ミドルウェアチェーン",
+      "description": "Gate サーブレットの service() が CORS処理 → before×4 → ルート解決 → after×2 → 書き出しを行う。OPTIONS は before 通過後に204。before が halt するとルート以降をスキップ。",
+      "steps": [
+        { "from": "cf",   "to": "gate",     "passes": "プロキシ済みHTTP (X-Forwarded-For 付き)", "note": "Azure Envoy が getRemoteAddr を書換えるため XFF を使用" },
+        { "from": "gate", "to": "mtimer",   "passes": "before #1", "note": "計測開始" },
+        { "from": "gate", "to": "cfip",     "passes": "before #2: XFF 最右の非プライベートIPを CF CIDR照合", "note": "不一致は 403 halt" },
+        { "from": "gate", "to": "apikey",   "passes": "before #3: X-API-Key 照合", "note": "OPTIONS/health は skip。read-only鍵はGETのみ" },
+        { "from": "gate", "to": "cfaccess", "passes": "before #4: /admin のみ JWT検証", "note": "公開APIは ApiKeyAuth のみで通過" },
+        { "from": "gate", "to": "router",   "passes": "OPTIONS以外: method+':'+path で find()", "note": "完全一致優先 → パターン照合 (キャッシュ付き)" },
+        { "from": "router","to": "data",    "passes": "RouteMatch.handler().handle(ctx)", "note": "pathParams をセットしハンドラ実行 (例: DataController)" },
+        { "from": "gate", "to": "sec",      "passes": "after #1: SecurityHeaders", "note": "finally で必ず実行" },
+        { "from": "gate", "to": "mrec",     "passes": "after #2: RequestMetrics.record", "note": "各 after は個別 try/catch" },
+        { "from": "gate", "to": "cf",       "passes": "status / headers / responseBody を Writer へ", "note": "after 完了後に書き出し" }
+      ]
+    },
+    {
+      "id": "publicread", "icon": "📖", "name": "4. 公開データ取得 + キャッシュ", "sub": "/events /food /map (TTL 5分)",
+      "description": "公開アプリが read-only API キーで取得。コントローラ内 TTLキャッシュにヒットすれば即返却。miss時はDBで構築しキャッシュ。DB障害時は古いキャッシュへフォールバック。",
+      "steps": [
+        { "from": "browser", "to": "cf",      "passes": "GET /events (X-API-Key: read-only)", "note": "" },
+        { "from": "cf",      "to": "gate",    "passes": "プロキシ転送", "note": "" },
+        { "from": "gate",    "to": "apikey",  "passes": "read-only鍵 → GET のみ許可", "note": "非GETは 403 halt" },
+        { "from": "gate",    "to": "data",    "passes": "DataController.events()/food()/map()", "note": "serve() 共通キャッシュ+構築" },
+        { "from": "data",    "to": "db",      "passes": "キャッシュmiss: Database.getConnection()", "note": "ヒット時はDBに触れず即返却 (max-age=300)" },
+        { "from": "db",      "to": "mysql",   "passes": "SELECT categories/locations/projects/timetables", "note": "/food は foods/menus、/map は locations" },
+        { "from": "data",    "to": "browser", "passes": "JSON + Cache-Control: public, max-age=300", "note": "結果を TTL 5分でキャッシュ格納" },
+        { "from": "data",    "to": "browser", "passes": "DB障害時: stale cache (no-store) / 無ければ 503", "note": "可用性優先のフォールバック" }
+      ]
+    },
+    {
+      "id": "congestion", "icon": "🚦", "name": "5. 混雑度更新", "sub": "POST /congestion/{id}",
+      "description": "管理画面から混雑レベル(0-2)を更新。/admin 配下ではないため CF Access JWT は適用されず、ApiKeyAuth の admin 鍵で認可。updated_by は CF検証emailが無ければ \"unknown\"。",
+      "steps": [
+        { "from": "admin",  "to": "cf",    "passes": "POST /congestion/{id} {level}", "note": "" },
+        { "from": "cf",     "to": "gate",  "passes": "プロキシ転送", "note": "" },
+        { "from": "gate",   "to": "apikey","passes": "X-API-Key: admin (POSTは admin鍵必須)", "note": "read-only鍵は 403" },
+        { "from": "gate",   "to": "cong",  "passes": "CongestionController.updateCongestion()", "note": "pathParam id を parseInt" },
+        { "from": "cong",   "to": "cong",  "passes": "level 検証 (数値 / 0..2)", "note": "不正は 400。body無しも 400" },
+        { "from": "cong",   "to": "db",    "passes": "INSERT ... ON DUPLICATE KEY UPDATE", "note": "updated_by = 検証email or 'unknown'" },
+        { "from": "db",     "to": "mysql", "passes": "congestion_status upsert", "note": "" },
+        { "from": "cong",   "to": "admin", "passes": "{ok:true, location_id, level}", "note": "DB障害は 503 + detail" }
+      ]
+    },
+    {
+      "id": "admincrud", "icon": "🗂️", "name": "6. Admin テーブル CRUD", "sub": "/admin/tables/{table}",
+      "description": "管理画面の汎用テーブル編集。CF Access JWT 必須。テーブル/列名は識別子正規表現で検証し、値はPreparedStatementでバインド。制約違反はユーザ向けメッセージに変換し400。",
+      "steps": [
+        { "from": "admin",   "to": "cf",       "passes": "GET/POST/PUT/DELETE /admin/tables/{table}", "note": "一覧 /admin/tables も含む" },
+        { "from": "cf",      "to": "gate",     "passes": "CF-Access-Jwt-Assertion 付きで転送", "note": "" },
+        { "from": "gate",    "to": "cfaccess", "passes": "/admin → JWT検証 + verified email", "note": "未付与は 401 halt" },
+        { "from": "cfaccess","to": "cfcerts",  "passes": "kid 未キャッシュ/TTL切れ時 JWKS再取得", "note": "通常はキャッシュヒット (1h TTL)" },
+        { "from": "gate",    "to": "adminc",   "passes": "getTable/updateRow/deleteRow/insertRow", "note": "" },
+        { "from": "adminc",  "to": "adminc",   "passes": "isValidIdentifier(table/col)", "note": "[a-zA-Z0-9_]+ のみ。SQLインジェクション対策" },
+        { "from": "adminc",  "to": "db",       "passes": "DatabaseMetaData + 動的SQL (PreparedStatement)", "note": "PK は getPrimaryKeys から解決" },
+        { "from": "db",      "to": "mysql",    "passes": "SELECT/UPDATE/DELETE/INSERT (LIMIT 500)", "note": "" },
+        { "from": "adminc",  "to": "admin",    "passes": "JSON 結果 / 制約違反は toUserMessage で 400", "note": "1062重複・1048 NULL・FK 違反を判別" }
+      ]
+    },
+    {
+      "id": "adminsql", "icon": "🛠️", "name": "7. Admin SQL / DDL 実行", "sub": "/admin/sql /admin/ddl/*",
+      "description": "任意SQL実行と CREATE TABLE / ADD COLUMN。型はホワイトリスト(ALLOWED_COL_TYPES)、識別子は正規表現で検証。SQLは ; 分割で逐次実行し最後の結果を返す。",
+      "steps": [
+        { "from": "admin",  "to": "cf",       "passes": "POST /admin/sql | /admin/ddl/tables | /columns", "note": "" },
+        { "from": "cf",     "to": "gate",     "passes": "JWT 付き転送", "note": "" },
+        { "from": "gate",   "to": "cfaccess", "passes": "/admin → JWT検証", "note": "" },
+        { "from": "gate",   "to": "adminc",   "passes": "execSql / createTable / addColumn", "note": "" },
+        { "from": "adminc", "to": "adminc",   "passes": "ALLOWED_COL_TYPES + isValidIdentifier 検証", "note": "デフォルト値も文字種制限" },
+        { "from": "adminc", "to": "db",       "passes": "; 分割 → 逐次 Statement.execute()", "note": "" },
+        { "from": "db",     "to": "mysql",    "passes": "任意SQL / CREATE TABLE / ALTER TABLE", "note": "" },
+        { "from": "adminc", "to": "admin",    "passes": "cols/rows or affected / SQLエラーは 400", "note": "execSql は失敗時も 400 でメッセージ返却" }
+      ]
+    },
+    {
+      "id": "jwt", "icon": "🔐", "name": "8. CF Access JWT 検証 + JWKS更新", "sub": "CfAccessAuth 内部",
+      "description": "/admin リクエストの CF-Access-Jwt-Assertion を RS256 検証。kid に対応する公開鍵を JWKS キャッシュ(1h TTL)から取得、無ければロック下で再取得。exp/nbf/aud/email を検証。",
+      "steps": [
+        { "from": "cf",       "to": "cfaccess", "passes": "CF-Access-Jwt-Assertion ヘッダ", "note": "OPTIONS/health/非admin は素通り" },
+        { "from": "cfaccess", "to": "cfaccess", "passes": "header.payload.sig 分解 / alg=RS256 確認", "note": "3パート以外は例外" },
+        { "from": "cfaccess", "to": "cfcerts",  "passes": "kid 未キャッシュ or TTL切れ時 GET /certs", "note": "synchronized で同時取得を防止 (二重チェック)" },
+        { "from": "cfcerts",  "to": "cfaccess", "passes": "JWKS {kty:RSA, n, e}", "note": "RSAPublicKeySpec → PublicKey を構築しキャッシュ" },
+        { "from": "cfaccess", "to": "cfaccess", "passes": "署名検証 + exp/nbf/aud/email 検証", "note": "audience 配列/単一の両対応" },
+        { "from": "cfaccess", "to": "gate",     "passes": "成功: ctx属性に email / 失敗: 401 halt", "note": "ATTR_VERIFIED_EMAIL を監査ログ用に保存" }
+      ]
+    },
+    {
+      "id": "metricsrec", "icon": "📊", "name": "9. メトリクス記録", "sub": "after filter: record()",
+      "description": "after フィルタで時間スロット集計・レイテンシヒストグラム・エンドポイント別カウントをメモリ上で更新。/admin(debug除く)は除外。5xx は Discord 通知をトリガ。",
+      "steps": [
+        { "from": "gate", "to": "mrec",    "passes": "after: record(ctx)", "note": "" },
+        { "from": "mrec", "to": "mrec",    "passes": "/admin(除 /admin/debug/) は skip / 時間スロット集計", "note": "24時間リングバッファ" },
+        { "from": "mrec", "to": "mrec",    "passes": "レイテンシ histogram + endpoint LongAdder 加算", "note": "MAX_KEYS=100 で上限" },
+        { "from": "mrec", "to": "discord", "passes": "status≥500 → DiscordWebhook.sendError", "note": "詳細はフロー11" },
+        { "from": "mrec", "to": "gate",    "passes": "戻り (集計はメモリ、DBは別途flush)", "note": "" }
+      ]
+    },
+    {
+      "id": "metricspersist", "icon": "💾", "name": "10. メトリクス永続化", "sub": "restore / 5分flush / 終了flush",
+      "description": "マルチインスタンス安全のため集計はDBに永続化。起動時に復元、5分ごとに差分を ON DUPLICATE KEY UPDATE で加算、SIGTERM 時に最終フラッシュ。",
+      "steps": [
+        { "from": "main",     "to": "mrec",  "passes": "init(): loadFromDb + scheduleAtFixedRate(5分)", "note": "" },
+        { "from": "mrec",     "to": "db",    "passes": "loadFromDb: metrics_* SELECT", "note": "起動時1回。失敗してもfresh開始" },
+        { "from": "db",       "to": "mysql", "passes": "metrics_hourly/endpoints/histogram 読込", "note": "" },
+        { "from": "mrec",     "to": "db",    "passes": "flushAll: 差分を ON DUPLICATE KEY UPDATE", "note": "lastFlushed* との差分のみ送信" },
+        { "from": "db",       "to": "mysql", "passes": "metrics_* へ加算 INSERT (batch)", "note": "" },
+        { "from": "platform", "to": "mrec",  "passes": "SIGTERM → shutdownHook → 最終 flushAll", "note": "metrics-shutdown スレッド" }
+      ]
+    },
+    {
+      "id": "errordiscord", "icon": "🚨", "name": "11. エラー → Discord 通知", "sub": "5xx を debounce 通知",
+      "description": "ハンドラ例外は errorHandler が 500 化。after の record が 5xx を検出し DiscordWebhook へ。同一 method+path+status は5秒デバウンス。送信は非同期・失敗はwarnのみ。",
+      "steps": [
+        { "from": "data",  "to": "gate",    "passes": "ハンドラ例外 throw", "note": "DB障害等。任意のコントローラが該当" },
+        { "from": "gate",  "to": "gate",    "passes": "errorHandler → status 500 + error ログ", "note": "after は finally で継続実行" },
+        { "from": "gate",  "to": "mrec",    "passes": "after: record で statusCode≥500 検出", "note": "" },
+        { "from": "mrec",  "to": "discord", "passes": "sendError(method,path,status,body)", "note": "key=METHOD PATH STATUS で 5s デバウンス" },
+        { "from": "discord","to": "mrec",   "passes": "HTTP.sendAsync (discarding)", "note": "失敗時 exceptionally で warn ログ" }
+      ]
+    },
+    {
+      "id": "stats", "icon": "📈", "name": "12. Admin 統計ダッシュボード", "sub": "GET /admin/stats",
+      "description": "管理画面の統計画面。RequestMetrics の集計値をDBから読み出して整形。総リクエスト・エラー率・p50/p95・時系列chart・トップエンドポイント(admin除外)を返す。",
+      "steps": [
+        { "from": "admin",  "to": "cf",       "passes": "GET /admin/stats", "note": "" },
+        { "from": "cf",     "to": "gate",     "passes": "JWT 付き転送", "note": "" },
+        { "from": "gate",   "to": "cfaccess", "passes": "/admin → JWT検証", "note": "" },
+        { "from": "gate",   "to": "adminc",   "passes": "AdminController.stats()", "note": "Cache-Control: no-store" },
+        { "from": "adminc", "to": "mrec",     "passes": "getTotalRequests/ErrorCount/Percentiles/TopEndpoints", "note": "" },
+        { "from": "mrec",   "to": "db",       "passes": "metrics_* を集計 SELECT", "note": "SUM / ORDER BY hits / histogram から百分位" },
+        { "from": "db",     "to": "mysql",    "passes": "集計クエリ実行", "note": "" },
+        { "from": "adminc", "to": "admin",    "passes": "totalRequests/errorRate/p50/p95/chart/endpoints JSON", "note": "/admin パスは endpoints から除外" }
+      ]
+    }
+  ]
+}
+</script>
+
+<script>
+"use strict";
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/* ── data load: fetch first, fall back to embedded JSON for file:// ── */
+async function loadData(){
+  try{
+    const res = await fetch("./flows.json", {cache:"no-store"});
+    if(res.ok) return await res.json();
+    throw new Error("HTTP "+res.status);
+  }catch(e){
+    const el = document.getElementById("workflow-data");
+    return JSON.parse(el.textContent);
+  }
+}
+
+let DATA, NODE_BY_ID = {}, GROUP_BY_ID = {}, COL_INDEX = {};
+const COL_OF_GROUP = { ext:0, boot:1, filt:2, ctrl:3, core:4 };
+
+let svg, defs, colLayer, edgeLayer, nodeLayer, badgeLayer;
+let VB = {x:0,y:0,w:1680,h:980};      // current viewBox
+let activeFlowId = null;
+let focusedKey = null;                 // "flowId#stepIdx"
+const edgeEls = {};                    // edgeKey -> { path, fromN, toN }
+const nodeEls = {};                    // nodeId  -> g element
+const badgeCycle = {};                 // edgeKey -> current cycle index (multi-step)
+
+/* ── geometry helpers ── */
+function colOf(n){ return COL_OF_GROUP[n.group] ?? 0; }
+
+function anchorPoints(a, b){
+  if(a.id === b.id){
+    // self-loop on the right side
+    const x = a.x + a.w;
+    return { kind:"self", x1:x, y1:a.y + a.h*0.30, x2:x, y2:a.y + a.h*0.70 };
+  }
+  const ca = colOf(a), cb = colOf(b);
+  if(ca === cb){
+    const aLower = a.y > b.y;
+    return {
+      kind:"vert",
+      x1: a.x + a.w/2, y1: aLower ? a.y : a.y + a.h,
+      x2: b.x + b.w/2, y2: aLower ? b.y + b.h : b.y
+    };
+  }
+  if(cb > ca){
+    return { kind:"horiz", x1:a.x + a.w, y1:a.y + a.h/2, x2:b.x,       y2:b.y + b.h/2 };
+  }
+  return   { kind:"horiz", x1:a.x,       y1:a.y + a.h/2, x2:b.x + b.w, y2:b.y + b.h/2 };
+}
+
+/* lane offset: separate A→B from B→A so badges never stack */
+const LANE = 19;
+function laneFor(fromId, toId, allKeys){
+  if(fromId === toId) return 0;
+  if(!allKeys.has(toId + "->" + fromId)) return 0;
+  return fromId < toId ? LANE : -LANE;   // deterministic lex compare
+}
+
+function pathD(ap, lane){
+  if(ap.kind === "self"){
+    const r = 64;
+    return `M ${ap.x1} ${ap.y1} C ${ap.x1+r} ${ap.y1-14}, ${ap.x2+r} ${ap.y2+14}, ${ap.x2} ${ap.y2}`;
+  }
+  if(ap.kind === "vert"){
+    const dy = ap.y2 - ap.y1;
+    return `M ${ap.x1} ${ap.y1} `+
+           `C ${ap.x1+lane} ${ap.y1 + dy*0.38}, `+
+           `${ap.x2+lane} ${ap.y2 - dy*0.38}, ${ap.x2} ${ap.y2}`;
+  }
+  const dx = ap.x2 - ap.x1;
+  return `M ${ap.x1} ${ap.y1} `+
+         `C ${ap.x1 + dx*0.42} ${ap.y1+lane}, `+
+         `${ap.x2 - dx*0.42} ${ap.y2+lane}, ${ap.x2} ${ap.y2}`;
+}
+
+/* ── build static scene ── */
+function buildScene(){
+  svg.innerHTML = "";
+  defs       = el("defs");
+  colLayer   = el("g", {class:"col-layer"});
+  edgeLayer  = el("g", {class:"edge-layer"});
+  nodeLayer  = el("g", {class:"node-layer"});
+  badgeLayer = el("g", {class:"badge-layer"});
+  // SVG layer order is critical — badges MUST be last (above nodes) or hover is stolen
+  svg.append(defs, colLayer, edgeLayer, nodeLayer, badgeLayer);
+
+  buildDefs();
+  buildColumns();
+  buildEdges();
+  buildNodes();
+}
+
+function buildDefs(){
+  defs.append(
+    marker("arrow",        "var(--edge)"),
+    marker("arrow-active", "var(--edge-active)")
+  );
+}
+function marker(id, fill){
+  const m = el("marker", {id, viewBox:"0 0 10 10", refX:"9", refY:"5",
+    markerWidth:"7", markerHeight:"7", orient:"auto-start-reverse"});
+  m.append(el("path", {d:"M0,0 L10,5 L0,10 z", fill}));
+  return m;
+}
+
+function buildColumns(){
+  for(const c of DATA.columns){
+    const t = el("text", {class:"col-head", x:c.x, y:30});
+    t.textContent = c.label;
+    colLayer.appendChild(t);
+    if(c.divider != null){
+      colLayer.appendChild(el("line", {class:"col-div",
+        x1:c.divider, y1:46, x2:c.divider, y2:VB.h-20}));
+    }
+  }
+}
+
+/* unique directed edges from union of all flow steps */
+function collectEdgeKeys(){
+  const keys = new Set();
+  for(const f of DATA.flows)
+    for(const s of f.steps) keys.add(s.from + "->" + s.to);
+  return keys;
+}
+
+function buildEdges(){
+  const keys = collectEdgeKeys();
+  for(const key of keys){
+    const [fromId, toId] = key.split("->");
+    const a = NODE_BY_ID[fromId], b = NODE_BY_ID[toId];
+    if(!a || !b) continue;
+    const ap   = anchorPoints(a, b);
+    const lane = laneFor(fromId, toId, keys);
+    const p = el("path", {class:"edge", d:pathD(ap, lane),
+      "marker-end":"url(#arrow)"});
+    edgeLayer.appendChild(p);
+    edgeEls[key] = { path:p, a, b, lane };
+  }
+}
+
+function buildNodes(){
+  for(const n of DATA.nodes){
+    const g  = el("g", {class:"node-g", "data-id":n.id});
+    const gr = GROUP_BY_ID[n.group] || {stroke:"#888", fill:"#222", sub:"#aaa"};
+    const r  = el("rect", {class:"node-rect", x:n.x, y:n.y, width:n.w, height:n.h,
+      rx:8, ry:8, fill:gr.fill, stroke:gr.stroke});
+    const t  = el("text", {class:"node-title", x:n.x + n.w/2, y:n.y + 22,
+      "text-anchor":"middle", fill:"var(--text)"});
+    t.textContent = n.title;
+    const s  = el("text", {class:"node-sub", x:n.x + n.w/2, y:n.y + 40,
+      "text-anchor":"middle", fill:gr.sub});
+    s.textContent = n.subtitle;
+    g.append(r, t, s);
+    g.addEventListener("mouseover", () => { if(!activeFlowId) showNodeTip(n); });
+    g.addEventListener("mouseout",  hideTip);
+    nodeLayer.appendChild(g);
+    nodeEls[n.id] = g;
+  }
+}
+
+/* ── badges for the active flow ── */
+const OFFSETS = [0.50,0.44,0.56,0.38,0.62,0.32,0.68,0.26,0.74,0.20,0.80,0.15,0.85,0.10,0.90];
+
+function clearBadges(){ badgeLayer.innerHTML = ""; }
+
+function nodeRects(){
+  return DATA.nodes.map(n => ({x:n.x, y:n.y, w:n.w, h:n.h}));
+}
+function inAnyNode(px, py, rects, m){
+  for(const r of rects)
+    if(px > r.x - m && px < r.x + r.w + m && py > r.y - m && py < r.y + r.h + m) return true;
+  return false;
+}
+
+function buildBadges(flow){
+  clearBadges();
+  // aggregate steps per edge (1 edge = 1 badge)
+  const perEdge = {};                          // key -> [stepIdx,...]
+  flow.steps.forEach((s, i) => {
+    const k = s.from + "->" + s.to;
+    (perEdge[k] = perEdge[k] || []).push(i);
+  });
+
+  const rects  = nodeRects();
+  const placed = [];                           // {x,y,w,h}
+  // process order: multi-step first, then shorter paths — to claim midpoints early
+  const order = Object.keys(perEdge).sort((ka, kb) => {
+    const ma = perEdge[ka].length, mb = perEdge[kb].length;
+    if((mb>1) - (ma>1)) return (mb>1) - (ma>1);
+    return edgeLen(ka) - edgeLen(kb);
+  });
+
+  const badgeData = [];
+  for(const key of order){
+    const eo = edgeEls[key];
+    if(!eo) continue;
+    const steps = perEdge[key];
+    const label = badgeLabel(steps);
+    const path  = eo.path;
+    const total = path.getTotalLength();
+
+    // pre-measure label to size the pill
+    const probe = el("text", {class:"_probe", x:-9999, y:-9999});
+    probe.textContent = label;
+    badgeLayer.appendChild(probe);
+    const tb = probe.getBBox();
+    badgeLayer.removeChild(probe);
+    const bw = Math.max(26, tb.width + 16), bh = 22;
+
+    // pick best offset: ellipse separation + node-bbox avoidance
+    let best = null;
+    for(const t of OFFSETS){
+      const pt = path.getPointAtLength(total * t);
+      let score = 999;
+      for(const q of placed){
+        const dx = (pt.x - q.cx) / ((bw + q.w)/2);
+        const dy = (pt.y - q.cy) / ((bh + q.h)/2);
+        score = Math.min(score, Math.hypot(dx, dy));
+      }
+      if(inAnyNode(pt.x, pt.y, rects, 4)) score -= 3.5;
+      if(best === null || score > best.score)
+        best = {t, x:pt.x, y:pt.y, score};
+      if(score >= 1.05 && best.score >= 1.05) break;
+    }
+
+    // escape loop: walk along the path out of any node bbox
+    let {x, y} = best;
+    if(inAnyNode(x, y, rects, 4)){
+      const base = total * best.t;
+      for(let d = 12; d <= total/2; d += 12){
+        const f = path.getPointAtLength(Math.min(total, base + d));
+        if(!inAnyNode(f.x, f.y, rects, 4)){ x = f.x; y = f.y; break; }
+        const bk = path.getPointAtLength(Math.max(0, base - d));
+        if(!inAnyNode(bk.x, bk.y, rects, 4)){ x = bk.x; y = bk.y; break; }
+      }
+    }
+
+    placed.push({cx:x, cy:y, w:bw, h:bh});
+    const mid = path.getPointAtLength(total/2);
+    badgeData.push({key, steps, label, x, y, bw, bh, mid});
+  }
+
+  // draw in step order (lowest first step) so DOM order is intuitive
+  badgeData.sort((p,q) => p.steps[0] - q.steps[0]);
+  for(const bd of badgeData) drawBadge(flow, bd);
+}
+
+function edgeLen(key){
+  const eo = edgeEls[key];
+  return eo ? eo.path.getTotalLength() : 1e9;
+}
+
+function badgeLabel(steps){
+  const n = steps.map(i => i + 1);
+  if(n.length === 1) return String(n[0]);
+  if(n.length <= 5)  return n.join(" · ");
+  return `${n[0]}–${n[n.length-1]} (${n.length})`;
+}
+
+function drawBadge(flow, bd){
+  const {key, steps, label, x, y, bw, bh, mid} = bd;
+
+  // dashed tether to the path midpoint when the badge sits far away
+  if(Math.hypot(x - mid.x, y - mid.y) > 46){
+    badgeLayer.appendChild(el("line", {class:"tether",
+      x1:x, y1:y, x2:mid.x, y2:mid.y}));
+  }
+
+  const outer = el("g", {class:"edge-step-badge", "data-key":key,
+    transform:`translate(${x},${y})`});
+  const halo  = el("ellipse", {class:"edge-step-halo",
+    cx:0, cy:0, rx:bw/2 + 6, ry:bh/2 + 6});
+  const hit   = el("rect", {class:"edge-step-hit",
+    x:-bw/2 - 8, y:-bh/2 - 8, width:bw + 16, height:bh + 16,
+    fill:"rgba(0,0,0,0.001)"});
+  hit.style.pointerEvents = "all";
+  const scale = el("g", {class:"edge-step-scale"});
+  const pill  = el("rect", {class:"edge-step-pill",
+    x:-bw/2, y:-bh/2, width:bw, height:bh, rx:bh/2, ry:bh/2});
+  const txt   = el("text", {x:0, y:0});
+  txt.textContent = label;
+  scale.append(pill, txt);
+  outer.append(halo, hit, scale);
+  badgeLayer.appendChild(outer);
+
+  badgeCycle[key] = badgeCycle[key] ?? 0;
+
+  outer.addEventListener("mouseover", ev => {
+    showBadgeTip(flow, steps, ev);
+  });
+  outer.addEventListener("mousemove", ev => moveTip(ev));
+  outer.addEventListener("mouseout", ev => {
+    if(outer.contains(ev.relatedTarget)) return;   // ignore inner moves
+    hideTip();
+  });
+  outer.addEventListener("click", () => {
+    if(steps.length > 1){
+      badgeCycle[key] = (badgeCycle[key] + 1) % steps.length;
+    }
+    focusStep(flow.id, steps[badgeCycle[key]]);
+  });
+}
+
+/* ── flow selection ── */
+function selectFlow(id){
+  const flow = DATA.flows.find(f => f.id === id);
+  if(!flow) return;
+  activeFlowId = id;
+  focusedKey = null;
+
+  document.querySelectorAll(".flow-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.id === id));
+
+  const used = new Set();
+  flow.steps.forEach(s => { used.add(s.from); used.add(s.to); });
+  const usedEdges = new Set(flow.steps.map(s => s.from + "->" + s.to));
+
+  for(const [nid, g] of Object.entries(nodeEls)){
+    g.classList.remove("endpoint");
+    g.classList.toggle("in-flow", used.has(nid));
+    g.classList.toggle("dim", !used.has(nid));
+  }
+  for(const [k, eo] of Object.entries(edgeEls)){
+    const on = usedEdges.has(k);
+    eo.path.classList.remove("focused-edge");
+    eo.path.classList.toggle("active", on);
+    eo.path.classList.toggle("dim", !on);
+    eo.path.setAttribute("marker-end", on ? "url(#arrow-active)" : "url(#arrow)");
+  }
+
+  buildBadges(flow);
+  renderAnnotations(flow);
+  fitToNodes(flow.steps.flatMap(s => [s.from, s.to]), 60, true);
+}
+
+function clearFlow(){
+  activeFlowId = null;
+  focusedKey = null;
+  document.querySelectorAll(".flow-btn").forEach(b => b.classList.remove("active"));
+  for(const g of Object.values(nodeEls))
+    g.classList.remove("in-flow","dim","endpoint");
+  for(const eo of Object.values(edgeEls)){
+    eo.path.classList.remove("active","dim","focused-edge");
+    eo.path.setAttribute("marker-end","url(#arrow)");
+  }
+  clearBadges();
+  document.getElementById("anno-name").textContent = "フローを選択してください";
+  document.getElementById("anno-desc").textContent =
+    "左のリストからワークフローを選ぶと、ステップ詳細がここに表示されます。";
+  document.getElementById("anno-steps").innerHTML = "";
+  fitAll(true);
+}
+
+/* ── focus (5-layer PIKAPIKA) ── */
+function focusStep(flowId, stepIdx){
+  if(activeFlowId !== flowId) selectFlow(flowId);
+  const flow = DATA.flows.find(f => f.id === flowId);
+  const step = flow.steps[stepIdx];
+  focusedKey = flowId + "#" + stepIdx;
+  const key  = step.from + "->" + step.to;
+
+  // reset prior focus decorations
+  document.querySelectorAll(".edge-step-badge.focused")
+    .forEach(b => b.classList.remove("focused"));
+  for(const eo of Object.values(edgeEls)) eo.path.classList.remove("focused-edge");
+  for(const g of Object.values(nodeEls)) g.classList.remove("endpoint");
+
+  // 1+2+3: badge pulse / color invert / halo
+  const badge = badgeLayer.querySelector(`.edge-step-badge[data-key="${cssEsc(key)}"]`);
+  if(badge) badge.classList.add("focused");
+  // 4: edge pulse
+  if(edgeEls[key]) edgeEls[key].path.classList.add("focused-edge");
+  // 5: endpoint nodes glow
+  nodeEls[step.from] && nodeEls[step.from].classList.add("endpoint");
+  nodeEls[step.to]   && nodeEls[step.to].classList.add("endpoint");
+
+  // 6: annotation flash (re-trigger via forced reflow)
+  const li = document.querySelector(`#anno-steps li[data-idx="${stepIdx}"]`);
+  if(li){
+    document.querySelectorAll("#anno-steps li.focused")
+      .forEach(x => x.classList.remove("focused"));
+    li.classList.remove("focused");
+    void li.offsetWidth;                       // force reflow
+    li.classList.add("focused");
+    li.scrollIntoView({behavior:"smooth", block:"nearest"});
+  }
+
+  // pan so the focused edge is centred
+  const eo = edgeEls[key];
+  if(eo){
+    const L = eo.path.getTotalLength();
+    const c = eo.path.getPointAtLength(L/2);
+    panTo(c.x, c.y, true);
+  }
+}
+
+/* ── annotations panel ── */
+function renderAnnotations(flow){
+  document.getElementById("anno-name").textContent = `${flow.icon} ${flow.name}`;
+  document.getElementById("anno-desc").textContent = flow.description;
+  const ol = document.getElementById("anno-steps");
+  ol.innerHTML = "";
+  flow.steps.forEach((s, i) => {
+    const li = document.createElement("li");
+    li.dataset.idx = i;
+    const a = NODE_BY_ID[s.from], b = NODE_BY_ID[s.to];
+    const ft = document.createElement("div");
+    ft.className = "ft";
+    ft.innerHTML = `${esc(a ? a.title : s.from)}<span class="arr">→</span>${esc(b ? b.title : s.to)}`;
+    li.appendChild(ft);
+    if(s.passes){
+      const ps = document.createElement("div");
+      ps.className = "ps"; ps.textContent = s.passes;
+      li.appendChild(ps);
+    }
+    if(s.note){
+      const nt = document.createElement("div");
+      nt.className = "nt"; nt.textContent = s.note;
+      li.appendChild(nt);
+    }
+    li.addEventListener("click", () => focusStep(flow.id, i));
+    ol.appendChild(li);
+  });
+}
+
+/* ── tooltip ── */
+const tip = document.getElementById("tooltip");
+function showNodeTip(n){
+  tip.innerHTML = `<div class="tf">${esc(n.title)}</div>`+
+    `<div class="nt">${esc(n.subtitle)}</div>`;
+  tip.style.display = "block";
+}
+function showBadgeTip(flow, steps, ev){
+  if(!activeFlowId) return;                     // badge-only while a flow is active
+  let html = "";
+  steps.forEach((si, idx) => {
+    const s = flow.steps[si];
+    const a = NODE_BY_ID[s.from], b = NODE_BY_ID[s.to];
+    if(idx) html += "<hr>";
+    html += `<div class="tf">${esc(flow.name)} — ステップ ${si+1}</div>`;
+    html += `<div class="chip"><span class="a">${esc(a?a.title:s.from)}</span>→`+
+            `<span class="a">${esc(b?b.title:s.to)}</span></div>`;
+    if(s.passes) html += `<code>${esc(s.passes)}</code>`;
+    if(s.note)   html += `<div class="nt">${esc(s.note)}</div>`;
+  });
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  moveTip(ev);
+}
+function moveTip(ev){
+  if(tip.style.display !== "block") return;
+  const pad = 16;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  const r = tip.getBoundingClientRect();
+  if(x + r.width  > window.innerWidth)  x = ev.clientX - r.width  - pad;
+  if(y + r.height > window.innerHeight) y = ev.clientY - r.height - pad;
+  tip.style.left = x + "px";
+  tip.style.top  = y + "px";
+}
+function hideTip(){ tip.style.display = "none"; }
+
+/* ── viewBox: zoom / pan / fit (animated) ── */
+function applyVB(){
+  svg.setAttribute("viewBox", `${VB.x} ${VB.y} ${VB.w} ${VB.h}`);
+}
+let animId = null;
+function animateVB(target, animate){
+  if(animId) cancelAnimationFrame(animId);
+  if(!animate){ VB = {...target}; applyVB(); return; }
+  const from = {...VB}, t0 = performance.now(), dur = 420;
+  const ease = t => 1 - Math.pow(1 - t, 3);
+  function frame(now){
+    const k = Math.min(1, (now - t0)/dur), e = ease(k);
+    VB = {
+      x: from.x + (target.x - from.x)*e,
+      y: from.y + (target.y - from.y)*e,
+      w: from.w + (target.w - from.w)*e,
+      h: from.h + (target.h - from.h)*e
+    };
+    applyVB();
+    if(k < 1) animId = requestAnimationFrame(frame);
+  }
+  animId = requestAnimationFrame(frame);
+}
+function fitAll(animate){
+  animateVB({x:-20, y:0, w:DATA.viewBox.w + 40, h:DATA.viewBox.h}, animate);
+}
+function fitToNodes(ids, pad, animate){
+  const ns = ids.map(i => NODE_BY_ID[i]).filter(Boolean);
+  if(!ns.length) return fitAll(animate);
+  let x1=1e9,y1=1e9,x2=-1e9,y2=-1e9;
+  for(const n of ns){
+    x1=Math.min(x1,n.x); y1=Math.min(y1,n.y);
+    x2=Math.max(x2,n.x+n.w); y2=Math.max(y2,n.y+n.h);
+  }
+  x1-=pad; y1-=pad; x2+=pad; y2+=pad;
+  const cvRatio = svg.clientWidth / svg.clientHeight || (16/9);
+  let w = x2-x1, h = y2-y1;
+  if(w/h < cvRatio) w = h*cvRatio; else h = w/cvRatio;
+  const cx=(x1+x2)/2, cy=(y1+y2)/2;
+  animateVB({x:cx-w/2, y:cy-h/2, w, h}, animate);
+}
+function panTo(cx, cy, animate){
+  animateVB({x:cx - VB.w/2, y:cy - VB.h/2, w:VB.w, h:VB.h}, animate);
+}
+
+/* wheel zoom pivoting on the cursor */
+function svgPoint(ev){
+  const r = svg.getBoundingClientRect();
+  return {
+    x: VB.x + (ev.clientX - r.left)/r.width  * VB.w,
+    y: VB.y + (ev.clientY - r.top )/r.height * VB.h
+  };
+}
+function setupInteractions(){
+  svg.addEventListener("wheel", ev => {
+    ev.preventDefault();
+    const p = svgPoint(ev);
+    const f = ev.deltaY < 0 ? 0.85 : 1.18;
+    const nw = Math.min(4000, Math.max(260, VB.w*f));
+    const nh = nw * (VB.h/VB.w);
+    VB = {
+      x: p.x - (p.x - VB.x)*(nw/VB.w),
+      y: p.y - (p.y - VB.y)*(nh/VB.h),
+      w: nw, h: nh
+    };
+    applyVB();
+  }, {passive:false});
+
+  let drag = null;
+  svg.addEventListener("mousedown", ev => {
+    if(ev.button !== 0) return;
+    drag = {sx:ev.clientX, sy:ev.clientY, ox:VB.x, oy:VB.y};
+    svg.classList.add("panning");
+  });
+  window.addEventListener("mousemove", ev => {
+    if(!drag) return;
+    const r = svg.getBoundingClientRect();
+    VB.x = drag.ox - (ev.clientX - drag.sx)/r.width  * VB.w;
+    VB.y = drag.oy - (ev.clientY - drag.sy)/r.height * VB.h;
+    applyVB();
+  });
+  window.addEventListener("mouseup", () => { drag=null; svg.classList.remove("panning"); });
+
+  window.addEventListener("keydown", ev => {
+    if(/^[1-9]$/.test(ev.key)){
+      const f = DATA.flows[parseInt(ev.key,10)-1]; if(f) selectFlow(f.id);
+    } else if(ev.key === "0"){
+      const f = DATA.flows[9]; if(f) selectFlow(f.id);
+    } else if(ev.key === "f" || ev.key === "F"){
+      fitAll(true);
+    } else if(ev.key === "+" || ev.key === "="){
+      zoomBy(0.83);
+    } else if(ev.key === "-" || ev.key === "_"){
+      zoomBy(1.2);
+    } else if(ev.key === "Escape"){
+      if(focusedKey){
+        focusedKey = null;
+        document.querySelectorAll(".edge-step-badge.focused").forEach(b=>b.classList.remove("focused"));
+        document.querySelectorAll("#anno-steps li.focused").forEach(b=>b.classList.remove("focused"));
+        for(const eo of Object.values(edgeEls)) eo.path.classList.remove("focused-edge");
+        for(const g of Object.values(nodeEls)) g.classList.remove("endpoint");
+      } else if(activeFlowId){
+        clearFlow();
+      }
+    }
+  });
+}
+function zoomBy(f){
+  const cx = VB.x + VB.w/2, cy = VB.y + VB.h/2;
+  VB.w *= f; VB.h *= f; VB.x = cx - VB.w/2; VB.y = cy - VB.h/2;
+  applyVB();
+}
+
+/* ── sidebar + resizer ── */
+function buildSidebar(){
+  document.getElementById("h-title").textContent = DATA.meta.title;
+  document.getElementById("h-path").textContent  = DATA.meta.path;
+  document.getElementById("h-hint").textContent  = DATA.meta.hint;
+  document.title = DATA.meta.title;
+
+  const list = document.getElementById("flow-list");
+  DATA.flows.forEach((f, i) => {
+    const b = document.createElement("button");
+    b.className = "flow-btn"; b.dataset.id = f.id;
+    b.innerHTML =
+      `<span class="ic">${f.icon||"●"}</span>`+
+      `<span><span class="tt">${esc(f.name)}</span>`+
+      `<span class="sb">${esc(f.sub||"")}</span></span>`+
+      `<span class="kbd">${i<9 ? i+1 : (i===9?"0":"")}</span>`;
+    b.addEventListener("click", () => selectFlow(f.id));
+    list.appendChild(b);
+  });
+
+  const lg = document.getElementById("legend");
+  for(const g of DATA.groups){
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="sw" style="border-color:${g.stroke};background:${g.fill}"></span>${esc(g.label)}`;
+    lg.appendChild(row);
+  }
+  document.getElementById("reset-btn").addEventListener("click", () => clearFlow());
+
+  // resizer for the annotation panel height (persisted)
+  const saved = localStorage.getItem("rsai-anno-h");
+  if(saved) document.documentElement.style.setProperty("--anno-h", saved);
+  const rz = document.getElementById("resizer");
+  rz.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = parseInt(getComputedStyle(document.documentElement)
+      .getPropertyValue("--anno-h"), 10) || 300;
+    function mv(ev){
+      const h = Math.max(120, Math.min(window.innerHeight-220, startH + (startY - ev.clientY)));
+      document.documentElement.style.setProperty("--anno-h", h + "px");
+    }
+    function up(){
+      window.removeEventListener("mousemove", mv);
+      window.removeEventListener("mouseup", up);
+      localStorage.setItem("rsai-anno-h",
+        getComputedStyle(document.documentElement).getPropertyValue("--anno-h").trim());
+    }
+    window.addEventListener("mousemove", mv);
+    window.addEventListener("mouseup", up);
+  });
+}
+
+/* ── tiny DOM helpers ── */
+function el(tag, attrs){
+  const e = document.createElementNS(SVGNS, tag);
+  if(attrs) for(const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function esc(s){
+  return String(s).replace(/[&<>"]/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+}
+function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_\-]/g, m => "\\"+m); }
+
+/* ── boot ── */
+(async function(){
+  DATA = await loadData();
+  DATA.nodes.forEach(n => NODE_BY_ID[n.id] = n);
+  DATA.groups.forEach(g => GROUP_BY_ID[g.id] = g);
+  DATA.columns.forEach((c,i) => COL_INDEX[c.id] = i);
+  VB = {x:-20, y:0, w:DATA.viewBox.w + 40, h:DATA.viewBox.h};
+
+  svg = document.getElementById("svg");
+  buildSidebar();
+  buildScene();
+  applyVB();
+  setupInteractions();
+})();
+</script>
+</body>
+</html>

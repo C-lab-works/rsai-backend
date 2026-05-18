@@ -31,11 +31,10 @@ public class Config {
 
     public static class DatabaseConfig {
         private String host = "localhost";
-        private int port = 5432;
+        private int port = 3306;
         private String name = "rsai";
-        private String user = "postgres";
+        private String user = "root";
         private String password = "";
-        private String cloudSqlInstance = "";
         private int maxPoolSize = 10;
         private boolean ssl = false;
         private volatile boolean frozen = false;
@@ -60,8 +59,6 @@ public class Config {
         public void setUser(String user) { checkFrozen(); this.user = user; }
         public String getPassword() { return password; }
         public void setPassword(String password) { checkFrozen(); this.password = password; }
-        public String getCloudSqlInstance() { return cloudSqlInstance != null ? cloudSqlInstance : ""; }
-        public void setCloudSqlInstance(String cloudSqlInstance) { checkFrozen(); this.cloudSqlInstance = cloudSqlInstance != null ? cloudSqlInstance : ""; }
         public int getMaxPoolSize() { return maxPoolSize; }
         public void setMaxPoolSize(int maxPoolSize) {
             checkFrozen();

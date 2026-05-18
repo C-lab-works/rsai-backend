@@ -21,28 +21,23 @@ public class Database {
     public static void init(Config.DatabaseConfig config) throws Exception {
         HikariConfig hikari = new HikariConfig();
 
-        String cloudSqlInstance = envOrDefault("CLOUD_SQL_INSTANCE", config.getCloudSqlInstance());
-        String dbName    = envOrDefault("DB_NAME",     config.getName());
-        String user      = envOrDefault("DB_USER",     config.getUser());
-        String password  = envOrDefault("DB_PASSWORD", config.getPassword());
-        int    poolSize  = config.getMaxPoolSize();
+        String dbName   = envOrDefault("DB_NAME",     config.getName());
+        String user     = envOrDefault("DB_USER",     config.getUser());
+        String password = envOrDefault("DB_PASSWORD", config.getPassword());
+        String host     = envOrDefault("DB_HOST",     config.getHost());
+        int    port     = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
+        int    poolSize = config.getMaxPoolSize();
 
-        if (!cloudSqlInstance.isBlank()) {
-            // Cloud SQL Auth Proxy sidecar listens on 127.0.0.1:3306
-            hikari.setJdbcUrl(String.format(
-                "jdbc:mysql://127.0.0.1:3306/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000",
-                dbName
-            ));
-            logger.info("Connecting via Cloud SQL Auth Proxy sidecar: {}/{}", cloudSqlInstance, dbName);
-        } else {
-            String host = envOrDefault("DB_HOST", config.getHost());
-            int    port = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
-            hikari.setJdbcUrl(String.format(
-                "jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000",
-                host, port, dbName
-            ));
-            logger.info("Connecting to MySQL at {}:{}/{}", host, port, dbName);
-        }
+        boolean ssl = Boolean.parseBoolean(envOrDefault("DB_SSL", String.valueOf(config.isSsl())));
+        String sslParams = ssl
+            ? "useSSL=true&requireSSL=true&trustServerCertificate=true"
+            : "useSSL=false&allowPublicKeyRetrieval=true";
+
+        hikari.setJdbcUrl(String.format(
+            "jdbc:mysql://%s:%d/%s?%s&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000",
+            host, port, dbName, sslParams
+        ));
+        logger.info("Connecting to MySQL at {}:{}/{} (ssl={})", host, port, dbName, ssl);
 
         hikari.setUsername(user);
         hikari.setPassword(password);

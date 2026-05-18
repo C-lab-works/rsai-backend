@@ -64,9 +64,8 @@ jobs:
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
-                  run.googleapis.com/container-dependencies: '{"app":["cloud-sql-proxy"]}'
                   run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
-                  run.googleapis.com/vpc-access-egress: private-ranges-only
+                  run.googleapis.com/vpc-access-egress: all-traffic
               spec:
                 containerConcurrency: 80
                 timeoutSeconds: 60
@@ -81,14 +80,18 @@ jobs:
                         cpu: "1"
                         memory: 512Mi
                     env:
-                      - name: CLOUD_SQL_INSTANCE
-                        value: "${{ secrets.CLOUD_SQL_INSTANCE }}"
+                      - name: DB_HOST
+                        value: "${{ secrets.DB_HOST }}"
+                      - name: DB_PORT
+                        value: "${{ secrets.DB_PORT }}"
                       - name: DB_NAME
                         value: "${{ secrets.DB_NAME }}"
                       - name: DB_USER
                         value: "${{ secrets.DB_USER }}"
                       - name: DB_PASSWORD
                         value: "${{ secrets.DB_PASSWORD }}"
+                      - name: DB_SSL
+                        value: "${{ secrets.DB_SSL }}"
                       - name: API_KEY
                         value: "${{ secrets.API_KEY }}"
                       - name: READ_ONLY_KEY
@@ -101,23 +104,6 @@ jobs:
                         value: "${{ secrets.CF_ACCESS_TEAM_DOMAIN }}"
                       - name: DISCORD_WEBHOOK_URL
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
-                  - name: cloud-sql-proxy
-                    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
-                    args:
-                      - "--port=3306"
-                      - "--address=0.0.0.0"
-                      - "--private-ip"
-                      - "${{ secrets.CLOUD_SQL_INSTANCE }}"
-                    startupProbe:
-                      tcpSocket:
-                        port: 3306
-                      initialDelaySeconds: 1
-                      periodSeconds: 2
-                      failureThreshold: 15
-                    resources:
-                      limits:
-                        cpu: "0.5"
-                        memory: 128Mi
           EOF
 
       - name: Deploy to Cloud Run
