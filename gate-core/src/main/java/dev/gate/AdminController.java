@@ -100,7 +100,7 @@ public class AdminController {
             }
 
             ArrayNode rows = root.putArray("rows");
-            String sort  = ctx.queryParam("sort");
+            String sort  = ctx.query("sort");
             String order = "desc".equalsIgnoreCase(sort) ? " ORDER BY id DESC" : "";
             try (Statement s = conn.createStatement();
                  ResultSet rs = s.executeQuery("SELECT * FROM `" + table + "`" + order + " LIMIT 500")) {
