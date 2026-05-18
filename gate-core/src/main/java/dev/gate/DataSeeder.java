@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 8) {
-                logger.info("Seed data v8 already present — skipping");
+            if (v >= 9) {
+                logger.info("Seed data v9 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -54,8 +54,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v7 -> v8");
                 migrateV7(conn);
             }
-            setSeedVersion(conn, 8);
-            logger.info("Seed data v8 ready");
+            if (v <= 8) {
+                logger.info("Migrating schema v8 -> v9");
+                migrateV8(conn);
+            }
+            setSeedVersion(conn, 9);
+            logger.info("Seed data v9 ready");
         }
     }
 
@@ -133,6 +137,13 @@ public class DataSeeder {
         } catch (Exception ignored) {
             // column already exists
         }
+    }
+
+    private static void migrateV8(Connection conn) throws Exception {
+        try {
+            exec(conn, "ALTER TABLE announcements MODIFY COLUMN title VARCHAR(255) NOT NULL DEFAULT ''");
+            logger.info("Fixed announcements.title to VARCHAR(255) NOT NULL DEFAULT ''");
+        } catch (Exception ignored) {}
     }
 
     private static void migrateV5(Connection conn) throws Exception {
