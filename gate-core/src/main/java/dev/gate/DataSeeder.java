@@ -54,10 +54,8 @@ public class DataSeeder {
                 logger.info("Migrating schema v7 -> v8");
                 migrateV7(conn);
             }
-            if (v <= 8) {
-                logger.info("Migrating schema v8 -> v9");
-                migrateV8(conn);
-            }
+            logger.info("Migrating schema v8 -> v9");
+            migrateV8(conn);
             setSeedVersion(conn, 9);
             logger.info("Seed data v9 ready");
         }
