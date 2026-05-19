@@ -105,7 +105,7 @@ jobs:
                       - name: DISCORD_WEBHOOK_URL
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
-                        value: "${{ vars.ADMIN_EMAILS }}"
+                        value: "${{ secrets.ADMIN_EMAILS }}"
           EOF
 
       - name: Deploy to Cloud Run
