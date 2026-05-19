@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class DataController {
 
     private static final Logger logger = new Logger(DataController.class);
-    private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
+    private static final long CACHE_TTL_MS = 30 * 1000L;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -46,14 +46,14 @@ public class DataController {
     private void serve(Context ctx, String key, Builder builder) {
         CacheEntry entry = cache.get(key);
         if (entry != null && System.currentTimeMillis() < entry.expiresAt()) {
-            ctx.header("Cache-Control", "public, max-age=300");
+            ctx.header("Cache-Control", "public, max-age=30");
             ctx.json(entry.data());
             return;
         }
         try (Connection conn = Database.getConnection()) {
             Object data = builder.build(conn);
             cache.put(key, new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
-            ctx.header("Cache-Control", "public, max-age=300");
+            ctx.header("Cache-Control", "public, max-age=30");
             ctx.json(data);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());
