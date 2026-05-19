@@ -528,7 +528,7 @@ public class AdminController {
         return code == 1292 || code == 1366;
     }
 
-    private String toDataTypeMessage(SQLException e) {
+    private String toDataTypeMessage() {
         return "Incorrect value for column type";
     }
 
