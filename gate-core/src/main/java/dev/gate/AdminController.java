@@ -410,6 +410,8 @@ public class AdminController {
         return "クエリ実行に失敗しました";
     }
 
+    private static final int MAX_INSTANCES = 10;
+
     @GetMapping("/admin/stats")
     public void stats(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -425,13 +427,13 @@ public class AdminController {
         root.put("errorRate",     errRate);
         root.put("p50ms",         perc[0]);
         root.put("p95ms",         perc[1]);
-        root.put("maxInstances",  10);
+        root.put("maxInstances",  MAX_INSTANCES);
 
         ArrayNode chart = root.putArray("chart");
         for (long v : m.getHourlyCounts()) chart.add(v);
 
         ArrayNode endpoints = root.putArray("endpoints");
-        for (var e : m.getTopEndpoints(10)) {
+        for (var e : m.getTopEndpoints(MAX_INSTANCES)) {
             String[] parts = e.getKey().split(" ", 2);
             String path = parts.length > 1 ? parts[1] : "";
             if (path.startsWith("/admin")) continue;
