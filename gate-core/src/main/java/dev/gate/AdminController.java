@@ -35,8 +35,10 @@ public class AdminController {
     private static final Logger logger = new Logger(AdminController.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
+    // NOTE: DROP is intentionally NOT here — it is allowed inside ALTER TABLE
+    // (DROP COLUMN) but blocked as a leading statement keyword (see execSql).
     private static final Set<String> BLOCKED_SQL_TOKENS = Set.of(
-        "DROP", "TRUNCATE", "GRANT", "REVOKE", "FLUSH", "RESET", "SHUTDOWN", "KILL",
+        "TRUNCATE", "GRANT", "REVOKE", "FLUSH", "RESET", "SHUTDOWN", "KILL",
         "OUTFILE", "DUMPFILE", "INFILE", "LOAD_FILE",
         "USER", "IDENTIFIED", "PRIVILEGES"
     );
@@ -365,6 +367,13 @@ public class AdminController {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
                 String norm = stripSqlComments(stmt).toUpperCase().replaceAll("\\s+", " ").trim();
+                // DROP is permitted only inside ALTER TABLE (e.g. DROP COLUMN).
+                // A statement that *starts* with DROP (DROP TABLE/DATABASE/USER/…) is blocked.
+                String firstKeyword = norm.isEmpty() ? "" : norm.split(" ", 2)[0];
+                if (firstKeyword.equals("DROP")) {
+                    ctx.status(403).json(Map.of("error", "この操作は許可されていません: DROP"));
+                    return;
+                }
                 for (String token : BLOCKED_SQL_TOKENS) {
                     if (norm.matches(".*\\b" + java.util.regex.Pattern.quote(token) + "\\b.*")) {
                         ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + token));
@@ -442,10 +451,12 @@ public class AdminController {
                 int start = i;
                 while (i + 1 < n && !(s.charAt(i) == '*' && s.charAt(i + 1) == '/')) i++;
                 if (i + 1 < n) {                                         // closed: */
-                    if (exec) out.append(s, start, i); else out.append(' ');
+                    if (exec) out.append(' ').append(s, start, i).append(' ');
+                    else      out.append(' ');
                     i += 2;
                 } else {                                                 // unterminated
-                    if (exec) out.append(s, start, n); else out.append(' ');
+                    if (exec) out.append(' ').append(s, start, n).append(' ');
+                    else      out.append(' ');
                     i = n;
                 }
                 continue;
