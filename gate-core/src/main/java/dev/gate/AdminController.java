@@ -261,7 +261,7 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
-            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
             String tableName = (String) body.get("name");
             if (!isValidIdentifier(tableName)) {
                 ctx.status(400).json(Map.of("error", "テーブル名が無効です")); return;
@@ -270,7 +270,7 @@ public class AdminController {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> columns = (List<Map<String, Object>>) body.get("columns");
             if (columns == null || columns.isEmpty()) {
-                ctx.status(400).json(Map.of("error", "columns required")); return;
+                ctx.status(400).json(Map.of("error", "columns が必要です")); return;
             }
 
             StringBuilder sb = new StringBuilder("CREATE TABLE `").append(tableName).append("` (");
