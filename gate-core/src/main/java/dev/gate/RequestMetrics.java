@@ -220,9 +220,9 @@ public class RequestMetrics {
     // ── after filter ───────────────────────────────────────────────────
 
     public void record(Context ctx) {
+        try {
         // Skip /admin/* except /admin/debug/* (debug endpoints need metrics + Discord)
         if (ctx.path().startsWith("/admin") && !ctx.path().startsWith("/admin/debug/")) {
-            requestStart.remove();
             return;
         }
 
@@ -252,7 +252,6 @@ public class RequestMetrics {
         Long start = requestStart.get();
         if (start != null) {
             long ms  = (System.nanoTime() - start) / 1_000_000L;
-            requestStart.remove();
             int idx = upperBucketIndex(ms);
             histogram[idx].incrementAndGet();
         }
@@ -262,6 +261,9 @@ public class RequestMetrics {
             endpointCounts.computeIfAbsent(key, k -> new LongAdder()).increment();
         } else {
             endpointCounts.computeIfPresent(key, (k, v) -> { v.increment(); return v; });
+        }
+        } finally {
+            requestStart.remove();
         }
     }
 
