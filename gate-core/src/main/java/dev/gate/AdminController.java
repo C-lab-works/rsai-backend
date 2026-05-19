@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 // MySQL error codes
 // 1048 = Column cannot be null
+private static final int TABLE_ROWS_LIMIT = 500;
 // 1062 = Duplicate entry (unique/PK violation)
 // 1216/1217/1451/1452 = Foreign key violation
 // 1292/1366 = Incorrect value for column type
@@ -114,7 +115,7 @@ public class AdminController {
             String order = ("desc".equalsIgnoreCase(sort) && pkCol != null)
                 ? " ORDER BY `" + pkCol + "` DESC" : "";
             try (Statement s = conn.createStatement();
-                 ResultSet rs = s.executeQuery("SELECT * FROM `" + resolvedTable + "`" + order + " LIMIT 500")) {
+                 ResultSet rs = s.executeQuery("SELECT * FROM `" + resolvedTable + "`" + order + " LIMIT " + TABLE_ROWS_LIMIT)) {
                 ResultSetMetaData rsMeta = rs.getMetaData();
                 int colCount = rsMeta.getColumnCount();
                 while (rs.next()) {
