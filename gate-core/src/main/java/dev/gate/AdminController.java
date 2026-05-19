@@ -169,7 +169,7 @@ public class AdminController {
         } catch (SQLException e) {
             if (isDataTypeError(e)) {
                 logger.warn("updateRow data type error: {}", e.getMessage());
-                ctx.status(400).json(Map.of("error", toDataTypeMessage(e)));
+                ctx.status(400).json(Map.of("error", toDataTypeMessage()));
             } else {
                 logger.error("updateRow error", e);
                 ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -245,7 +245,7 @@ public class AdminController {
         } catch (SQLException e) {
             if (isDataTypeError(e)) {
                 logger.warn("insertRow data type error: {}", e.getMessage());
-                ctx.status(400).json(Map.of("error", toDataTypeMessage(e)));
+                ctx.status(400).json(Map.of("error", toDataTypeMessage()));
             } else {
                 logger.error("insertRow error", e);
                 ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -528,7 +528,7 @@ public class AdminController {
         return code == 1292 || code == 1366;
     }
 
-    private String toDataTypeMessage(SQLException e) {
+    private String toDataTypeMessage() {
         return "Incorrect value for column type";
     }
 
