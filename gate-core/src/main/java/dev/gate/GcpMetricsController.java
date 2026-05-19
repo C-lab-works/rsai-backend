@@ -166,9 +166,18 @@ public class GcpMetricsController {
                                         startEpochPeriod, periodSeconds);
                 if (idx < 0 || idx >= numBuckets) continue;
                 JsonNode val = point.path("value");
-                result[idx] += val.has("doubleValue") ? val.get("doubleValue").asDouble()
-                             : val.has("int64Value")  ? val.get("int64Value").asDouble()
-                             : 0.0;
+                double v;
+                if (val.has("doubleValue")) {
+                    v = val.get("doubleValue").asDouble();
+                } else if (val.has("int64Value")) {
+                    v = val.get("int64Value").asDouble();
+                } else if (val.has("distributionValue")) {
+                    // DISTRIBUTION metrics (e.g. cpu/utilizations) — extract the mean
+                    v = val.get("distributionValue").path("mean").asDouble();
+                } else {
+                    v = 0.0;
+                }
+                result[idx] += v;
                 counts[idx]++;
             }
         }
