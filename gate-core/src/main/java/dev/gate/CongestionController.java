@@ -55,7 +55,7 @@ public class CongestionController {
                 n.put("id",    rs.getInt("id"));
                 n.put("name",  rs.getString("name"));
                 n.put("floor", rs.getInt("floor"));
-                putStringOrNull(n, "svgId", rs.getString("svg_id"));
+                putStringOrNull(n, "svg_id", rs.getString("svg_id"));
                 double x = rs.getDouble("x");
                 if (!rs.wasNull()) n.put("x", x);
                 double y = rs.getDouble("y");
