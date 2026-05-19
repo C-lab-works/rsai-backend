@@ -50,6 +50,8 @@
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.AnnouncementsController",
     "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.GcpMetricsController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
 
   { "name": "dev.gate.mapping.GetMapping",    "allPublicMethods": true },
   { "name": "dev.gate.mapping.PostMapping",   "allPublicMethods": true },
