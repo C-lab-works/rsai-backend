@@ -415,13 +415,45 @@ public class AdminController {
      * contains the sequence star-slash, but never hides a keyword MySQL would run.
      */
     private static String stripSqlComments(String s) {
-        // Ordinary block comments (not /*! ) — ignored by MySQL, strip entirely.
-        String t = s.replaceAll("/\\*(?!!)[\\s\\S]*?\\*/", " ");
-        // Executable comments: keep body, drop "/*!" + optional version digits and "*/".
-        t = t.replaceAll("/\\*!\\d*", " ").replace("*/", " ");
-        // Line comments.
-        t = t.replaceAll("--[^\\n]*", " ").replaceAll("#[^\\n]*", " ");
-        return t;
+        // Single-pass O(n) scanner — no regex, so no ReDoS (CWE-1333).
+        StringBuilder out = new StringBuilder(s.length());
+        int n = s.length();
+        for (int i = 0; i < n; ) {
+            char c = s.charAt(i);
+            if (c == '-' && i + 1 < n && s.charAt(i + 1) == '-') {        // -- line comment
+                i += 2;
+                while (i < n && s.charAt(i) != '\n') i++;
+                out.append(' ');
+                continue;
+            }
+            if (c == '#') {                                              // # line comment
+                i++;
+                while (i < n && s.charAt(i) != '\n') i++;
+                out.append(' ');
+                continue;
+            }
+            if (c == '/' && i + 1 < n && s.charAt(i + 1) == '*') {        // block comment
+                boolean exec = (i + 2 < n && s.charAt(i + 2) == '!');
+                i += 2;
+                if (exec) {                                              // /*! [version]
+                    i++;
+                    while (i < n && Character.isDigit(s.charAt(i))) i++;
+                }
+                int start = i;
+                while (i + 1 < n && !(s.charAt(i) == '*' && s.charAt(i + 1) == '/')) i++;
+                if (i + 1 < n) {                                         // closed: */
+                    if (exec) out.append(s, start, i); else out.append(' ');
+                    i += 2;
+                } else {                                                 // unterminated
+                    if (exec) out.append(s, start, n); else out.append(' ');
+                    i = n;
+                }
+                continue;
+            }
+            out.append(c);
+            i++;
+        }
+        return out.toString();
     }
 
     private String sanitizeSqlError(Exception e) {
