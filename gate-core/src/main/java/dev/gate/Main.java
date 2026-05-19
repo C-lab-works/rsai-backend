@@ -88,6 +88,7 @@ public class Main {
         gate.register(new CongestionController());
         gate.register(new AdminController());
         gate.register(new AnnouncementsController());
+        gate.register(new GcpMetricsController());
 
         server.join();
     }
