@@ -258,10 +258,21 @@ public class RequestMetrics {
         }
 
         String key = ctx.method().toUpperCase() + " " + ctx.path();
-        if (endpointCounts.size() < MAX_KEYS) {
-            endpointCounts.computeIfAbsent(key, k -> new LongAdder()).increment();
-        } else {
-            endpointCounts.computeIfPresent(key, (k, v) -> { v.increment(); return v; });
+        // Always count existing keys.
+        if (endpointCounts.computeIfPresent(key, (k, v) -> { v.increment(); return v; }) != null) {
+            return;
+        }
+
+        // Atomically enforce MAX_KEYS for new keys.
+        synchronized (endpointCounts) {
+            LongAdder existing = endpointCounts.get(key);
+            if (existing != null) {
+                existing.increment();
+            } else if (endpointCounts.size() < MAX_KEYS) {
+                LongAdder adder = new LongAdder();
+                adder.increment();
+                endpointCounts.put(key, adder);
+            }
         }
     }
 
