@@ -64,7 +64,7 @@ public class GcpMetricsController {
                 "ALIGN_MAX", "REDUCE_MAX", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
             double[] cpuUtilization = queryDoubleMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/cpu/utilizations",
-                "ALIGN_MEAN", "REDUCE_MEAN", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
+                "ALIGN_PERCENTILE_50", "REDUCE_PERCENTILE_50", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
 
             ctx.json(buildResponse(alignedStart, alignedEnd, periodSeconds, numBuckets,
                 requestCount, instanceCount, cpuUtilization));
