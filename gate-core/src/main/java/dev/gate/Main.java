@@ -5,14 +5,20 @@ import dev.gate.core.ConfigLoader;
 import dev.gate.core.Database;
 import dev.gate.core.Gate;
 import dev.gate.core.GateServer;
+import dev.gate.core.Logger;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Main {
+
+    private static final Logger log = new Logger(Main.class);
+
+    /** Flips to true once DB init + seed + metrics persistence are all ready. */
+    private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
+
     public static void main(String[] args) throws Exception {
         String version = "unknown";
         try (InputStream vs = Main.class.getResourceAsStream("/version.txt")) {
@@ -30,14 +36,11 @@ public class Main {
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
 
         Config.DatabaseConfig dbConfig = config.getDatabase();
-        CompletableFuture<Void> dbFuture = CompletableFuture.runAsync(() -> {
-            try {
-                Database.init(dbConfig);
-                DataSeeder.seed();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
+        // DB init + seed + metrics run on a background daemon thread that retries
+        // on failure instead of terminating the process (avoids Cloud Run
+        // crash-loops). Until it succeeds, the readiness gate below keeps every
+        // route returning 503 {"status":"starting"}.
+        startDatabaseInit(dbConfig);
 
         cfAccessAuth.prefetchJwks();
         Runtime.getRuntime().addShutdownHook(
@@ -58,38 +61,74 @@ public class Main {
                 : baseOrigin + "," + extraOrigins;
         gate.cors(corsValue);
         gate.before(ctx -> RequestMetrics.get().startTimer());
+        // Readiness gate: until DB init + seed + metrics finish, every route
+        // except /health and CORS preflights returns 503 {"status":"starting"}
+        // instead of a misleading 404. Placed before auth/CF-IP so the platform
+        // and frontend always get a clear startup signal (same non-sensitive
+        // information as the public /health endpoint).
+        gate.before(ctx -> {
+            if ("/health".equals(ctx.path())) return;
+            if ("OPTIONS".equals(ctx.method())) return;
+            if (!APP_READY.get()) {
+                ctx.status(503).json(Map.of("status", "starting")).halt();
+            }
+        });
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
         gate.get("/health", ctx -> {
-            if (!Database.isReady()) {
-                ctx.status(503).json(Map.of("status", "starting"));
-            } else {
+            if (APP_READY.get()) {
                 ctx.json(Map.of("status", "ok"));
+            } else {
+                ctx.status(503).json(Map.of("status", "starting"));
             }
         });
 
         gate.after(SecurityHeaders.get()::handle);
         gate.after(RequestMetrics.get()::record);
 
-        // Start server immediately so Cloud Run health check passes.
-        // DB routes are registered once the Cloud SQL proxy connection is ready.
-        GateServer server = gate.start(port);
-
-        try {
-            dbFuture.join();
-        } catch (CompletionException e) {
-            Throwable cause = e.getCause();
-            throw (cause instanceof Exception ex) ? ex : new RuntimeException(cause);
-        }
-
-        RequestMetrics.get().init();
+        // Register all routes up-front so paths exist immediately; DB-backed
+        // handlers are gated by the readiness filter above until init completes.
         gate.register(new DataController());
         gate.register(new CongestionController());
         gate.register(new AdminController());
         gate.register(new AnnouncementsController());
         gate.register(new GcpMetricsController());
 
+        GateServer server = gate.start(port);
         server.join();
+    }
+
+    /**
+     * Initializes the database, seed data and metrics persistence on a background
+     * daemon thread. On failure it retries with exponential backoff (2s → 30s)
+     * instead of terminating the process, so a transient DB outage degrades the
+     * service to "starting" (HTTP 503) and self-heals once the DB is reachable —
+     * rather than crash-looping the container.
+     */
+    private static void startDatabaseInit(Config.DatabaseConfig dbConfig) {
+        Thread t = new Thread(() -> {
+            long backoffMs = 2_000L;
+            while (!APP_READY.get()) {
+                try {
+                    if (!Database.isReady()) Database.init(dbConfig);
+                    DataSeeder.seed();
+                    RequestMetrics.get().init();
+                    APP_READY.set(true);
+                    log.info("Database ready — all routes now serving");
+                } catch (Exception e) {
+                    log.error("DB init failed; retrying in " + (backoffMs / 1000) + "s", e);
+                    try {
+                        Thread.sleep(backoffMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    backoffMs = Math.min(backoffMs * 2, 30_000L);
+                }
+            }
+        }, "db-init");
+        t.setDaemon(true);
+        t.start();
     }
 }
