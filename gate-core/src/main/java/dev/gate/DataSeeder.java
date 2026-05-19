@@ -54,8 +54,10 @@ public class DataSeeder {
                 logger.info("Migrating schema v7 -> v8");
                 migrateV7(conn);
             }
-            logger.info("Migrating schema v8 -> v9");
-            migrateV8(conn);
+            if (v >= 7) {
+                logger.info("Migrating schema v8 -> v9");
+                migrateV8(conn);
+            }
             setSeedVersion(conn, 9);
             logger.info("Seed data v9 ready");
         }
@@ -90,7 +92,7 @@ public class DataSeeder {
                 "vendors", "dining_areas", "food_rules", "eco_stations",
                 "floors", "outdoor_areas", "poi", "map_config", "map_notes",
                 "categories", "locations", "announcements"}) {
-            exec(conn, "DROP TABLE IF EXISTS " + t);
+            exec(conn, "DROP TABLE IF EXISTS `" + t + "`");
         }
     }
 
@@ -121,6 +123,23 @@ public class DataSeeder {
         }
     }
 
+    private static void migrateV5(Connection conn) throws Exception {
+        try {
+            exec(conn, "ALTER TABLE projects DROP COLUMN category_id");
+            logger.info("Dropped category_id from projects");
+        } catch (Exception ignored) {
+            // column already removed
+        }
+        try {
+            exec(conn, "ALTER TABLE projects ADD COLUMN location_id INT");
+            logger.info("Added location_id to projects");
+        } catch (Exception ignored) {
+            // column already exists
+        }
+        defineTables(conn);
+        logger.info("Created foods, menus, project_categories tables");
+    }
+
     private static void migrateV6(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE congestion_status MODIFY COLUMN level TINYINT(4) NOT NULL DEFAULT 0");
@@ -142,23 +161,6 @@ public class DataSeeder {
             exec(conn, "ALTER TABLE announcements MODIFY COLUMN title VARCHAR(255) NOT NULL DEFAULT ''");
             logger.info("Fixed announcements.title to VARCHAR(255) NOT NULL DEFAULT ''");
         } catch (Exception ignored) {}
-    }
-
-    private static void migrateV5(Connection conn) throws Exception {
-        try {
-            exec(conn, "ALTER TABLE projects DROP COLUMN category_id");
-            logger.info("Dropped category_id from projects");
-        } catch (Exception ignored) {
-            // column already removed
-        }
-        try {
-            exec(conn, "ALTER TABLE projects ADD COLUMN location_id INT");
-            logger.info("Added location_id to projects");
-        } catch (Exception ignored) {
-            // column already exists
-        }
-        defineTables(conn);
-        logger.info("Created foods, menus, project_categories tables");
     }
 
     // ── DDL ───────────────────────────────────────────────────

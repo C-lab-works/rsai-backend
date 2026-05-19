@@ -41,6 +41,8 @@ public class AdminController {
         "FLUSH", "RESET", "SHUTDOWN", "KILL"
     );
 
+    private static final int TOP_ENDPOINTS_COUNT = 10;
+
     private static final Set<String> ALLOWED_COL_TYPES = Set.of(
         "INT", "BIGINT", "VARCHAR(255)", "VARCHAR(100)", "TEXT",
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
@@ -84,7 +86,7 @@ public class AdminController {
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
-            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "テーブルが見つかりません")); return; }
 
             ObjectNode root = mapper.createObjectNode();
             DatabaseMetaData meta = conn.getMetaData();
@@ -138,19 +140,19 @@ public class AdminController {
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
-            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "テーブルが見つかりません")); return; }
 
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
-            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
             String pkCol = getPkColumn(conn, resolvedTable);
-            if (pkCol == null) { ctx.status(400).json(Map.of("error", "No PK found")); return; }
+            if (pkCol == null) { ctx.status(400).json(Map.of("error", "主キーが見つかりません")); return; }
 
             // Intersect body keys with actual DB columns (DB-sourced) to break taint chain
             List<String> updateCols = getColumnNames(conn, resolvedTable).stream()
                     .filter(c -> body.containsKey(c) && !c.equals(pkCol))
                     .collect(Collectors.toList());
-            if (updateCols.isEmpty()) { ctx.status(400).json(Map.of("error", "No columns to update")); return; }
+            if (updateCols.isEmpty()) { ctx.status(400).json(Map.of("error", "更新するカラムがありません")); return; }
 
             String setClauses = updateCols.stream().map(c -> "`" + c + "` = ?").collect(Collectors.joining(", "));
             try (PreparedStatement ps = conn.prepareStatement(
@@ -165,7 +167,7 @@ public class AdminController {
             ctx.status(400).json(Map.of("error", toUserMessage(e)));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("updateRow syntax error: {}", e.getMessage());
-            ctx.status(400).json(Map.of("error", "Invalid SQL syntax"));
+            ctx.status(400).json(Map.of("error", "SQL構文エラー"));
         } catch (SQLException e) {
             if (isDataTypeError(e)) {
                 logger.warn("updateRow data type error: {}", e.getMessage());
@@ -187,10 +189,10 @@ public class AdminController {
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
-            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "テーブルが見つかりません")); return; }
 
             String pkCol = getPkColumn(conn, resolvedTable);
-            if (pkCol == null) { ctx.status(400).json(Map.of("error", "No PK found")); return; }
+            if (pkCol == null) { ctx.status(400).json(Map.of("error", "主キーが見つかりません")); return; }
             try (PreparedStatement ps = conn.prepareStatement(
                     "DELETE FROM `" + resolvedTable + "` WHERE `" + pkCol + "` = ?")) {
                 ps.setString(1, pkVal);
@@ -211,17 +213,17 @@ public class AdminController {
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
-            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "テーブルが見つかりません")); return; }
 
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
-            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
 
             // Intersect body keys with actual DB columns (DB-sourced) to break taint chain
             List<String> insertCols = getColumnNames(conn, resolvedTable).stream()
                     .filter(body::containsKey)
                     .collect(Collectors.toList());
-            if (insertCols.isEmpty()) { ctx.status(400).json(Map.of("error", "No columns")); return; }
+            if (insertCols.isEmpty()) { ctx.status(400).json(Map.of("error", "カラムがありません")); return; }
 
             String colList      = insertCols.stream().map(c -> "`" + c + "`").collect(Collectors.joining(", "));
             String placeholders = insertCols.stream().map(c -> "?").collect(Collectors.joining(", "));
@@ -241,7 +243,7 @@ public class AdminController {
             ctx.status(400).json(Map.of("error", toUserMessage(e)));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("insertRow syntax error: {}", e.getMessage());
-            ctx.status(400).json(Map.of("error", "Invalid SQL syntax"));
+            ctx.status(400).json(Map.of("error", "SQL構文エラー"));
         } catch (SQLException e) {
             if (isDataTypeError(e)) {
                 logger.warn("insertRow data type error: {}", e.getMessage());
@@ -261,7 +263,7 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
-            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
             String tableName = (String) body.get("name");
             if (!isValidIdentifier(tableName)) {
                 ctx.status(400).json(Map.of("error", "テーブル名が無効です")); return;
@@ -270,7 +272,7 @@ public class AdminController {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> columns = (List<Map<String, Object>>) body.get("columns");
             if (columns == null || columns.isEmpty()) {
-                ctx.status(400).json(Map.of("error", "columns required")); return;
+                ctx.status(400).json(Map.of("error", "カラムの定義が必要です")); return;
             }
 
             StringBuilder sb = new StringBuilder("CREATE TABLE `").append(tableName).append("` (");
@@ -309,11 +311,11 @@ public class AdminController {
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
-            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "Table not found")); return; }
+            if (resolvedTable == null) { ctx.status(404).json(Map.of("error", "テーブルが見つかりません")); return; }
 
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
-            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
             String colName    = (String) body.get("name");
             String colType    = (String) body.get("type");
             boolean notNull   = Boolean.TRUE.equals(body.get("notNull"));
@@ -353,11 +355,12 @@ public class AdminController {
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
-            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
             String sql = (String) body.get("sql");
-            if (sql == null || sql.isBlank()) { ctx.status(400).json(Map.of("error", "sql required")); return; }
+            if (sql == null || sql.isBlank()) { ctx.status(400).json(Map.of("error", "sqlが必要です")); return; }
 
             ObjectNode lastResult = null;
+            // Note: splits on all semicolons — string literals containing ';' will be split incorrectly
             for (String raw : sql.split(";")) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
@@ -431,7 +434,7 @@ public class AdminController {
         for (long v : m.getHourlyCounts()) chart.add(v);
 
         ArrayNode endpoints = root.putArray("endpoints");
-        for (var e : m.getTopEndpoints(10)) {
+        for (var e : m.getTopEndpoints(TOP_ENDPOINTS_COUNT)) {
             String[] parts = e.getKey().split(" ", 2);
             String path = parts.length > 1 ? parts[1] : "";
             if (path.startsWith("/admin")) continue;
@@ -477,7 +480,7 @@ public class AdminController {
 
     private boolean isValidTableName(String table, Context ctx) {
         if (!isValidIdentifier(table)) {
-            ctx.status(400).json(Map.of("error", "Invalid table name"));
+            ctx.status(400).json(Map.of("error", "テーブル名が無効です"));
             return false;
         }
         return true;
