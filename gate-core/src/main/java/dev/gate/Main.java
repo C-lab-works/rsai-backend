@@ -57,7 +57,7 @@ public class Main {
                 ? baseOrigin
                 : baseOrigin + "," + extraOrigins;
         gate.cors(corsValue);
-        gate.before(RequestMetrics.get()::startTimer);
+        gate.before(ctx -> RequestMetrics.get().startTimer());
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);

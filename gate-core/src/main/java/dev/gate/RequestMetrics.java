@@ -213,7 +213,7 @@ public class RequestMetrics {
 
     // ── before filter ──────────────────────────────────────────────────
 
-    public void startTimer(Context ctx) {
+    public void startTimer() {
         requestStart.set(System.nanoTime());
     }
 
