@@ -144,8 +144,7 @@ jobs:
           echo ""
           echo "=== DB connectivity test ==="
           curl -s -w "\nHTTP %{http_code}\n" \
-            -H "X-API-Key: ${{ secrets.READ_ONLY_KEY }}" \
-            "https://rsai-backend-owe3trpwtq-an.a.run.app/events" | head -5
+            "https://rsai-backend-owe3trpwtq-an.a.run.app/health" | head -5
 
       - name: Fetch Cloud Run logs on failure
         if: failure()
