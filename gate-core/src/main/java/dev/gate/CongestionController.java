@@ -55,8 +55,7 @@ public class CongestionController {
                 n.put("id",    rs.getInt("id"));
                 n.put("name",  rs.getString("name"));
                 n.put("floor", rs.getInt("floor"));
-                String svgId = rs.getString("svg_id");
-                if (svgId != null) n.put("svgId", svgId);
+                putStringOrNull(n, "svgId", rs.getString("svg_id"));
                 double x = rs.getDouble("x");
                 if (!rs.wasNull()) n.put("x", x);
                 double y = rs.getDouble("y");
@@ -100,6 +99,10 @@ public class CongestionController {
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
                     "detail", "DB error"));
         }
+    }
+
+    private void putStringOrNull(ObjectNode node, String key, String value) {
+        if (value != null) node.put(key, value);
     }
 
     @PostMapping("/congestion/{id}")
