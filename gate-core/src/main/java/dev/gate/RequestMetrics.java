@@ -102,8 +102,15 @@ public class RequestMetrics {
                 while (rs.next()) {
                     String ep   = rs.getString("endpoint");
                     long   hits = rs.getLong("hits");
-                    if (endpointCounts.size() < MAX_KEYS) {
-                        LongAdder la = endpointCounts.computeIfAbsent(ep, k -> new LongAdder());
+                    synchronized (endpointCounts) {
+                        LongAdder la = endpointCounts.get(ep);
+                        if (la == null) {
+                            if (endpointCounts.size() >= MAX_KEYS) {
+                                continue;
+                            }
+                            la = new LongAdder();
+                            endpointCounts.put(ep, la);
+                        }
                         la.add(hits);
                         lastFlushedEp.computeIfAbsent(ep, k -> new LongAdder()).add(hits);
                     }
