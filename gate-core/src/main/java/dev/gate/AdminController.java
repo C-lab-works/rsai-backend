@@ -37,7 +37,8 @@ public class AdminController {
 
     private static final Set<String> BLOCKED_SQL_TOKENS = Set.of(
         "DROP", "TRUNCATE", "GRANT", "REVOKE", "FLUSH", "RESET", "SHUTDOWN", "KILL",
-        "OUTFILE", "DUMPFILE", "INFILE", "LOAD_FILE"
+        "OUTFILE", "DUMPFILE", "INFILE", "LOAD_FILE",
+        "USER", "IDENTIFIED", "PRIVILEGES"
     );
 
     private static final int TOP_ENDPOINTS_COUNT = 10;
@@ -405,10 +406,22 @@ public class AdminController {
         }
     }
 
+    /**
+     * Normalises SQL for blocklist detection so the detector sees what MySQL will
+     * actually execute. Ordinary block comments are ignored by MySQL and removed;
+     * MySQL executable comments (/*! ... and /*!12345 ...) have their body executed,
+     * so the inner SQL is kept and only the markers are dropped. Detection is
+     * intentionally conservative (over-broad) — it may flag a string literal that
+     * contains the sequence star-slash, but never hides a keyword MySQL would run.
+     */
     private static String stripSqlComments(String s) {
-        return s.replaceAll("/\\*[\\s\\S]*?\\*/", " ")  // /* block comments */
-                .replaceAll("--[^\\n]*", " ")           // -- line comments
-                .replaceAll("#[^\\n]*", " ");           // # line comments (MySQL)
+        // Ordinary block comments (not /*! ) — ignored by MySQL, strip entirely.
+        String t = s.replaceAll("/\\*(?!!)[\\s\\S]*?\\*/", " ");
+        // Executable comments: keep body, drop "/*!" + optional version digits and "*/".
+        t = t.replaceAll("/\\*!\\d*", " ").replace("*/", " ");
+        // Line comments.
+        t = t.replaceAll("--[^\\n]*", " ").replaceAll("#[^\\n]*", " ");
+        return t;
     }
 
     private String sanitizeSqlError(Exception e) {
