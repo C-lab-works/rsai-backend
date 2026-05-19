@@ -35,10 +35,9 @@ public class AdminController {
     private static final Logger logger = new Logger(AdminController.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private static final Set<String> BLOCKED_SQL_PREFIXES = Set.of(
-        "DROP", "TRUNCATE", "GRANT", "REVOKE", "CREATE USER", "DROP USER",
-        "ALTER USER", "LOAD DATA", "INTO OUTFILE", "INTO DUMPFILE",
-        "FLUSH", "RESET", "SHUTDOWN", "KILL"
+    private static final Set<String> BLOCKED_SQL_TOKENS = Set.of(
+        "DROP", "TRUNCATE", "GRANT", "REVOKE", "FLUSH", "RESET", "SHUTDOWN", "KILL",
+        "OUTFILE", "DUMPFILE", "INFILE", "LOAD_FILE"
     );
 
     private static final int TOP_ENDPOINTS_COUNT = 10;
@@ -364,14 +363,14 @@ public class AdminController {
             for (String raw : sql.split(";")) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
-                String upper = stmt.toUpperCase().replaceAll("\\s+", " ");
-                for (String blocked : BLOCKED_SQL_PREFIXES) {
-                    if (upper.startsWith(blocked + " ") || upper.equals(blocked)) {
-                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + blocked));
+                String norm = stripSqlComments(stmt).toUpperCase().replaceAll("\\s+", " ").trim();
+                for (String token : BLOCKED_SQL_TOKENS) {
+                    if (norm.matches(".*\\b" + java.util.regex.Pattern.quote(token) + "\\b.*")) {
+                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + token));
                         return;
                     }
                 }
-                logger.info("execSql by={} sql={}", executor, stmt);
+                logger.info("execSql by={} len={}", executor, stmt.length());
                 try (Statement s = conn.createStatement()) {
                     s.setQueryTimeout(30);
                     boolean hasRs = s.execute(stmt); // lgtm[java/sql-injection] — intentional admin SQL console, protected by CF Access auth
@@ -404,6 +403,12 @@ public class AdminController {
             logger.error("execSql error by={}", executor, e);
             ctx.status(400).json(Map.of("error", sanitizeSqlError(e)));
         }
+    }
+
+    private static String stripSqlComments(String s) {
+        return s.replaceAll("/\\*[\\s\\S]*?\\*/", " ")  // /* block comments */
+                .replaceAll("--[^\\n]*", " ")           // -- line comments
+                .replaceAll("#[^\\n]*", " ");           // # line comments (MySQL)
     }
 
     private String sanitizeSqlError(Exception e) {

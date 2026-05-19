@@ -103,6 +103,11 @@ public class CfAccessAuth implements Handler {
             this.certsUrl   = "https://" + d + "/cdn-cgi/access/certs";
             this.enabled    = true;
             logger.info("CfAccessAuth enabled. Audience={} Certs={} AdminEmails={}", audience, certsUrl, adminEmails.size());
+            if (this.adminEmails.isEmpty()) {
+                throw new IllegalStateException(
+                    "CfAccessAuth: ADMIN_EMAILS must be set when CF Access is enabled. " +
+                    "An empty list would grant admin access to every authenticated user.");
+            }
         }
     }
 
@@ -123,9 +128,16 @@ public class CfAccessAuth implements Handler {
 
     @Override
     public void handle(Context ctx) {
-        if (!enabled) return;
         if ("/health".equals(ctx.path())) return;
         if ("OPTIONS".equals(ctx.method())) return;
+
+        if (!enabled) {
+            if (ctx.path().startsWith("/admin")) {
+                ctx.status(503).json(Map.of("error",
+                    "Admin access unavailable: CF Access is disabled")).halt();
+            }
+            return;
+        }
 
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
@@ -137,7 +149,7 @@ public class CfAccessAuth implements Handler {
             }
             try {
                 String email = verifyAndExtractEmail(token);
-                if (!adminEmails.isEmpty() && !adminEmails.contains(email.toLowerCase())) {
+                if (!adminEmails.contains(email.toLowerCase())) {
                     logger.warn("Admin access denied for email={}", email);
                     ctx.status(403).json(Map.of("error", "Forbidden: admin access required")).halt();
                     return;
@@ -186,9 +198,12 @@ public class CfAccessAuth implements Handler {
         // Validate time claims
         long now = Instant.now().getEpochSecond();
         long exp = payload.path("exp").asLong(0);
+        long iat = payload.path("iat").asLong(0);
+        if (exp <= 0) throw new SecurityException("JWT missing required exp claim");
+        if (now > exp) throw new SecurityException("JWT has expired (exp=" + exp + ")");
+        if (iat > 0 && now - iat > 86400) throw new SecurityException("JWT iat too old (>24h)");
         long nbf = payload.path("nbf").asLong(0);
-        if (exp > 0 && now > exp) throw new SecurityException("JWT has expired (exp=" + exp + ")");
-        if (nbf > 0 && now < nbf) throw new SecurityException("JWT not yet valid (nbf=" + nbf + ")");
+        if (nbf > 0 && now + 60 < nbf) throw new SecurityException("JWT not yet valid (nbf=" + nbf + ")");
 
         // Validate issuer
         String iss = payload.path("iss").asText("");

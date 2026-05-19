@@ -124,15 +124,26 @@ public class CongestionController {
             }
             String now = LocalDateTime.now().format(FMT);
 
-            try (Connection conn = Database.getConnection();
-                 PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO congestion_status (location_id, level, updated_at, updated_by) VALUES (?, ?, ?, ?) " +
-                     "ON DUPLICATE KEY UPDATE level = VALUES(level), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)")) {
-                ps.setInt(1, locationId);
-                ps.setInt(2, level);
-                ps.setString(3, now);
-                ps.setString(4, updatedBy);
-                ps.executeUpdate();
+            try (Connection conn = Database.getConnection()) {
+                try (PreparedStatement chk = conn.prepareStatement(
+                        "SELECT 1 FROM locations WHERE id = ?")) {
+                    chk.setInt(1, locationId);
+                    try (java.sql.ResultSet r = chk.executeQuery()) {
+                        if (!r.next()) {
+                            ctx.status(404).json(Map.of("error", "場所が見つかりません"));
+                            return;
+                        }
+                    }
+                }
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "INSERT INTO congestion_status (location_id, level, updated_at, updated_by) VALUES (?, ?, ?, ?) " +
+                        "ON DUPLICATE KEY UPDATE level = VALUES(level), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)")) {
+                    ps.setInt(1, locationId);
+                    ps.setInt(2, level);
+                    ps.setString(3, now);
+                    ps.setString(4, updatedBy);
+                    ps.executeUpdate();
+                }
             }
             ctx.json(Map.of("ok", true, "location_id", locationId, "level", level));
         } catch (NumberFormatException e) {
