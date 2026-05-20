@@ -22,75 +22,42 @@ import dev.gate.mapping.PostMapping;
 public class CongestionController {
 
     private static final Logger logger = new Logger(CongestionController.class);
-    private static final long LOCATIONS_CACHE_TTL_MS = 5 * 60 * 1000L;
     private final ObjectMapper mapper = new ObjectMapper();
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    private record CacheEntry(Object data, long expiresAt) {}
-    private volatile CacheEntry locationsCache = null;
-
-    @GetMapping("/locations")
-    public void locations(Context ctx) {
-        CacheEntry cached = locationsCache;
-        if (cached != null && System.currentTimeMillis() < cached.expiresAt()) {
-            ctx.header("Cache-Control", "public, max-age=300");
-            ctx.json(cached.data());
-            return;
-        }
-
-        try (Connection conn = Database.getConnection();
-             Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-                 "SELECT l.id, l.name, l.floor, l.svg_id, l.x, l.y, " +
-                 "  (SELECT p.title FROM timetables t " +
-                 "   JOIN projects p ON p.id = t.project_id " +
-                 "   WHERE t.location_id = l.id AND t.event_date >= CURDATE() " +
-                 "   ORDER BY t.event_date, t.start_time LIMIT 1) AS project " +
-                 "FROM locations l " +
-                 "WHERE l.tracks_congestion = 1 " +
-                 "ORDER BY l.floor, l.id")) {
-            ArrayNode arr = mapper.createArrayNode();
-            while (rs.next()) {
-                ObjectNode n = arr.addObject();
-                n.put("id",    rs.getInt("id"));
-                n.put("name",  rs.getString("name"));
-                n.put("floor", rs.getInt("floor"));
-                putStringOrNull(n, "svg_id", rs.getString("svg_id"));
-                double x = rs.getDouble("x");
-                if (!rs.wasNull()) n.put("x", x);
-                double y = rs.getDouble("y");
-                if (!rs.wasNull()) n.put("y", y);
-                String project = rs.getString("project");
-                if (project != null) n.put("project", project);
-            }
-            locationsCache = new CacheEntry(arr, System.currentTimeMillis() + LOCATIONS_CACHE_TTL_MS);
-            ctx.header("Cache-Control", "public, max-age=300");
-            ctx.json(arr);
-        } catch (Exception e) {
-            logger.error("locations error", e);
-            if (cached != null) {
-                logger.warn("Serving stale cache for locations due to DB error");
-                ctx.header("Cache-Control", "no-store");
-                ctx.json(cached.data());
-                return;
-            }
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
-                    "detail", "DB error"));
-        }
-    }
 
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT location_id, level, updated_at FROM congestion_status")) {
+                 "SELECT l.id AS location_id, l.name, l.floor, l.svg_id, l.x, l.y, " +
+                 "  COALESCE(cs.level, 0) AS level, " +
+                 "  cs.updated_at, " +
+                 "  (SELECT p.title FROM timetables t " +
+                 "   JOIN projects p ON p.id = t.project_id " +
+                 "   WHERE t.location_id = l.id AND t.event_date >= CURDATE() " +
+                 "   ORDER BY t.event_date, t.start_time LIMIT 1) AS project " +
+                 "FROM locations l " +
+                 "LEFT JOIN congestion_status cs ON cs.location_id = l.id " +
+                 "WHERE l.tracks_congestion = 1 " +
+                 "ORDER BY l.floor, l.id")) {
             ArrayNode arr = mapper.createArrayNode();
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
                 n.put("location_id", rs.getInt("location_id"));
-                n.put("level",       rs.getInt("level"));
-                n.put("updated_at",  rs.getString("updated_at"));
+                n.put("name",        rs.getString("name"));
+                n.put("floor",       rs.getInt("floor"));
+                int svgId = rs.getInt("svg_id");
+                if (!rs.wasNull()) n.put("svg_id", svgId);
+                double x = rs.getDouble("x");
+                if (!rs.wasNull()) n.put("x", x);
+                double y = rs.getDouble("y");
+                if (!rs.wasNull()) n.put("y", y);
+                n.put("level", rs.getInt("level"));
+                String updatedAt = rs.getString("updated_at");
+                if (updatedAt != null) n.put("updated_at", updatedAt);
+                String project = rs.getString("project");
+                if (project != null) n.put("project", project);
             }
             ctx.header("Cache-Control", "no-store");
             ctx.json(arr);
@@ -99,10 +66,6 @@ public class CongestionController {
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
                     "detail", "DB error"));
         }
-    }
-
-    private void putStringOrNull(ObjectNode node, String key, String value) {
-        if (value != null) node.put(key, value);
     }
 
     @PostMapping("/congestion/{id}")
@@ -132,7 +95,7 @@ public class CongestionController {
 
             try (Connection conn = Database.getConnection()) {
                 try (PreparedStatement chk = conn.prepareStatement(
-                        "SELECT 1 FROM locations WHERE id = ?")) {
+                        "SELECT 1 FROM locations WHERE id = ? AND tracks_congestion = 1")) {
                     chk.setInt(1, locationId);
                     try (java.sql.ResultSet r = chk.executeQuery()) {
                         if (!r.next()) {

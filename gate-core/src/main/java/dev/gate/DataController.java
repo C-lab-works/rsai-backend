@@ -57,7 +57,6 @@ public class DataController {
             ctx.json(data);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());
-            // stale fallback: DB障害時に古いキャッシュがあればそれを返す
             if (entry != null) {
                 logger.warn("Serving stale cache for '{}' due to DB error", key);
                 ctx.header("Cache-Control", "no-store");
@@ -92,7 +91,7 @@ public class DataController {
                 l.put("id",               rs.getInt("id"));
                 l.put("name",             rs.getString("name"));
                 l.put("floor",            rs.getInt("floor"));
-                putStringOrNull(l, "svgId", rs.getString("svg_id"));
+                putIntOrNull(l, "svgId", rs);
                 l.put("isStage",          rs.getInt("is_stage") == 1);
                 l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
                 putDoubleOrNull(l, "x", rs);
@@ -203,7 +202,7 @@ public class DataController {
                 l.put("id",               rs.getInt("id"));
                 l.put("name",             rs.getString("name"));
                 l.put("floor",            rs.getInt("floor"));
-                putStringOrNull(l, "svgId", rs.getString("svg_id"));
+                putIntOrNull(l, "svgId", rs);
                 l.put("isStage",          rs.getInt("is_stage") == 1);
                 l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
                 putDoubleOrNull(l, "x", rs);
@@ -228,6 +227,11 @@ public class DataController {
 
     private void putStringOrNull(ObjectNode node, String key, String value) {
         if (value != null) node.put(key, value);
+    }
+
+    private void putIntOrNull(ObjectNode node, String key, ResultSet rs) throws Exception {
+        int v = rs.getInt(key);
+        if (!rs.wasNull()) node.put(key, v);
     }
 
     private void putDoubleOrNull(ObjectNode node, String key, ResultSet rs) throws Exception {
