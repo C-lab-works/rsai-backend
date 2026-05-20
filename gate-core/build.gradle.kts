@@ -1,6 +1,6 @@
 plugins {
     id("application")
-    id("io.github.goooler.shadow") version "8.1.8"
+    id("com.gradleup.shadow") version "8.3.6"
     id("org.graalvm.buildtools.native") version "0.10.3"
 }
 
@@ -29,7 +29,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.5.13")
 
-    // Database (framework dependency - required to compile gate-core)
+    // データベース（gate-core のコンパイルに必要）
     implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("com.mysql:mysql-connector-j:8.3.0")
 
