@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 11) {
-                logger.info("Seed data v11 already present — skipping");
+            if (v >= 12) {
+                logger.info("Seed data v12 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -66,8 +66,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v10 -> v11");
                 migrateV10(conn);
             }
-            setSeedVersion(conn, 11);
-            logger.info("Seed data v11 ready");
+            if (v <= 11) {
+                logger.info("Migrating schema v11 -> v12");
+                migrateV11(conn);
+            }
+            setSeedVersion(conn, 12);
+            logger.info("Seed data v12 ready");
         }
     }
 
@@ -214,14 +218,22 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS locations (" +
-            "  id                INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  name              VARCHAR(255) NOT NULL," +
-            "  floor             INT          NOT NULL DEFAULT 0," +
-            "  svg_id            VARCHAR(255)," +
-            "  is_stage          TINYINT(1)   NOT NULL DEFAULT 1," +
-            "  tracks_congestion TINYINT(1)   NOT NULL DEFAULT 1," +
-            "  x                 DOUBLE," +
-            "  y                 DOUBLE" +
+            "  id            INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name          VARCHAR(255) NOT NULL," +
+            "  floor         INT          NOT NULL DEFAULT 0," +
+            "  location_code VARCHAR(50)  NOT NULL," +
+            "  svg_id        INT," +
+            "  x             DOUBLE," +
+            "  y             DOUBLE," +
+            "  UNIQUE INDEX ux_locations_code (location_code)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS congestion_status (" +
+            "  location_code VARCHAR(50)  NOT NULL," +
+            "  level         TINYINT(4)   NOT NULL DEFAULT 0," +
+            "  updated_at    DATETIME     NOT NULL," +
+            "  updated_by    VARCHAR(100) NOT NULL," +
+            "  PRIMARY KEY (location_code)" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS projects (" +
@@ -295,17 +307,17 @@ public class DataSeeder {
 
     private static void seedLocations(Connection conn) throws Exception {
         exec(conn,
-            "INSERT IGNORE INTO locations (id, name, floor, svg_id, is_stage, tracks_congestion) VALUES " +
-            "(1,  '体育館',              1, 'gym',     1, 1), " +
-            "(2,  'メインステージ',       1, 'stage',   1, 1), " +
-            "(3,  '3-A教室',             2, 'room-3a', 1, 1), " +
-            "(4,  '3-B教室',             2, 'room-3b', 1, 1), " +
-            "(5,  '3-C教室',             2, 'room-3c', 1, 1), " +
-            "(6,  '4-A教室',             3, 'room-4a', 1, 1), " +
-            "(7,  '4-B教室',             3, 'room-4b', 1, 1), " +
-            "(8,  '中庭',                0, 'yard',    1, 1), " +
-            "(9,  'キッチンカーエリア',   0, 'kitchen', 0, 1), " +
-            "(10, '正門前広場',           0, 'gate',    1, 1)");
+            "INSERT IGNORE INTO locations (id, name, floor, location_code) VALUES " +
+            "(1,  '体育館',              1, 'gym'), " +
+            "(2,  'メインステージ',       1, 'stage'), " +
+            "(3,  '3-A教室',             2, 'room-3a'), " +
+            "(4,  '3-B教室',             2, 'room-3b'), " +
+            "(5,  '3-C教室',             2, 'room-3c'), " +
+            "(6,  '4-A教室',             3, 'room-4a'), " +
+            "(7,  '4-B教室',             3, 'room-4b'), " +
+            "(8,  '中庭',                0, 'yard'), " +
+            "(9,  'キッチンカーエリア',   0, 'kitchen'), " +
+            "(10, '正門前広場',           0, 'gate')");
     }
 
     private static void seedProjects(Connection conn) throws Exception {
@@ -357,7 +369,69 @@ public class DataSeeder {
             "(1, 1, 'メニュー（未定）', NULL)");
     }
 
+    private static void migrateV11(Connection conn) throws Exception {
+        // Fix any blank/invalid location_code values before making NOT NULL
+        exec(conn,
+            "UPDATE locations SET location_code = CONCAT('loc-', id) " +
+            "WHERE location_code IS NULL OR TRIM(location_code) = '' OR location_code = '0'");
+
+        try {
+            exec(conn, "ALTER TABLE locations MODIFY COLUMN location_code VARCHAR(50) NOT NULL");
+            exec(conn, "ALTER TABLE locations ADD UNIQUE INDEX ux_locations_code (location_code)");
+            logger.info("Made location_code NOT NULL UNIQUE on locations");
+        } catch (Exception e) {
+            logger.warn("location_code constraint may already exist: {}", e.getMessage());
+        }
+
+        // Migrate congestion_status: location_id (INT PK) → location_code (VARCHAR PK)
+        if (columnExists(conn, "congestion_status", "location_id")) {
+            addColumnIfMissing(conn, "congestion_status", "location_code", "VARCHAR(50)");
+
+            exec(conn,
+                "UPDATE congestion_status cs " +
+                "INNER JOIN locations l ON l.id = cs.location_id " +
+                "SET cs.location_code = l.location_code " +
+                "WHERE cs.location_code IS NULL");
+
+            // Delete orphaned rows with no matching location
+            exec(conn, "DELETE FROM congestion_status WHERE location_code IS NULL");
+
+            try {
+                exec(conn, "ALTER TABLE congestion_status MODIFY COLUMN location_code VARCHAR(50) NOT NULL");
+                exec(conn, "ALTER TABLE congestion_status DROP PRIMARY KEY");
+                exec(conn, "ALTER TABLE congestion_status ADD PRIMARY KEY (location_code)");
+                logger.info("Changed congestion_status PK to location_code");
+            } catch (Exception e) {
+                logger.warn("congestion_status PK update issue: {}", e.getMessage());
+            }
+            dropColumnIfExists(conn, "congestion_status", "location_id");
+        }
+
+        dropColumnIfExists(conn, "locations", "tracks_congestion");
+        dropColumnIfExists(conn, "locations", "is_stage");
+        logger.info("Dropped tracks_congestion, is_stage from locations");
+    }
+
     // ── util ──────────────────────────────────────────────────
+
+    private static boolean columnExists(Connection conn, String table, String column) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.COLUMNS " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?")) {
+            ps.setString(1, table);
+            ps.setString(2, column);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static void dropColumnIfExists(Connection conn, String table, String column) throws Exception {
+        if (columnExists(conn, table, column)) {
+            exec(conn, "ALTER TABLE `" + table + "` DROP COLUMN `" + column + "`");
+            logger.info("Dropped {} from {}", column, table);
+        }
+    }
 
     private static void exec(Connection conn, String sql) throws Exception {
         try (Statement s = conn.createStatement()) {

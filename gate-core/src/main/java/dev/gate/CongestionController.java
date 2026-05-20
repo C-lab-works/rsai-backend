@@ -42,7 +42,7 @@ public class CongestionController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT l.id AS location_id, l.name, l.floor, l.svg_id, l.x, l.y, " +
+                 "SELECT l.id AS location_id, l.location_code, l.name, l.floor, l.svg_id, l.x, l.y, " +
                  "  COALESCE(cs.level, 0) AS level, " +
                  "  cs.updated_at, " +
                  "  (SELECT p.title FROM timetables t " +
@@ -50,17 +50,17 @@ public class CongestionController {
                  "   WHERE t.location_id = l.id AND t.event_date >= CURDATE() " +
                  "   ORDER BY t.event_date, t.start_time LIMIT 1) AS project " +
                  "FROM locations l " +
-                 "LEFT JOIN congestion_status cs ON cs.location_id = l.id " +
-                 "WHERE l.tracks_congestion = 1 " +
+                 "LEFT JOIN congestion_status cs ON cs.location_code = l.location_code " +
                  "ORDER BY l.floor, l.id")) {
             ArrayNode arr = mapper.createArrayNode();
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
-                n.put("location_id", rs.getInt("location_id"));
-                n.put("name",        rs.getString("name"));
-                n.put("floor",       rs.getInt("floor"));
-                String svgId = rs.getString("svg_id");
-                if (svgId != null) n.put("svg_id", svgId);
+                n.put("location_id",   rs.getInt("location_id"));
+                n.put("location_code", rs.getString("location_code"));
+                n.put("name",          rs.getString("name"));
+                n.put("floor",         rs.getInt("floor"));
+                int svgId = rs.getInt("svg_id");
+                if (!rs.wasNull()) n.put("svg_id", svgId);
                 double x = rs.getDouble("x");
                 if (!rs.wasNull()) n.put("x", x);
                 double y = rs.getDouble("y");
@@ -88,11 +88,14 @@ public class CongestionController {
         }
     }
     // 管理者が混雑レベルを更新するエンドポイント。認証必須。
-    @PostMapping("/congestion/{id}")
+    @PostMapping("/congestion/{code}")
     public void updateCongestion(Context ctx) {
-        String idStr = ctx.pathParam("id");
+        String locationCode = ctx.pathParam("code");
+        if (locationCode == null || locationCode.isBlank()) {
+            ctx.status(400).json(Map.of("error", "Invalid location code"));
+            return;
+        }
         try {
-            int locationId = Integer.parseInt(idStr);
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
@@ -115,8 +118,8 @@ public class CongestionController {
 
             try (Connection conn = Database.getConnection()) {
                 try (PreparedStatement chk = conn.prepareStatement(
-                        "SELECT 1 FROM locations WHERE id = ? AND tracks_congestion = 1")) {
-                    chk.setInt(1, locationId);
+                        "SELECT 1 FROM locations WHERE location_code = ?")) {
+                    chk.setString(1, locationCode);
                     try (java.sql.ResultSet r = chk.executeQuery()) {
                         if (!r.next()) {
                             ctx.status(404).json(Map.of("error", "場所が見つかりません"));
@@ -125,20 +128,17 @@ public class CongestionController {
                     }
                 }
                 try (PreparedStatement ps = conn.prepareStatement(
-                        "INSERT INTO congestion_status (location_id, level, updated_at, updated_by) VALUES (?, ?, ?, ?) " +
+                        "INSERT INTO congestion_status (location_code, level, updated_at, updated_by) VALUES (?, ?, ?, ?) " +
                         "ON DUPLICATE KEY UPDATE level = VALUES(level), updated_at = VALUES(updated_at), updated_by = VALUES(updated_by)")) {
-                    ps.setInt(1, locationId);
+                    ps.setString(1, locationCode);
                     ps.setInt(2, level);
                     ps.setString(3, now);
                     ps.setString(4, updatedBy);
                     ps.executeUpdate();
                 }
             }
-            // 更新後はキャッシュを即時無効化して次のGETに即反映させる
             cacheExpiresAt.set(0);
-            ctx.json(Map.of("ok", true, "location_id", locationId, "level", level));
-        } catch (NumberFormatException e) {
-            ctx.status(400).json(Map.of("error", "Invalid id"));
+            ctx.json(Map.of("ok", true, "location_code", locationCode, "level", level));
         } catch (Exception e) {
             logger.error("updateCongestion error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",

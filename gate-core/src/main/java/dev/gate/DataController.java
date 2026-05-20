@@ -85,15 +85,13 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, location_code, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
-                l.put("id",               rs.getInt("id"));
-                l.put("name",             rs.getString("name"));
-                l.put("floor",            rs.getInt("floor"));
-                putStringOrNull(l, "svgId", rs.getString("svg_id"));
-                l.put("isStage",          rs.getInt("is_stage") == 1);
-                l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
+                l.put("id",    rs.getInt("id"));
+                l.put("name",  rs.getString("name"));
+                l.put("floor", rs.getInt("floor"));
+                putStringOrNull(l, "locationCode", rs.getString("location_code"));
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
             }
@@ -196,15 +194,15 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, floor, svg_id, is_stage, tracks_congestion, x, y FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, location_code, svg_id, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
-                l.put("id",               rs.getInt("id"));
-                l.put("name",             rs.getString("name"));
-                l.put("floor",            rs.getInt("floor"));
-                putStringOrNull(l, "svgId", rs.getString("svg_id"));
-                l.put("isStage",          rs.getInt("is_stage") == 1);
-                l.put("tracksCongestion", rs.getInt("tracks_congestion") == 1);
+                l.put("id",    rs.getInt("id"));
+                l.put("name",  rs.getString("name"));
+                l.put("floor", rs.getInt("floor"));
+                putStringOrNull(l, "locationCode", rs.getString("location_code"));
+                int svgId = rs.getInt("svg_id");
+                if (!rs.wasNull()) l.put("svgId", svgId);
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
             }
