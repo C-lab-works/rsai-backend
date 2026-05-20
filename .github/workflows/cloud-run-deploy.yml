@@ -54,11 +54,10 @@ jobs:
           echo "Runner did not come online within 5 minutes"
           exit 1
 
-  # ── Spot VMでの高速ビルド（失敗しても続行）
+  # ── Spot VMでの高速ビルド
   deploy-fast:
     needs: start-runner
     runs-on: [self-hosted, spot]
-    continue-on-error: true
     timeout-minutes: 30
     permissions:
       contents: read
@@ -317,25 +316,3 @@ jobs:
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
 
-  # ── 完了後にSpot VMを停止（成功・失敗・スキップ問わず）
-  stop-runner:
-    needs: [deploy-fast, deploy-fallback]
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Stop VM
-        run: |
-          gcloud compute instances stop ${{ env.RUNNER_VM }} \
-            --zone=${{ env.RUNNER_ZONE }} \
-            --project="${{ env.PROJECT_ID }}"
