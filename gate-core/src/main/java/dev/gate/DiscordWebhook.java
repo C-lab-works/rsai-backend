@@ -14,7 +14,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public class DiscordWebhook {
     private static final Logger logger     = new Logger(DiscordWebhook.class);
     private static final String WEBHOOK    = System.getenv("DISCORD_WEBHOOK_URL");
-    private static final String INSTANCE   = Optional.ofNullable(System.getenv("HOSTNAME")).orElse("local");
+    private static final String INSTANCE   = Optional.ofNullable(System.getenv("K_REVISION"))
+            .or(() -> Optional.ofNullable(System.getenv("K_SERVICE")))
+            .orElse("local");
     private static final long   DEBOUNCE_MS = 5_000L;
     private static final HttpClient HTTP   = HttpClient.newHttpClient();
 
