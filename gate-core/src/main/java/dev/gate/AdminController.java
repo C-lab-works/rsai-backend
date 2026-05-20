@@ -29,12 +29,12 @@ public class AdminController {
     private static final Logger logger = new Logger(AdminController.class);
     private final ObjectMapper mapper = new ObjectMapper();
 
-    // NOTE: DROP is intentionally NOT here — it is allowed inside ALTER TABLE
-    // (DROP COLUMN) but blocked as a leading statement keyword (see execSql).
-    private static final Set<String> BLOCKED_SQL_TOKENS = Set.of(
-        "TRUNCATE", "GRANT", "REVOKE", "FLUSH", "RESET", "SHUTDOWN", "KILL",
-        "OUTFILE", "DUMPFILE", "INFILE", "LOAD_FILE",
-        "USER", "IDENTIFIED", "PRIVILEGES"
+    // Allowlist: only these leading keywords are permitted in the SQL console.
+    // ALTER is allowed only when followed by TABLE (see execSql).
+    private static final Set<String> ALLOWED_SQL_KEYWORDS = Set.of(
+        "SELECT", "INSERT", "UPDATE", "DELETE",
+        "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "ANALYZE",
+        "ALTER"
     );
 
     private static final int TOP_ENDPOINTS_COUNT = 10;
@@ -379,19 +379,20 @@ public class AdminController {
             if (sql == null || sql.isBlank()) { ctx.status(400).json(Map.of("error", "sqlが必要です")); return; }
 
             ObjectNode lastResult = null;
-            // Note: splits on all semicolons — string literals containing ';' will be split incorrectly
-            for (String raw : sql.split(";")) {
+            for (String raw : splitStatements(sql)) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
                 String norm = stripSqlComments(stmt).toUpperCase().replaceAll("\\s+", " ").trim();
-                String firstKeyword = norm.isEmpty() ? "" : norm.split(" ", 2)[0];
-                if (firstKeyword.equals("DROP")) {
-                    ctx.status(403).json(Map.of("error", "この操作は許可されていません: DROP"));
+                String[] words = norm.split("\\s+", 3);
+                String first = words.length > 0 ? words[0] : "";
+                if (!ALLOWED_SQL_KEYWORDS.contains(first)) {
+                    ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + first));
                     return;
                 }
-                for (String token : BLOCKED_SQL_TOKENS) {
-                    if (norm.matches(".*\\b" + java.util.regex.Pattern.quote(token) + "\\b.*")) {
-                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + token));
+                if ("ALTER".equals(first)) {
+                    String second = words.length > 1 ? words[1] : "";
+                    if (!"TABLE".equals(second)) {
+                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: ALTER " + second));
                         return;
                     }
                 }
@@ -474,6 +475,44 @@ public class AdminController {
             i++;
         }
         return out.toString();
+    }
+
+    // Splits SQL on semicolons while respecting quoted strings and backtick identifiers.
+    private static List<String> splitStatements(String sql) {
+        List<String> stmts = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        int n = sql.length();
+        int i = 0;
+        while (i < n) {
+            char c = sql.charAt(i);
+            if (c == '\'' || c == '"' || c == '`') {
+                char q = c;
+                cur.append(c);
+                i++;
+                while (i < n) {
+                    char d = sql.charAt(i);
+                    cur.append(d);
+                    i++;
+                    if (d == '\\') {
+                        if (i < n) { cur.append(sql.charAt(i)); i++; }
+                    } else if (d == q) {
+                        if (i < n && sql.charAt(i) == q) { cur.append(q); i++; }
+                        else break;
+                    }
+                }
+            } else if (c == ';') {
+                String stmt = cur.toString().strip();
+                if (!stmt.isEmpty()) stmts.add(stmt);
+                cur = new StringBuilder();
+                i++;
+            } else {
+                cur.append(c);
+                i++;
+            }
+        }
+        String last = cur.toString().strip();
+        if (!last.isEmpty()) stmts.add(last);
+        return stmts;
     }
 
     private String sanitizeSqlError(Exception e) {

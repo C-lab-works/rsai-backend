@@ -38,6 +38,7 @@ public class CfAccessAuth implements Handler {
             .build();
 
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
+    private static final long CLOCK_SKEW_LEEWAY_SECS = 30L;
 
     private final AtomicReference<ConcurrentHashMap<String, PublicKey>> keyCacheRef
             = new AtomicReference<>(new ConcurrentHashMap<>());
@@ -179,7 +180,7 @@ public class CfAccessAuth implements Handler {
         long exp = payload.path("exp").asLong(0);
         long iat = payload.path("iat").asLong(0);
         if (exp <= 0) throw new SecurityException("JWT missing required exp claim");
-        if (now > exp) throw new SecurityException("JWT has expired (exp=" + exp + ")");
+        if (now > exp + CLOCK_SKEW_LEEWAY_SECS) throw new SecurityException("JWT has expired (exp=" + exp + ")");
         if (iat > 0 && now - iat > 86400) throw new SecurityException("JWT iat too old (>24h)");
         long nbf = payload.path("nbf").asLong(0);
         if (nbf > 0 && now + 60 < nbf) throw new SecurityException("JWT not yet valid (nbf=" + nbf + ")");
