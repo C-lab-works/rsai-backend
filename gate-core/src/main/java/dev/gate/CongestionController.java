@@ -6,6 +6,8 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -25,8 +27,18 @@ public class CongestionController {
     private final ObjectMapper mapper = new ObjectMapper();
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    private static final long CACHE_TTL_MS = 10_000L;
+    private final AtomicReference<Object> cachedData = new AtomicReference<>();
+    private final AtomicLong cacheExpiresAt = new AtomicLong(0);
+
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
+        Object cached = cachedData.get();
+        if (cached != null && System.currentTimeMillis() < cacheExpiresAt.get()) {
+            ctx.header("Cache-Control", "no-store");
+            ctx.json(cached);
+            return;
+        }
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -59,10 +71,18 @@ public class CongestionController {
                 String project = rs.getString("project");
                 if (project != null) n.put("project", project);
             }
+            cachedData.set(arr);
+            cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
             ctx.header("Cache-Control", "no-store");
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("getCongestion error", e);
+            if (cached != null) {
+                logger.warn("Serving stale cache for /congestion due to DB error");
+                ctx.header("Cache-Control", "no-store");
+                ctx.json(cached);
+                return;
+            }
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
                     "detail", "DB error"));
         }
@@ -114,6 +134,8 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
+            // invalidate cache so next GET reflects the update immediately
+            cacheExpiresAt.set(0);
             ctx.json(Map.of("ok", true, "location_id", locationId, "level", level));
         } catch (NumberFormatException e) {
             ctx.status(400).json(Map.of("error", "Invalid id"));
