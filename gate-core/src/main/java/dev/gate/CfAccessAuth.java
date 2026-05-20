@@ -40,6 +40,13 @@ public class CfAccessAuth implements Handler {
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
     private static final long CLOCK_SKEW_LEEWAY_SECS = 30L;
 
+    private static volatile Set<String> adminEmailsRef = Set.of();
+
+    public static boolean isAdmin(String email) {
+        if (email == null || email.isBlank()) return false;
+        return adminEmailsRef.contains(email.toLowerCase());
+    }
+
     private final AtomicReference<ConcurrentHashMap<String, PublicKey>> keyCacheRef
             = new AtomicReference<>(new ConcurrentHashMap<>());
     private volatile Instant keysCachedAt = Instant.EPOCH;
@@ -89,6 +96,7 @@ public class CfAccessAuth implements Handler {
                     "CfAccessAuth: ADMIN_EMAILS must be set when CF Access is enabled. " +
                     "An empty list would grant admin access to every authenticated user.");
             }
+            adminEmailsRef = this.adminEmails;
         }
     }
 
