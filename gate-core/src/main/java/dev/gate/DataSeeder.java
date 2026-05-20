@@ -54,7 +54,7 @@ public class DataSeeder {
                 logger.info("Migrating schema v7 -> v8");
                 migrateV7(conn);
             }
-            if (v >= 7) {
+            if (v <= 8) {
                 logger.info("Migrating schema v8 -> v9");
                 migrateV8(conn);
             }
