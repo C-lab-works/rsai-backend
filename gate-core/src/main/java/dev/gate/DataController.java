@@ -38,7 +38,7 @@ public class DataController {
     @GetMapping("/map")
     public void map(Context ctx) { serve(ctx, "map", this::buildMap); }
 
-    // ── generic cache+serve ───────────────────────────────────
+    // cache+serve
 
     @FunctionalInterface
     interface Builder { Object build(Connection conn) throws Exception; }
@@ -67,7 +67,7 @@ public class DataController {
         }
     }
 
-    // ── /events ───────────────────────────────────────────────
+    // /events
 
     private Object buildEvents(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
@@ -149,7 +149,7 @@ public class DataController {
         return root;
     }
 
-    // ── /food ─────────────────────────────────────────────────
+    // /food
 
     private Object buildFood(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
@@ -188,7 +188,7 @@ public class DataController {
         return root;
     }
 
-    // ── /map ─────────────────────────────────────────────────
+    // /map
 
     private Object buildMap(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
@@ -213,7 +213,7 @@ public class DataController {
         return root;
     }
 
-    // ── util ────────────────────────────────────────────────
+    // util
 
     private void addTimetableRow(ObjectNode t, ResultSet rs) throws Exception {
         t.put("id",         rs.getInt("id"));

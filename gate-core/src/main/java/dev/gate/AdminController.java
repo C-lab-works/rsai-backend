@@ -23,12 +23,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-// MySQL error codes
-// 1048 = Column cannot be null
-// 1062 = Duplicate entry (unique/PK violation)
-// 1216/1217/1451/1452 = Foreign key violation
-// 1292/1366 = Incorrect value for column type
-
 @GateController
 public class AdminController {
 
@@ -50,7 +44,7 @@ public class AdminController {
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
     );
 
-    // ── debug ─────────────────────────────────────────────────────────────────
+    // debug
 
     @GetMapping("/admin/debug/503")
     public void debug503(Context ctx) {
@@ -58,7 +52,7 @@ public class AdminController {
         ctx.status(503).json(Map.of("error", "Debug: intentional 503 (instance: " + instanceId + ")"));
     }
 
-    // ── tables ────────────────────────────────────────────────────────────────
+    // tables
 
     @GetMapping("/admin/tables")
     public void listTables(Context ctx) {
@@ -150,7 +144,7 @@ public class AdminController {
             String pkCol = getPkColumn(conn, resolvedTable);
             if (pkCol == null) { ctx.status(400).json(Map.of("error", "主キーが見つかりません")); return; }
 
-            // Intersect body keys with actual DB columns (DB-sourced) to break taint chain
+            // DB-sourced column list breaks taint chain
             List<String> updateCols = getColumnNames(conn, resolvedTable).stream()
                     .filter(c -> body.containsKey(c) && !c.equals(pkCol))
                     .collect(Collectors.toList());
@@ -221,7 +215,7 @@ public class AdminController {
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
 
-            // Intersect body keys with actual DB columns (DB-sourced) to break taint chain
+            // DB-sourced column list breaks taint chain
             List<String> insertCols = getColumnNames(conn, resolvedTable).stream()
                     .filter(body::containsKey)
                     .collect(Collectors.toList());
@@ -351,6 +345,8 @@ public class AdminController {
         }
     }
 
+    // sql
+
     @PostMapping("/admin/sql")
     public void execSql(Context ctx) {
         String executor = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
@@ -367,8 +363,6 @@ public class AdminController {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
                 String norm = stripSqlComments(stmt).toUpperCase().replaceAll("\\s+", " ").trim();
-                // DROP is permitted only inside ALTER TABLE (e.g. DROP COLUMN).
-                // A statement that *starts* with DROP (DROP TABLE/DATABASE/USER/…) is blocked.
                 String firstKeyword = norm.isEmpty() ? "" : norm.split(" ", 2)[0];
                 if (firstKeyword.equals("DROP")) {
                     ctx.status(403).json(Map.of("error", "この操作は許可されていません: DROP"));
@@ -415,16 +409,10 @@ public class AdminController {
         }
     }
 
-    /**
-     * Normalises SQL for blocklist detection so the detector sees what MySQL will
-     * actually execute. Ordinary block comments are ignored by MySQL and removed;
-     * MySQL executable comments (/*! ... and /*!12345 ...) have their body executed,
-     * so the inner SQL is kept and only the markers are dropped. Detection is
-     * intentionally conservative (over-broad) — it may flag a string literal that
-     * contains the sequence star-slash, but never hides a keyword MySQL would run.
-     */
+    // Single-pass O(n) SQL comment stripper. /*! ... */ (executable comments) keep their body.
+    // Note: over-broad by design — never hides a keyword MySQL would execute.
     private static String stripSqlComments(String s) {
-        // Single-pass O(n) scanner — no regex, so no ReDoS (CWE-1333).
+        // no regex — avoids ReDoS (CWE-1333)
         StringBuilder out = new StringBuilder(s.length());
         int n = s.length();
         for (int i = 0; i < n; ) {
@@ -474,6 +462,8 @@ public class AdminController {
         return "クエリ実行に失敗しました";
     }
 
+    // stats
+
     @GetMapping("/admin/stats")
     public void stats(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -508,7 +498,7 @@ public class AdminController {
         ctx.json(root);
     }
 
-    // ── util ──────────────────────────────────────────────────────────────────
+    // util
 
     private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throws SQLException {
         int type = meta.getColumnType(i);

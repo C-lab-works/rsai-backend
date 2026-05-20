@@ -29,7 +29,7 @@ Base URL: `https://api.r-sai2026.site`
 
 ### `GET /events`
 
-タイムテーブル表示に必要なデータをまとめて返す。5 分キャッシュ。
+タイムテーブル表示に必要なデータをまとめて返す。30 秒キャッシュ。
 
 **レスポンス**
 ```json
@@ -38,7 +38,7 @@ Base URL: `https://api.r-sai2026.site`
     { "id": 1, "name": "ステージ系" }
   ],
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "svgId": 5, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
   ],
   "projects": [
     { "id": 1, "title": "中一企画1", "organizer": "1-1", "locationId": 15 }
@@ -63,7 +63,7 @@ Base URL: `https://api.r-sai2026.site`
 
 ### `GET /food`
 
-飲食店舗とメニューを返す。5 分キャッシュ。
+飲食店舗とメニューを返す。30 秒キャッシュ。
 
 **レスポンス**
 ```json
@@ -86,13 +86,13 @@ Base URL: `https://api.r-sai2026.site`
 
 ### `GET /map`
 
-マップ表示用の場所一覧を返す。5 分キャッシュ。
+マップ表示用の場所一覧を返す。30 秒キャッシュ。
 
 **レスポンス**
 ```json
 {
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "svgId": 5, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
   ]
 }
 ```
@@ -122,37 +122,59 @@ Base URL: `https://api.r-sai2026.site`
 
 ## 混雑情報
 
-### `GET /locations`
-
-混雑度管理対象の場所一覧（`tracks_congestion = 1`）を返す。各場所の直近企画名を含む。
-
-**レスポンス**
-```json
-[
-  { "id": 2, "name": "Co-tan", "floor": 1, "x": 43.02042086431134, "y": 141.52233128287835, "project": "高2企画4" }
-]
-```
-
-> `svgId` / `x` / `y` / `project` — 設定されていない場合は省略される。
-
----
-
 ### `GET /congestion`
 
-全場所の現在の混雑レベルを返す。
+混雑度管理対象の場所一覧（`tracks_congestion = 1`）と現在の混雑レベルをまとめて返す。
 
 **レスポンス**
 ```json
 [
-  { "location_id": 1, "level": 1, "updated_at": "2026-07-04 10:30:00" }
+  {
+    "location_id": 2,
+    "name": "Co-tan",
+    "floor": 1,
+    "svg_id": 5,
+    "x": 43.02042086431134,
+    "y": 141.52233128287835,
+    "level": 1,
+    "updated_at": "2026-07-04 10:30:00",
+    "project": "高2企画4"
+  }
 ]
 ```
+
+> `svg_id` / `x` / `y` — 設定されていない場合は省略される。  
+> `updated_at` — 混雑度が未設定の場合は省略される。  
+> `project` — 直近の企画名。設定されていない場合は省略される。  
+> `level` — 混雑度が未設定の場所は `0`（空き）を返す。
 
 | `level` | 意味 |
 |---|---|
 | `0` | 空き |
 | `1` | 普通 |
 | `2` | 混み |
+
+---
+
+### `POST /congestion/{id}`
+
+指定した場所の混雑レベルを更新する。CF Access 認証必須。
+
+**パスパラメータ**
+
+| パラメータ | 説明 |
+|---|---|
+| `id` | 場所 ID（`tracks_congestion = 1` の場所のみ有効） |
+
+**リクエストボディ**
+```json
+{ "level": 1 }
+```
+
+**レスポンス**
+```json
+{ "ok": true, "location_id": 2, "level": 1 }
+```
 
 ---
 
