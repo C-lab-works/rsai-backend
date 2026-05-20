@@ -11,10 +11,53 @@ env:
   SERVICE_NAME: rsai-backend
   REPOSITORY: rsai-backend
   VPC_CONNECTOR: ${{ vars.GCP_VPC_CONNECTOR }}
+  RUNNER_VM: github-runner
+  RUNNER_ZONE: asia-northeast1-a
 
 jobs:
+  # ── Spot VMを起動してrunnerがオンラインになるまで待機
+  start-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Start VM
+        run: |
+          gcloud compute instances start ${{ env.RUNNER_VM }} \
+            --zone=${{ env.RUNNER_ZONE }} \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Wait for runner to be online
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Waiting for self-hosted runner to come online..."
+          for i in $(seq 1 30); do
+            STATUS=$(gh api "repos/${{ github.repository }}/actions/runners" \
+              --jq '.runners[] | select(.name == "${{ env.RUNNER_VM }}") | .status' 2>/dev/null || echo "")
+            if [ "$STATUS" = "online" ]; then
+              echo "Runner is online (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/30: status='$STATUS', retrying in 10s..."
+            sleep 10
+          done
+          echo "Runner did not come online within 5 minutes"
+          exit 1
+
   # ── Spot VMでの高速ビルド（失敗しても続行）
   deploy-fast:
+    needs: start-runner
     runs-on: [self-hosted, spot]
     continue-on-error: true
     timeout-minutes: 30
@@ -146,7 +189,7 @@ jobs:
 
   # ── Spot VM失敗時のGitHub-hostedフォールバック
   deploy-fallback:
-    needs: deploy-fast
+    needs: [start-runner, deploy-fast]
     if: needs.deploy-fast.result == 'failure'
     runs-on: ubuntu-latest
     permissions:
@@ -274,3 +317,26 @@ jobs:
             --limit=100 \
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
+
+  # ── 完了後にSpot VMを停止（成功・失敗・スキップ問わず）
+  stop-runner:
+    needs: [deploy-fast, deploy-fallback]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Stop VM
+        run: |
+          gcloud compute instances stop ${{ env.RUNNER_VM }} \
+            --zone=${{ env.RUNNER_ZONE }} \
+            --project="${{ env.PROJECT_ID }}"
