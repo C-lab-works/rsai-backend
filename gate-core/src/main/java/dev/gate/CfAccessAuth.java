@@ -27,24 +27,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-/**
- * Validates Cloudflare Access JWT tokens ({@code CF-Access-Jwt-Assertion} header).
- *
- * <p>When Cloudflare Access is configured in front of the backend, every request from
- * an authenticated user carries a signed JWT. This filter verifies that JWT, preventing
- * forged {@code Cf-Access-Authenticated-User-Email} headers from reaching controllers.</p>
- *
- * <p>The verified email is stored in the request context under the attribute key
- * {@link #ATTR_VERIFIED_EMAIL} so controllers can use it for audit logging.</p>
- *
- * <p>Required environment variables:
- * <ul>
- *   <li>{@code CF_ACCESS_AUD}         — Application Audience tag from the Cloudflare Access dashboard</li>
- *   <li>{@code CF_ACCESS_TEAM_DOMAIN} — Team domain, e.g. {@code myteam.cloudflareaccess.com}</li>
- * </ul>
- * If either variable is absent the filter is disabled (no-op). This allows the same
- * binary to run locally without Cloudflare in front.</p>
- */
 public class CfAccessAuth implements Handler {
 
     public static final String ATTR_VERIFIED_EMAIL = "cf_verified_email";
@@ -57,7 +39,6 @@ public class CfAccessAuth implements Handler {
 
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
 
-    /** Atomic reference for lock-free reads; replaced atomically on refresh. */
     private final AtomicReference<ConcurrentHashMap<String, PublicKey>> keyCacheRef
             = new AtomicReference<>(new ConcurrentHashMap<>());
     private volatile Instant keysCachedAt = Instant.EPOCH;
@@ -73,7 +54,6 @@ public class CfAccessAuth implements Handler {
         String domain  = System.getenv("CF_ACCESS_TEAM_DOMAIN");
         String devFlag = System.getenv("CF_ACCESS_DEV_DISABLE");
         String admins  = System.getenv("ADMIN_EMAILS");
-        // Normalise to lowercase so email comparisons are case-insensitive
         this.adminEmails = (admins != null && !admins.isBlank())
             ? Arrays.stream(admins.split(","))
                 .map(String::trim)
@@ -142,7 +122,7 @@ public class CfAccessAuth implements Handler {
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
         if (ctx.path().startsWith("/admin")) {
-            // Admin endpoints: JWT required + must be in ADMIN_EMAILS (if configured)
+            // 管理エンドポイント: JWT が必須で、ADMIN_EMAILS に登録されたメールアドレスである必要がある（設定されている場合）
             if (token == null || token.isBlank()) {
                 ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
                 return;
@@ -160,7 +140,6 @@ public class CfAccessAuth implements Handler {
                 ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
             }
         } else if (token != null && !token.isBlank()) {
-            // Non-admin endpoints: extract email opportunistically if JWT is present
             try {
                 String email = verifyAndExtractEmail(token);
                 ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
@@ -170,7 +149,7 @@ public class CfAccessAuth implements Handler {
         }
     }
 
-    // ── JWT verification ──────────────────────────────────────────────────────
+    // JWT 検証
 
     private String verifyAndExtractEmail(String token) throws Exception {
         String[] parts = token.split("\\.");
@@ -195,7 +174,7 @@ public class CfAccessAuth implements Handler {
         sig.update(signedData);
         if (!sig.verify(sigBytes)) throw new SecurityException("JWT signature verification failed");
 
-        // Validate time claims
+        // 時間クレームを検証
         long now = Instant.now().getEpochSecond();
         long exp = payload.path("exp").asLong(0);
         long iat = payload.path("iat").asLong(0);
@@ -205,11 +184,11 @@ public class CfAccessAuth implements Handler {
         long nbf = payload.path("nbf").asLong(0);
         if (nbf > 0 && now + 60 < nbf) throw new SecurityException("JWT not yet valid (nbf=" + nbf + ")");
 
-        // Validate issuer
+        // 発行者を検証
         String iss = payload.path("iss").asText("");
         if (!teamDomain.equals(iss)) throw new SecurityException("JWT issuer mismatch: " + iss);
 
-        // Validate audience
+        // オーディエンスを検証
         JsonNode audNode = payload.get("aud");
         boolean audMatched = false;
         if (audNode != null) {
@@ -228,17 +207,15 @@ public class CfAccessAuth implements Handler {
         return email;
     }
 
-    // ── JWKS fetching / caching ───────────────────────────────────────────────
+    // JWKS 取得 / キャッシュ
 
     private PublicKey getPublicKey(String kid) throws Exception {
-        // Fast-path: lock-free read from current cache snapshot
         ConcurrentHashMap<String, PublicKey> current = keyCacheRef.get();
         if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
             PublicKey cached = current.get(kid);
             if (cached != null) return cached;
         }
 
-        // Slow-path: refresh under lock
         synchronized (this) {
             current = keyCacheRef.get();
             if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
@@ -255,7 +232,8 @@ public class CfAccessAuth implements Handler {
     }
 
     /**
-     * Fetches JWKS and atomically replaces the key cache. Must be called under {@code synchronized(this)}.
+     * JWKS を取得し、キーキャッシュをアトミックに置き換える。
+     * {@code synchronized(this)} の下で呼び出す必要がある。
      */
     private void refreshKeysLocked() throws Exception {
         logger.info("Refreshing JWKS from {}", certsUrl);
@@ -280,12 +258,9 @@ public class CfAccessAuth implements Handler {
             PublicKey pubKey = KeyFactory.getInstance("RSA").generatePublic(spec);
             fresh.put(k, pubKey);
         }
-        // Atomic swap — no window where cache is empty
         keyCacheRef.set(fresh);
         keysCachedAt = Instant.now();
     }
-
-    // ── util ──────────────────────────────────────────────────────────────────
 
     private static String decodeBase64Url(String input) {
         return new String(Base64.getUrlDecoder().decode(input), StandardCharsets.UTF_8);

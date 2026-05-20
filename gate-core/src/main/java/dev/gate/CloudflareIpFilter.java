@@ -20,7 +20,6 @@ public class CloudflareIpFilter implements Handler {
 
     private static final Logger logger = new Logger(CloudflareIpFilter.class);
 
-    // IPチェック免除パス
     private static final List<String> EXEMPT_PATHS = List.of("/health");
 
     // Cloudflare CIDR一覧（最終更新: 2026-04-26）
@@ -89,7 +88,6 @@ public class CloudflareIpFilter implements Handler {
     private String resolveCloudflareIp(Context ctx) {
         String xff = ctx.requestHeader("X-Forwarded-For");
         if (xff != null && !xff.isBlank()) {
-            // 最も右のIP（直近の信頼済みプロキシ＝Cloudflare）を使用
             String[] parts = xff.split(",");
             for (int i = parts.length - 1; i >= 0; i--) {
                 String ip = parts[i].trim();
@@ -98,7 +96,6 @@ public class CloudflareIpFilter implements Handler {
                 }
             }
         }
-        // XFFヘッダーなし＝Cloudflare未経由
         return null;
     }
 

@@ -16,7 +16,7 @@ public class Main {
 
     private static final Logger log = new Logger(Main.class);
 
-    /** DB初期化・シード・メトリクス永続化が完了したらtrueになる */
+    /** 起動完了したらtrueになる */
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
 
     public static void main(String[] args) throws Exception {
@@ -27,7 +27,7 @@ public class Main {
         System.out.println("rsai-backend v" + version + " starting");
 
         Config config = ConfigLoader.load();
-        // PORT環境変数はconfig.ymlを上書きする（Azure / Cloud Runが注入）
+        // PORT環境変数はconfig.ymlを上書きする（Cloud Runが注入）
         String portEnv = System.getenv("PORT");
         int port = (portEnv != null && !portEnv.isBlank())
                 ? Integer.parseInt(portEnv.trim())
