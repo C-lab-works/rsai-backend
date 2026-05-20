@@ -38,7 +38,7 @@ Base URL: `https://api.r-sai2026.site`
     { "id": 1, "name": "ステージ系" }
   ],
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "svgId": 5, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "locationCode": "02", "x": 43.02042086431134, "y": 141.52233128287835 }
   ],
   "projects": [
     { "id": 1, "title": "中一企画1", "organizer": "1-1", "locationId": 15 }
@@ -56,7 +56,7 @@ Base URL: `https://api.r-sai2026.site`
 > `projects[].organizer` / `.description` / `.imageUrl` — 設定されている場合のみ含まれる。  
 > `timetables[].start` / `.end` — `isAllDay` が `true` の場合は省略される。  
 > `projectCategories` — project と category の多対多リレーション。  
-> `locations[].svgId` — SVG 要素 ID。設定されている場合のみ含まれる。  
+> `locations[].locationCode` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
 > `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
@@ -92,12 +92,13 @@ Base URL: `https://api.r-sai2026.site`
 ```json
 {
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "svgId": 5, "isStage": true, "tracksCongestion": true, "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "locationCode": "02", "svgId": 5, "x": 43.02042086431134, "y": 141.52233128287835 }
   ]
 }
 ```
 
-> `locations[].svgId` — SVG 要素 ID。設定されている場合のみ含まれる。  
+> `locations[].locationCode` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
+> `locations[].svgId` — SVG アイコン ID（整数）。設定されている場合のみ含まれる。  
 > `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
@@ -124,13 +125,14 @@ Base URL: `https://api.r-sai2026.site`
 
 ### `GET /congestion`
 
-混雑度管理対象の場所一覧（`tracks_congestion = 1`）と現在の混雑レベルをまとめて返す。
+全場所一覧と現在の混雑レベルをまとめて返す。10 秒キャッシュ。
 
 **レスポンス**
 ```json
 [
   {
     "location_id": 2,
+    "location_code": "02",
     "name": "Co-tan",
     "floor": 1,
     "svg_id": 5,
@@ -156,7 +158,7 @@ Base URL: `https://api.r-sai2026.site`
 
 ---
 
-### `POST /congestion/{id}`
+### `POST /congestion/{code}`
 
 指定した場所の混雑レベルを更新する。CF Access 認証必須。
 
@@ -164,7 +166,7 @@ Base URL: `https://api.r-sai2026.site`
 
 | パラメータ | 説明 |
 |---|---|
-| `id` | 場所 ID（`tracks_congestion = 1` の場所のみ有効） |
+| `code` | 場所の識別コード（`location_code`）例: `"02"`, `"T1J"` |
 
 **リクエストボディ**
 ```json
@@ -173,7 +175,7 @@ Base URL: `https://api.r-sai2026.site`
 
 **レスポンス**
 ```json
-{ "ok": true, "location_id": 2, "level": 1 }
+{ "ok": true, "location_code": "02", "level": 1 }
 ```
 
 ---
