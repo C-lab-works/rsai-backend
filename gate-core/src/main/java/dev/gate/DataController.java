@@ -27,7 +27,9 @@ public class DataController {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private record CacheEntry(Object data, long expiresAt) {}
-    private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+
+    public static void clearCache() { cache.clear(); }
 
     @GetMapping("/events")
     public void events(Context ctx) { serve(ctx, "events", this::buildEvents); }

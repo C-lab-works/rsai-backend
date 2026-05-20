@@ -28,8 +28,10 @@ public class CongestionController {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private static final long CACHE_TTL_MS = 10_000L;
-    private final AtomicReference<Object> cachedData = new AtomicReference<>();
-    private final AtomicLong cacheExpiresAt = new AtomicLong(0);
+    private static final AtomicReference<Object> cachedData = new AtomicReference<>();
+    private static final AtomicLong cacheExpiresAt = new AtomicLong(0);
+
+    public static void clearCache() { cacheExpiresAt.set(0); }
 
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {

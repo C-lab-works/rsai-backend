@@ -46,6 +46,15 @@ public class AdminController {
 
     // debug
 
+    @PostMapping("/admin/cache/clear")
+    public void clearCache(Context ctx) {
+        DataController.clearCache();
+        AnnouncementsController.clearCache();
+        CongestionController.clearCache();
+        logger.info("cache cleared by={}", ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL));
+        ctx.json(Map.of("ok", true, "cleared", List.of("events", "food", "map", "announcements", "congestion")));
+    }
+
     @GetMapping("/admin/debug/503")
     public void debug503(Context ctx) {
         String instanceId = Optional.ofNullable(System.getenv("HOSTNAME")).orElse("local");

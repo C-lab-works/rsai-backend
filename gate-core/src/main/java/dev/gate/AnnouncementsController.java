@@ -23,7 +23,9 @@ public class AnnouncementsController {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private record CacheEntry(Object data, long expiresAt) {}
-    private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+
+    public static void clearCache() { cache.clear(); }
 
     @GetMapping("/announcements")
     public void list(Context ctx) {
