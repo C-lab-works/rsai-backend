@@ -12,11 +12,11 @@ public class DataSeeder {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
             if (v >= 9) {
-                logger.info("Seed data v9 already present — skipping");
+                logger.info("シードデータv9適用済み — スキップ");
                 return;
             }
             if (v == 1) {
-                logger.info("Migrating schema v1 -> v5");
+                logger.info("スキーママイグレーション v1 -> v5");
                 migrateV1(conn);
             }
             if (v <= 1) {
@@ -31,39 +31,39 @@ public class DataSeeder {
                 seedProjectCategories(conn);
             }
             if (v == 2) {
-                logger.info("Migrating schema v2 -> v3");
+                logger.info("スキーママイグレーション v2 -> v3");
                 migrateV2(conn);
             }
             if (v <= 3) {
-                logger.info("Migrating schema v3 -> v4");
+                logger.info("スキーママイグレーション v3 -> v4");
                 migrateV3(conn);
             }
             if (v <= 4) {
-                logger.info("Migrating schema v4 -> v5");
+                logger.info("スキーママイグレーション v4 -> v5");
                 migrateV4(conn);
             }
             if (v <= 5) {
-                logger.info("Migrating schema v5 -> v6");
+                logger.info("スキーママイグレーション v5 -> v6");
                 migrateV5(conn);
             }
             if (v <= 6) {
-                logger.info("Migrating schema v6 -> v7");
+                logger.info("スキーママイグレーション v6 -> v7");
                 migrateV6(conn);
             }
             if (v <= 7) {
-                logger.info("Migrating schema v7 -> v8");
+                logger.info("スキーママイグレーション v7 -> v8");
                 migrateV7(conn);
             }
             if (v >= 7) {
-                logger.info("Migrating schema v8 -> v9");
+                logger.info("スキーママイグレーション v8 -> v9");
                 migrateV8(conn);
             }
             setSeedVersion(conn, 9);
-            logger.info("Seed data v9 ready");
+            logger.info("シードデータv9準備完了");
         }
     }
 
-    // ── version ───────────────────────────────────────────────
+    // バージョン管理
 
     private static int getSeedVersion(Connection conn) throws Exception {
         exec(conn, "INSERT IGNORE INTO seed_version (id, version) VALUES (1, 0)");
@@ -82,7 +82,7 @@ public class DataSeeder {
         }
     }
 
-    // ── migrations ────────────────────────────────────────────
+    // マイグレーション
 
     private static void migrateV1(Connection conn) throws Exception {
         exec(conn, "TRUNCATE TABLE congestion_status");
@@ -99,73 +99,73 @@ public class DataSeeder {
     private static void migrateV2(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE locations ADD COLUMN tracks_congestion TINYINT(1) NOT NULL DEFAULT 1");
-            logger.info("Added tracks_congestion column to locations");
+            logger.info("locationsにtracks_congestionカラムを追加");
         } catch (Exception ignored) {
-            // column already exists
+            // カラムが既に存在する場合はスキップ
         }
     }
 
     private static void migrateV3(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE locations ADD COLUMN svg_id VARCHAR(255)");
-            logger.info("Added svg_id column to locations");
+            logger.info("locationsにsvg_idカラムを追加");
         } catch (Exception ignored) {
-            // column already exists
+            // カラムが既に存在する場合はスキップ
         }
     }
 
     private static void migrateV4(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE locations ADD COLUMN is_stage TINYINT(1) NOT NULL DEFAULT 1");
-            logger.info("Added is_stage column to locations");
+            logger.info("locationsにis_stageカラムを追加");
         } catch (Exception ignored) {
-            // column already exists
+            // カラムが既に存在する場合はスキップ
         }
     }
 
     private static void migrateV5(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE projects DROP COLUMN category_id");
-            logger.info("Dropped category_id from projects");
+            logger.info("projectsからcategory_idカラムを削除");
         } catch (Exception ignored) {
-            // column already removed
+            // カラムが既に削除済みの場合はスキップ
         }
         try {
             exec(conn, "ALTER TABLE projects ADD COLUMN location_id INT");
-            logger.info("Added location_id to projects");
+            logger.info("projectsにlocation_idカラムを追加");
         } catch (Exception ignored) {
-            // column already exists
+            // カラムが既に存在する場合はスキップ
         }
         defineTables(conn);
-        logger.info("Created foods, menus, project_categories tables");
+        logger.info("foods, menus, project_categoriesテーブルを作成");
     }
 
     private static void migrateV6(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE congestion_status MODIFY COLUMN level TINYINT(4) NOT NULL DEFAULT 0");
-            logger.info("Fixed congestion_status.level type (TINYINT -> TINYINT(4))");
+            logger.info("congestion_status.levelの型を修正（TINYINT -> TINYINT(4)）");
         } catch (Exception ignored) {}
     }
 
     private static void migrateV7(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE announcements ADD COLUMN title VARCHAR(255) NOT NULL DEFAULT '' AFTER id");
-            logger.info("Added title column to announcements");
+            logger.info("announcementsにtitleカラムを追加");
         } catch (Exception ignored) {
-            // column already exists
+            // カラムが既に存在する場合はスキップ
         }
     }
 
     private static void migrateV8(Connection conn) throws Exception {
         try {
             exec(conn, "ALTER TABLE announcements MODIFY COLUMN title VARCHAR(255) NOT NULL DEFAULT ''");
-            logger.info("Fixed announcements.title to VARCHAR(255) NOT NULL DEFAULT ''");
+            logger.info("announcements.titleをVARCHAR(255) NOT NULL DEFAULT ''に修正");
         } catch (Exception ignored) {}
     }
 
-    // ── DDL ───────────────────────────────────────────────────
+    // DDL
 
-    /** Canonical latest schema. Idempotent — safe to call on any existing database. */
+    /** 最新のスキーマ定義。既存DBに対しても冪等（safe to call on any existing database）。 */
     private static void defineTables(Connection conn) throws Exception {
         exec(conn,
             "CREATE TABLE IF NOT EXISTS categories (" +
@@ -239,7 +239,7 @@ public class DataSeeder {
             ")");
     }
 
-    // ── seed data ─────────────────────────────────────────────
+    // シードデータ
 
     private static void seedCategories(Connection conn) throws Exception {
         exec(conn,
@@ -315,7 +315,7 @@ public class DataSeeder {
             "(1, 1, 'メニュー（未定）', NULL)");
     }
 
-    // ── util ──────────────────────────────────────────────────
+    // util
 
     private static void exec(Connection conn, String sql) throws Exception {
         try (Statement s = conn.createStatement()) {

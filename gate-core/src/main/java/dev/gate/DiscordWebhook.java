@@ -18,7 +18,7 @@ public class DiscordWebhook {
     private static final long   DEBOUNCE_MS = 5_000L;
     private static final HttpClient HTTP   = HttpClient.newHttpClient();
 
-    // key = "METHOD PATH STATUS"  value = last sent epoch ms
+    // キー: "METHOD PATH STATUS"  値: 最終送信エポックms（デバウンス用）
     private static final ConcurrentHashMap<String, AtomicLong> lastSent = new ConcurrentHashMap<>();
 
     private DiscordWebhook() {}
@@ -36,7 +36,7 @@ public class DiscordWebhook {
         long prev = ts.getAndSet(now);
         if (now - prev < DEBOUNCE_MS) return;
 
-        int color = status >= 500 ? 15158332 : 16776960; // red : yellow
+        int color = status >= 500 ? 15158332 : 16776960; // 赤 : 黄
         String safeMsg    = escapeJson(message != null ? message : "(no message)");
         String safeMethod = escapeJson(method != null ? method : "");
         String safePath   = escapeJson(path   != null ? path   : "");
@@ -58,6 +58,6 @@ public class DiscordWebhook {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         HTTP.sendAsync(req, HttpResponse.BodyHandlers.discarding())
-            .exceptionally(e -> { logger.warn("Discord webhook failed: {}", e.getMessage()); return null; });
+            .exceptionally(e -> { logger.warn("Discord webhook送信失敗: {}", e.getMessage()); return null; });
     }
 }

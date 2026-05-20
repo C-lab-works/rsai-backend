@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 /**
- * Proxies Cloud Monitoring timeseries data to the admin panel.
- * Uses the Cloud Run metadata server for authentication — no service account JSON required.
+ * Cloud MonitoringのTimeseriesデータをAdminパネルにプロキシする。
+ * 認証にはCloud Runメタデータサーバーを使用するため、サービスアカウントJSONは不要。
  */
 @GateController
 public class GcpMetricsController {
@@ -34,18 +34,18 @@ public class GcpMetricsController {
     public void gcpMetrics(Context ctx) {
         ctx.header("Cache-Control", "no-store");
 
-        // Determine granularity from ?range= query param
+        // ?range= でグラニュラリティを決定
         String rangeParam = ctx.query("range");
         final int periodSeconds, numBuckets;
         if ("1h".equals(rangeParam)) {
-            periodSeconds = 300;  numBuckets = 12;   // 5-min buckets × 12 = 1h
+            periodSeconds = 300;  numBuckets = 12;   // 5分バケット × 12 = 1h
         } else if ("6h".equals(rangeParam)) {
-            periodSeconds = 600;  numBuckets = 36;   // 10-min buckets × 36 = 6h
+            periodSeconds = 600;  numBuckets = 36;   // 10分バケット × 36 = 6h
         } else {
-            periodSeconds = 3600; numBuckets = 24;   // hourly buckets × 24 = 24h (default)
+            periodSeconds = 3600; numBuckets = 24;   // 1時間バケット × 24 = 24h（デフォルト）
         }
 
-        // Align to period boundaries for clean bucket windows
+        // バケット境界に揃える
         long nowPeriod      = Instant.now().getEpochSecond() / periodSeconds;
         Instant alignedEnd  = Instant.ofEpochSecond((nowPeriod + 1) * periodSeconds);
         Instant alignedStart = alignedEnd.minusSeconds((long) periodSeconds * numBuckets);
@@ -74,7 +74,7 @@ public class GcpMetricsController {
         }
     }
 
-    // ── Response builders ─────────────────────────────────────────────────
+    // レスポンス構築
 
     private ObjectNode buildResponse(Instant start, Instant end, int periodSeconds, int numBuckets,
                                      long[] requestCount, long[] instanceCount, double[] cpuUtilization) {
@@ -92,7 +92,7 @@ public class GcpMetricsController {
             long tMs = (start.getEpochSecond() + (long)(i + 1) * periodSeconds) * 1000L;
             reqArr.addObject().put("t", tMs).put("v", requestCount[i]);
             instArr.addObject().put("t", tMs).put("v", instanceCount[i]);
-            // Store as 0.0–1.0 fraction; frontend MetricsPanel multiplies ×100 for display
+            // 0.0〜1.0の小数で保持（フロントで×100して%表示）
             cpuArr.addObject().put("t", tMs)
                               .put("v", Math.round(cpuUtilization[i] * 100000.0) / 100000.0);
         }
@@ -123,7 +123,7 @@ public class GcpMetricsController {
         return root;
     }
 
-    // ── Cloud Monitoring queries ──────────────────────────────────────────
+    // Cloud Monitoringクエリ
 
     private long[] queryLongMetric(String token, String projectId, String service,
                                    String metricType, String aligner, String reducer,
@@ -172,7 +172,7 @@ public class GcpMetricsController {
                 } else if (val.has("int64Value")) {
                     v = val.get("int64Value").asDouble();
                 } else if (val.has("distributionValue")) {
-                    // DISTRIBUTION metrics (e.g. cpu/utilizations) — extract the mean
+                    // DISTRIBUTIONメトリクス（cpu/utilizationsなど）は平均値を使用
                     v = val.get("distributionValue").path("mean").asDouble();
                 } else {
                     v = 0.0;
@@ -218,7 +218,7 @@ public class GcpMetricsController {
         return mapper.readTree(res.body()).path("timeSeries");
     }
 
-    // ── Metadata server ───────────────────────────────────────────────────
+    // メタデータサーバー
 
     private String fetchAccessToken() throws Exception {
         JsonNode node = mapper.readTree(fetchMetadata("instance/service-accounts/default/token"));
@@ -234,7 +234,7 @@ public class GcpMetricsController {
         return http.send(req, HttpResponse.BodyHandlers.ofString()).body();
     }
 
-    // ── Util ──────────────────────────────────────────────────────────────
+    // util
 
     private int toPeriodIndex(String endTime, long startEpochPeriod, int periodSeconds) {
         try {

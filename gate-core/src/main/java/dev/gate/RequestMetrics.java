@@ -17,7 +17,7 @@ public class RequestMetrics {
     private static final int[]  BUCKETS     = {0, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000};
     private static final RequestMetrics INSTANCE = new RequestMetrics();
 
-    // ── hourly ring buffer ──────────────────────────────────────────────
+    // 時間別リングバッファ
     private final AtomicLong[] hourlyCounts  = new AtomicLong[HOURS];
     private final AtomicLong[] hourlyErrors  = new AtomicLong[HOURS];
     private final long[]       slotHour      = new long[HOURS];
@@ -25,11 +25,11 @@ public class RequestMetrics {
     private final long[]       lastFlushedReq = new long[HOURS];
     private final long[]       lastFlushedErr = new long[HOURS];
 
-    // ── endpoint counts ────────────────────────────────────────────────
+    // エンドポイント集計
     private final ConcurrentHashMap<String, LongAdder> endpointCounts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LongAdder> lastFlushedEp  = new ConcurrentHashMap<>();
 
-    // ── latency histogram ──────────────────────────────────────────────
+    // レイテンシヒストグラム
     private final AtomicLong[] histogram        = new AtomicLong[BUCKETS.length];
     private final AtomicLong[] lastFlushedHisto = new AtomicLong[BUCKETS.length];
 
@@ -60,18 +60,18 @@ public class RequestMetrics {
 
     private long epochHour() { return System.currentTimeMillis() / 3_600_000L; }
 
-    // ── persistence ────────────────────────────────────────────────────
+    // 永続化
 
     public void init() {
         loadFromDb();
         scheduler.scheduleAtFixedRate(this::flushAll, 45, 45, TimeUnit.SECONDS);
-        logger.info("RequestMetrics persistence enabled (45-sec flush)");
+        logger.info("RequestMetrics永続化有効（45秒ごとにフラッシュ）");
     }
 
     public void shutdown() {
         scheduler.shutdown();
         flushAll();
-        logger.info("RequestMetrics final flush complete");
+        logger.info("RequestMetrics最終フラッシュ完了");
     }
 
     private void loadFromDb() {
@@ -122,9 +122,9 @@ public class RequestMetrics {
                     }
                 }
             }
-            logger.info("RequestMetrics: restored from DB");
+            logger.info("RequestMetrics: DBから復元完了");
         } catch (Exception e) {
-            logger.warn("RequestMetrics: DB restore failed (starting fresh): {}", e.getMessage());
+            logger.warn("RequestMetrics: DB復元失敗（初期値で起動）: {}", e.getMessage());
         }
     }
 
@@ -211,17 +211,17 @@ public class RequestMetrics {
         }
     }
 
-    // ── before filter ──────────────────────────────────────────────────
+    // beforeフィルタ
 
     public void startTimer() {
         requestStart.set(System.nanoTime());
     }
 
-    // ── after filter ───────────────────────────────────────────────────
+    // afterフィルタ
 
     public void record(Context ctx) {
         try {
-        // Skip /admin/* except /admin/debug/* (debug endpoints need metrics + Discord)
+        // /admin/* はスキップ（/admin/debug/* は除く）
         if (ctx.path().startsWith("/admin") && !ctx.path().startsWith("/admin/debug/")) {
             return;
         }
@@ -244,7 +244,7 @@ public class RequestMetrics {
         }
 
         if (isError) {
-            // ctx.responseBody() contains the JSON error message (e.g. {"error":"..."})
+            // ctx.responseBody() にJSONエラーメッセージが入っている
             DiscordWebhook.sendError(
                 ctx.method(), ctx.path(), ctx.statusCode(), ctx.responseBody());
         }
@@ -267,7 +267,7 @@ public class RequestMetrics {
         }
     }
 
-    // ── read (DB-backed, multi-instance safe) ───────────────────────────
+    // 読み取り（DB経由・マルチインスタンス対応）
 
     public long getTotalRequests() {
         try (Connection conn = Database.getConnection();
@@ -371,7 +371,7 @@ public class RequestMetrics {
         }
     }
 
-    // ── bucket helpers ──────────────────────────────────────────────────
+    // バケットヘルパー
 
     private int upperBucketIndex(long ms) {
         for (int i = BUCKETS.length - 1; i >= 0; i--) {

@@ -10,31 +10,20 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Restricts incoming requests to those originating from Cloudflare's IP ranges.
- *
- * <p>In production (Azure Container Apps + Cloudflare proxy), the actual Cloudflare edge IP
- * arrives in the {@code X-Forwarded-For} header because the Azure Envoy sidecar rewrites
- * {@code getRemoteAddr()}. This filter locates the first non-private IP in the
- * X-Forwarded-For chain and verifies it is within a known Cloudflare CIDR.</p>
- *
- * <p>Set the environment variable {@code SKIP_CF_IP_CHECK=true} to bypass the check
- * in local development without Cloudflare in front.</p>
- *
- * <p>IP ranges are sourced from:
- * <ul>
- *   <li>https://www.cloudflare.com/ips-v4</li>
- *   <li>https://www.cloudflare.com/ips-v6</li>
- * </ul>
- * Update this list whenever Cloudflare publishes new ranges.</p>
+ * Cloudflareのいずれかのプロキシ経由のリクエストのみを許可するフィルタ。
+ * Azure Container Apps環境ではEnvoyサイドカーがremoteAddrを書き換えるため、
+ * X-Forwarded-Forの最右端IPを検証する。
+ * ローカル開発時は環境変数 {@code SKIP_CF_IP_CHECK=true} でスキップ可能。
+ * IPレンジは https://www.cloudflare.com/ips-v4 / ips-v6 を参照。
  */
 public class CloudflareIpFilter implements Handler {
 
     private static final Logger logger = new Logger(CloudflareIpFilter.class);
 
-    /** Paths that are exempt from the IP check (must also be exempt from ApiKeyAuth). */
+    // IPチェック免除パス
     private static final List<String> EXEMPT_PATHS = List.of("/health");
 
-    // ── Cloudflare published CIDR ranges (last updated: 2026-04-26) ──────────
+    // Cloudflare CIDR一覧（最終更新: 2026-04-26）
 
     private static final String[] CF_CIDRS = {
         // IPv4 — https://www.cloudflare.com/ips-v4
@@ -71,7 +60,7 @@ public class CloudflareIpFilter implements Handler {
     public CloudflareIpFilter() {
         this.skipCheck = "true".equalsIgnoreCase(System.getenv("SKIP_CF_IP_CHECK"));
         if (skipCheck) {
-            logger.warn("SKIP_CF_IP_CHECK=true — Cloudflare IP check is DISABLED (dev mode only)");
+            logger.warn("SKIP_CF_IP_CHECK=true — CloudflareIPチェック無効（開発環境専用）");
         }
         this.blocks = buildBlocks();
         logger.info("CloudflareIpFilter initialized with {} CIDR blocks", blocks.size());
@@ -91,22 +80,16 @@ public class CloudflareIpFilter implements Handler {
         }
     }
 
-    // ── IP resolution ─────────────────────────────────────────────────────────
+    // IP解決
 
     /**
-     * Extracts the Cloudflare edge IP from the request.
-     *
-     * <p>With Cloudflare in front:
-     * <pre>Client → Cloudflare edge → Azure Container Apps (Envoy sidecar) → Java</pre>
-     * The {@code X-Forwarded-For} header looks like:
-     * <pre>X-Forwarded-For: &lt;real-client-ip&gt;, &lt;cloudflare-edge-ip&gt;</pre>
-     * The last (rightmost) entry is the first-hop proxy that Azure's Envoy trusts,
-     * which is the Cloudflare edge IP. We verify that entry is in the CF CIDR list.</p>
+     * X-Forwarded-Forの最右端IPを取得してCloudflare edgeのIPとして返す。
+     * XFFヘッダーがない場合はnullを返す（Cloudflare未経由と判定）。
      */
     private String resolveCloudflareIp(Context ctx) {
         String xff = ctx.requestHeader("X-Forwarded-For");
         if (xff != null && !xff.isBlank()) {
-            // Take the rightmost IP added by the nearest trusted proxy (Cloudflare)
+            // 最も右のIP（直近の信頼済みプロキシ＝Cloudflare）を使用
             String[] parts = xff.split(",");
             for (int i = parts.length - 1; i >= 0; i--) {
                 String ip = parts[i].trim();
@@ -115,12 +98,11 @@ public class CloudflareIpFilter implements Handler {
                 }
             }
         }
-
-        // If no XFF header present, Cloudflare is not proxying — reject
+        // XFFヘッダーなし＝Cloudflare未経由
         return null;
     }
 
-    // ── CIDR matching ─────────────────────────────────────────────────────────
+    // CIDRマッチング
 
     private boolean isCloudflareIp(String ipStr) {
         InetAddress addr;
@@ -130,7 +112,7 @@ public class CloudflareIpFilter implements Handler {
             return false;
         }
         for (CidrBlock block : blocks) {
-            if (addr.getClass() != block.network().getClass()) continue; // IPv4 vs IPv6 mismatch
+            if (addr.getClass() != block.network().getClass()) continue;
             if (matches(addr, block)) return true;
         }
         return false;
@@ -157,7 +139,7 @@ public class CloudflareIpFilter implements Handler {
     private boolean isPrivateOrLoopback(String ipStr) {
         try {
             InetAddress addr = InetAddress.getByName(ipStr);
-            // isSiteLocalAddress covers RFC1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+            // RFC1918プライベートアドレス（10.x, 172.16.x, 192.168.x）をカバー
             return addr.isLoopbackAddress()
                     || addr.isSiteLocalAddress()
                     || addr.isLinkLocalAddress();
@@ -166,7 +148,7 @@ public class CloudflareIpFilter implements Handler {
         }
     }
 
-    // ── CIDR block builder ────────────────────────────────────────────────────
+    // CIDRブロックビルダー
 
     private static List<CidrBlock> buildBlocks() {
         List<CidrBlock> result = new java.util.ArrayList<>();
@@ -178,7 +160,7 @@ public class CloudflareIpFilter implements Handler {
                 InetAddress network = InetAddress.getByName(host);
                 result.add(new CidrBlock(network, prefix, network.getAddress().length * 8));
             } catch (Exception e) {
-                logger.warn("Failed to parse CIDR '{}': {}", cidr, e.getMessage());
+                logger.warn("CIDRパースエラー '{}': {}", cidr, e.getMessage());
             }
         }
         return List.copyOf(result);

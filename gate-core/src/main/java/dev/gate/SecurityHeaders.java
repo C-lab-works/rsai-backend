@@ -4,8 +4,8 @@ import dev.gate.core.Context;
 import dev.gate.core.Handler;
 
 /**
- * After-filter that injects security-related HTTP response headers on every response.
- * Register via {@code gate.after(SecurityHeaders.get()::handle)}.
+ * すべてのレスポンスにセキュリティ関連HTTPヘッダーを付与するアフターフィルタ。
+ * {@code gate.after(SecurityHeaders.get()::handle)} で登録する。
  */
 public final class SecurityHeaders implements Handler {
 
@@ -19,23 +19,22 @@ public final class SecurityHeaders implements Handler {
 
     @Override
     public void handle(Context ctx) {
-        // Prevents this API response from being framed; not strictly required for a JSON API
-        // but added as defence-in-depth in case an HTML error page is ever returned.
+        // クリックジャッキング対策（JSON APIだが多層防御として設定）
         ctx.header("X-Frame-Options", "DENY");
 
-        // Prevents browsers from MIME-sniffing the content type.
+        // ブラウザのMIMEスニッフィングを無効化
         ctx.header("X-Content-Type-Options", "nosniff");
 
-        // Instructs browsers to only use HTTPS for 1 year (including sub-domains).
+        // 1年間HTTPSのみを使用するよう指示
         ctx.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 
-        // Restrictive CSP — this is a JSON API so scripts are never expected.
+        // JSON APIのため全スクリプトを禁止
         ctx.header("Content-Security-Policy", "default-src 'none'");
 
-        // Suppress Referrer header when navigating away from this API.
+        // このAPIから遷移する際のRefererヘッダーを抑制
         ctx.header("Referrer-Policy", "no-referrer");
 
-        // Disable all browser features that are not needed for an API.
+        // APIに不要なブラウザ機能をすべて無効化
         ctx.header("Permissions-Policy", "geolocation=(), camera=(), microphone=()");
     }
 }
