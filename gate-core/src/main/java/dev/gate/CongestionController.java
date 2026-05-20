@@ -78,7 +78,7 @@ public class CongestionController {
         } catch (Exception e) {
             logger.error("getCongestion error", e);
             if (cached != null) {
-                logger.warn("Serving stale cache for /congestion due to DB error");
+                logger.warn("DBエラーのため /congestion の古いキャッシュを返す");
                 ctx.header("Cache-Control", "no-store");
                 ctx.json(cached);
                 return;
@@ -134,7 +134,7 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
-            // invalidate cache so next GET reflects the update immediately
+            // 更新後はキャッシュを即時無効化して次のGETに即反映させる
             cacheExpiresAt.set(0);
             ctx.json(Map.of("ok", true, "location_id", locationId, "level", level));
         } catch (NumberFormatException e) {
