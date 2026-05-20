@@ -98,7 +98,7 @@ public class RequestMetrics {
                 }
             }
             try (Statement st = conn.createStatement();
-                 ResultSet rs = st.executeQuery("SELECT endpoint, hits FROM metrics_endpoints")) {
+                 ResultSet rs = st.executeQuery("SELECT endpoint, hits FROM metrics_endpoints WHERE date = CURDATE()")) {
                 while (rs.next()) {
                     String ep   = rs.getString("endpoint");
                     long   hits = rs.getLong("hits");
@@ -172,7 +172,7 @@ public class RequestMetrics {
         if (endpointCounts.isEmpty()) return;
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO metrics_endpoints(endpoint, hits) VALUES(?, ?) AS new " +
+                     "INSERT INTO metrics_endpoints(endpoint, date, hits) VALUES(?, CURDATE(), ?) AS new " +
                      "ON DUPLICATE KEY UPDATE hits = metrics_endpoints.hits + new.hits")) {
             for (Map.Entry<String, LongAdder> e : endpointCounts.entrySet()) {
                 long current = e.getValue().sum();
@@ -358,7 +358,8 @@ public class RequestMetrics {
     public List<Map.Entry<String, Long>> getTopEndpoints(int n) {
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "SELECT endpoint, hits FROM metrics_endpoints ORDER BY hits DESC LIMIT ?")) {
+                     "SELECT endpoint, SUM(hits) AS hits FROM metrics_endpoints " +
+                     "GROUP BY endpoint ORDER BY SUM(hits) DESC LIMIT ?")) {
             ps.setInt(1, n);
             List<Map.Entry<String, Long>> result = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
@@ -367,6 +368,22 @@ public class RequestMetrics {
             return result;
         } catch (Exception e) {
             logger.warn("getTopEndpoints DB error: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    public List<Map.Entry<String, Long>> getEndpointsByDate(String date) {
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT endpoint, hits FROM metrics_endpoints WHERE date = ? ORDER BY hits DESC")) {
+            ps.setString(1, date);
+            List<Map.Entry<String, Long>> result = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(Map.entry(rs.getString("endpoint"), rs.getLong("hits")));
+            }
+            return result;
+        } catch (Exception e) {
+            logger.warn("getEndpointsByDate DB error: {}", e.getMessage());
             return Collections.emptyList();
         }
     }

@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 12) {
-                logger.info("Seed data v12 already present — skipping");
+            if (v >= 13) {
+                logger.info("Seed data v13 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -70,8 +70,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v11 -> v12");
                 migrateV11(conn);
             }
-            setSeedVersion(conn, 12);
-            logger.info("Seed data v12 ready");
+            if (v <= 12) {
+                logger.info("Migrating schema v12 -> v13");
+                migrateV12(conn);
+            }
+            setSeedVersion(conn, 13);
+            logger.info("Seed data v13 ready");
         }
     }
 
@@ -410,6 +414,16 @@ public class DataSeeder {
         dropColumnIfExists(conn, "locations", "tracks_congestion");
         dropColumnIfExists(conn, "locations", "is_stage");
         logger.info("Dropped tracks_congestion, is_stage from locations");
+    }
+
+    private static void migrateV12(Connection conn) throws Exception {
+        if (!columnExists(conn, "metrics_endpoints", "date")) {
+            exec(conn, "TRUNCATE TABLE metrics_endpoints");
+            exec(conn, "ALTER TABLE metrics_endpoints DROP PRIMARY KEY");
+            exec(conn, "ALTER TABLE metrics_endpoints ADD COLUMN date DATE NOT NULL DEFAULT '2000-01-01'");
+            exec(conn, "ALTER TABLE metrics_endpoints ADD PRIMARY KEY (endpoint, date)");
+            logger.info("Added date column to metrics_endpoints with composite PK (endpoint, date)");
+        }
     }
 
     // ── util ──────────────────────────────────────────────────

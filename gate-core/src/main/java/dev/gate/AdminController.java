@@ -15,8 +15,11 @@ import dev.gate.mapping.PutMapping;
 import dev.gate.CfAccessAuth;
 
 import java.sql.*;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -555,6 +558,44 @@ public class AdminController {
         ArrayNode system = root.putArray("system");
         addStatus(system, "Database",   "ok", "Connected");
         addStatus(system, "API Server", "ok", "Running");
+        ctx.json(root);
+    }
+
+    @GetMapping("/admin/stats/daily")
+    public void dailyStats(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
+        ZonedDateTime jstNow = ZonedDateTime.now(ZoneId.of("Asia/Tokyo"));
+        String today     = jstNow.toLocalDate().toString();
+        String yesterday = jstNow.toLocalDate().minusDays(1).toString();
+
+        RequestMetrics m = RequestMetrics.get();
+        List<Map.Entry<String, Long>> todayEps     = m.getEndpointsByDate(today);
+        List<Map.Entry<String, Long>> yesterdayEps = m.getEndpointsByDate(yesterday);
+
+        ObjectNode root = mapper.createObjectNode();
+        root.put("today",     today);
+        root.put("yesterday", yesterday);
+
+        long todayTotal     = todayEps.stream().mapToLong(Map.Entry::getValue).sum();
+        long yesterdayTotal = yesterdayEps.stream().mapToLong(Map.Entry::getValue).sum();
+        root.put("todayTotal",     todayTotal);
+        root.put("yesterdayTotal", yesterdayTotal);
+        root.put("diff",           todayTotal - yesterdayTotal);
+
+        Map<String, long[]> merged = new LinkedHashMap<>();
+        for (var e : todayEps)     merged.computeIfAbsent(e.getKey(), k -> new long[2])[0] = e.getValue();
+        for (var e : yesterdayEps) merged.computeIfAbsent(e.getKey(), k -> new long[2])[1] = e.getValue();
+
+        ArrayNode eps = root.putArray("endpoints");
+        for (var entry : merged.entrySet()) {
+            String[] parts = entry.getKey().split(" ", 2);
+            ObjectNode n = eps.addObject();
+            n.put("method",    parts.length > 0 ? parts[0] : "");
+            n.put("path",      parts.length > 1 ? parts[1] : "");
+            n.put("today",     entry.getValue()[0]);
+            n.put("yesterday", entry.getValue()[1]);
+            n.put("diff",      entry.getValue()[0] - entry.getValue()[1]);
+        }
         ctx.json(root);
     }
 
