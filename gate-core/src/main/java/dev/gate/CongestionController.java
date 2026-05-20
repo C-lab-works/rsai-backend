@@ -137,10 +137,6 @@ public class CongestionController {
                 ctx.status(401).json(Map.of("error", "Authentication required"));
                 return;
             }
-            if (!CfAccessAuth.isAdmin(updatedBy)) {
-                ctx.status(403).json(Map.of("error", "Forbidden: admin access required"));
-                return;
-            }
             String now = LocalDateTime.now().format(FMT);
 
             try (Connection conn = Database.getConnection()) {
