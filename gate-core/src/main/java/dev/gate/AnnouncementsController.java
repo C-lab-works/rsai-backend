@@ -62,7 +62,7 @@ public class AnnouncementsController {
         } catch (Exception e) {
             logger.error("announcements error", e);
             if (entry != null) {
-                logger.warn("Serving stale cache for announcements due to DB error");
+                logger.warn("DBエラーのためお知らせの古いキャッシュを返す");
                 ctx.header("Cache-Control", "no-store");
                 ctx.json(entry.data());
                 return;

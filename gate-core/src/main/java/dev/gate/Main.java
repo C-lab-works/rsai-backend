@@ -16,7 +16,7 @@ public class Main {
 
     private static final Logger log = new Logger(Main.class);
 
-    /** Flips to true once DB init + seed + metrics persistence are all ready. */
+    /** DB初期化・シード・メトリクス永続化が完了したらtrueになる */
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
 
     public static void main(String[] args) throws Exception {
@@ -27,7 +27,7 @@ public class Main {
         System.out.println("rsai-backend v" + version + " starting");
 
         Config config = ConfigLoader.load();
-        // PORT env var overrides config.yml (Azure / Cloud Run inject this)
+        // PORT環境変数はconfig.ymlを上書きする（Azure / Cloud Runが注入）
         String portEnv = System.getenv("PORT");
         int port = (portEnv != null && !portEnv.isBlank())
                 ? Integer.parseInt(portEnv.trim())
@@ -36,10 +36,7 @@ public class Main {
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
 
         Config.DatabaseConfig dbConfig = config.getDatabase();
-        // DB init + seed + metrics run on a background daemon thread that retries
-        // on failure instead of terminating the process (avoids Cloud Run
-        // crash-loops). Until it succeeds, the readiness gate below keeps every
-        // route returning 503 {"status":"starting"}.
+        // DB初期化・シード・メトリクスをバックグラウンドで起動。失敗時はリトライ（クラッシュループ回避）
         startDatabaseInit(dbConfig);
 
         cfAccessAuth.prefetchJwks();
@@ -47,9 +44,7 @@ public class Main {
                 new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
 
         Gate gate = new Gate();
-        // CORS_ALLOWED_ORIGIN accepts comma-separated origins.
-        // Append CORS_ALLOWED_EXTRA_ORIGINS for dev-only additions (e.g. http://localhost:8081)
-        // without touching the production value.
+        // CORS_ALLOWED_ORIGINはカンマ区切り複数指定可。CORS_ALLOWED_EXTRA_ORIGINSで開発用追加（例: localhost）
         String allowedOrigin = System.getenv("CORS_ALLOWED_ORIGIN");
         String extraOrigins  = System.getenv("CORS_ALLOWED_EXTRA_ORIGINS");
         if (allowedOrigin == null || allowedOrigin.isBlank()) {
@@ -61,11 +56,7 @@ public class Main {
                 : baseOrigin + "," + extraOrigins;
         gate.cors(corsValue);
         gate.before(ctx -> RequestMetrics.get().startTimer());
-        // Readiness gate: until DB init + seed + metrics finish, every route
-        // except /health and CORS preflights returns 503 {"status":"starting"}
-        // instead of a misleading 404. Placed before auth/CF-IP so the platform
-        // and frontend always get a clear startup signal (same non-sensitive
-        // information as the public /health endpoint).
+        // 起動中は /health とOPTIONS以外に503を返す（readinessゲート）
         gate.before(ctx -> {
             if ("/health".equals(ctx.path())) return;
             if ("OPTIONS".equals(ctx.method())) return;
@@ -87,8 +78,7 @@ public class Main {
         gate.after(SecurityHeaders.get()::handle);
         gate.after(RequestMetrics.get()::record);
 
-        // Register all routes up-front so paths exist immediately; DB-backed
-        // handlers are gated by the readiness filter above until init completes.
+        // 全ルートを起動時に登録。DBが揃うまではreadinessフィルタが503を返す
         gate.register(new DataController());
         gate.register(new CongestionController());
         gate.register(new AdminController());
@@ -100,11 +90,8 @@ public class Main {
     }
 
     /**
-     * Initializes the database, seed data and metrics persistence on a background
-     * daemon thread. On failure it retries with exponential backoff (2s → 30s)
-     * instead of terminating the process, so a transient DB outage degrades the
-     * service to "starting" (HTTP 503) and self-heals once the DB is reachable —
-     * rather than crash-looping the container.
+     * DB初期化・シード・メトリクスをバックグラウンドデーモンスレッドで起動。
+     * 失敗時は指数バックオフ（2s → 30s）でリトライし、起動完了までは全ルートが503を返す。
      */
     private static void startDatabaseInit(Config.DatabaseConfig dbConfig) {
         Thread t = new Thread(() -> {
@@ -115,9 +102,9 @@ public class Main {
                     DataSeeder.seed();
                     RequestMetrics.get().init();
                     APP_READY.set(true);
-                    log.info("Database ready — all routes now serving");
+                    log.info("DB準備完了 — 全ルート起動");
                 } catch (Exception e) {
-                    log.error("DB init failed; retrying in " + (backoffMs / 1000) + "s", e);
+                    log.error("DB初期化失敗。" + (backoffMs / 1000) + "秒後にリトライ", e);
                     try {
                         Thread.sleep(backoffMs);
                     } catch (InterruptedException ie) {
