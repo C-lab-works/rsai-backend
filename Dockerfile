@@ -1,7 +1,7 @@
 FROM ghcr.io/graalvm/native-image-community:21 AS build
 WORKDIR /app
 # Copy build config first — changes rarely, keeps dependency layer cached
-COPY settings.gradle.kts build.gradle.kts gradlew ./
+COPY settings.gradle.kts gradlew ./
 COPY gradle/ gradle/
 COPY gate-core/build.gradle.kts gate-core/
 RUN --mount=type=cache,target=/root/.gradle \
