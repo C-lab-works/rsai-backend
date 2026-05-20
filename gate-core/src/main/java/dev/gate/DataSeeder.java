@@ -183,9 +183,24 @@ public class DataSeeder {
     }
 
     private static void migrateV10(Connection conn) throws Exception {
-        exec(conn, "ALTER TABLE locations ADD COLUMN IF NOT EXISTS x DOUBLE");
-        exec(conn, "ALTER TABLE locations ADD COLUMN IF NOT EXISTS y DOUBLE");
+        addColumnIfMissing(conn, "locations", "x", "DOUBLE");
+        addColumnIfMissing(conn, "locations", "y", "DOUBLE");
         logger.info("Ensured x, y columns on locations");
+    }
+
+    private static void addColumnIfMissing(Connection conn, String table, String column, String type) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.COLUMNS " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?")) {
+            ps.setString(1, table);
+            ps.setString(2, column);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    exec(conn, "ALTER TABLE `" + table + "` ADD COLUMN `" + column + "` " + type);
+                    logger.info("Added {} column to {}", column, table);
+                }
+            }
+        }
     }
 
     // ── DDL ───────────────────────────────────────────────────
