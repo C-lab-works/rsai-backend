@@ -20,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
 
     steps:
       - name: Authenticate to Google Cloud
@@ -38,22 +37,10 @@ jobs:
             --project="${{ env.PROJECT_ID }}"
 
       - name: Wait for runner to be online
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Waiting for self-hosted runner to come online..."
-          for i in $(seq 1 30); do
-            STATUS=$(gh api "repos/${{ github.repository }}/actions/runners" \
-              --jq '.runners[] | select(.name == "${{ env.RUNNER_VM }}") | .status' 2>/dev/null || echo "")
-            if [ "$STATUS" = "online" ]; then
-              echo "Runner is online (attempt $i)"
-              exit 0
-            fi
-            echo "Attempt $i/30: status='$STATUS', retrying in 10s..."
-            sleep 10
-          done
-          echo "Runner did not come online within 5 minutes"
-          exit 1
+          echo "Waiting 90s for self-hosted runner to come online..."
+          sleep 90
+          echo "Done waiting"
 
   # ── Spot VMでの高速ビルド（失敗しても続行）
   deploy-fast:
