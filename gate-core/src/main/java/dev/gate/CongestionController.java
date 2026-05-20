@@ -87,7 +87,7 @@ public class CongestionController {
                     "detail", "DB error"));
         }
     }
-
+    // 管理者が混雑レベルを更新するエンドポイント。認証必須。
     @PostMapping("/congestion/{id}")
     public void updateCongestion(Context ctx) {
         String idStr = ctx.pathParam("id");

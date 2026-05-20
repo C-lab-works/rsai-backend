@@ -221,7 +221,7 @@ public class RequestMetrics {
 
     public void record(Context ctx) {
         try {
-        // /admin/* はスキップ（/admin/debug/* は除く）
+        // /admin/* はスキップ（/admin/debug/* はカウント）
         if (ctx.path().startsWith("/admin") && !ctx.path().startsWith("/admin/debug/")) {
             return;
         }
