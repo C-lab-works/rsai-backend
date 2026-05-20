@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @GateController
 public class DataController {
@@ -28,6 +29,7 @@ public class DataController {
 
     private record CacheEntry(Object data, long expiresAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, AtomicBoolean> refreshing = new ConcurrentHashMap<>();
 
     public static void clearCache() { cache.clear(); }
 
@@ -47,11 +49,15 @@ public class DataController {
 
     private void serve(Context ctx, String key, Builder builder) {
         CacheEntry entry = cache.get(key);
-        if (entry != null && System.currentTimeMillis() < entry.expiresAt()) {
+        if (entry != null) {
             ctx.header("Cache-Control", "public, max-age=30");
             ctx.json(entry.data());
+            if (System.currentTimeMillis() >= entry.expiresAt()) {
+                scheduleRefresh(key, builder);
+            }
             return;
         }
+        // 初回のみ同期取得
         try (Connection conn = Database.getConnection()) {
             Object data = builder.build(conn);
             cache.put(key, new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
@@ -59,14 +65,23 @@ public class DataController {
             ctx.json(data);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());
-            if (entry != null) {
-                logger.warn("Serving stale cache for '{}' due to DB error", key);
-                ctx.header("Cache-Control", "no-store");
-                ctx.json(entry.data());
-                return;
-            }
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
+    }
+
+    private void scheduleRefresh(String key, Builder builder) {
+        AtomicBoolean flag = refreshing.computeIfAbsent(key, k -> new AtomicBoolean(false));
+        if (!flag.compareAndSet(false, true)) return;
+        Thread.ofVirtual().start(() -> {
+            try (Connection conn = Database.getConnection()) {
+                Object data = builder.build(conn);
+                cache.put(key, new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
+            } catch (Exception e) {
+                logger.warn("Background cache refresh failed for '{}': {}", key, e.getMessage());
+            } finally {
+                flag.set(false);
+            }
+        });
     }
 
     // /events

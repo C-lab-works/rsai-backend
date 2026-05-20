@@ -6,6 +6,7 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -30,17 +31,50 @@ public class CongestionController {
     private static final long CACHE_TTL_MS = 10_000L;
     private static final AtomicReference<Object> cachedData = new AtomicReference<>();
     private static final AtomicLong cacheExpiresAt = new AtomicLong(0);
+    private static final AtomicBoolean refreshing = new AtomicBoolean(false);
 
     public static void clearCache() { cacheExpiresAt.set(0); }
 
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
         Object cached = cachedData.get();
-        if (cached != null && System.currentTimeMillis() < cacheExpiresAt.get()) {
+        if (cached != null) {
             ctx.header("Cache-Control", "no-store");
             ctx.json(cached);
+            if (System.currentTimeMillis() >= cacheExpiresAt.get()) {
+                scheduleRefresh();
+            }
             return;
         }
+        // 初回のみ同期取得
+        try {
+            Object data = fetchCongestionFromDb();
+            cachedData.set(data);
+            cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
+            ctx.header("Cache-Control", "no-store");
+            ctx.json(data);
+        } catch (Exception e) {
+            logger.error("getCongestion error", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
+        }
+    }
+
+    private void scheduleRefresh() {
+        if (!refreshing.compareAndSet(false, true)) return;
+        Thread.ofVirtual().start(() -> {
+            try {
+                Object data = fetchCongestionFromDb();
+                cachedData.set(data);
+                cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
+            } catch (Exception e) {
+                logger.warn("Background congestion cache refresh failed: " + e.getMessage());
+            } finally {
+                refreshing.set(false);
+            }
+        });
+    }
+
+    private Object fetchCongestionFromDb() throws Exception {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -73,20 +107,7 @@ public class CongestionController {
                 String project = rs.getString("project");
                 if (project != null) n.put("project", project);
             }
-            cachedData.set(arr);
-            cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
-            ctx.header("Cache-Control", "no-store");
-            ctx.json(arr);
-        } catch (Exception e) {
-            logger.error("getCongestion error", e);
-            if (cached != null) {
-                logger.warn("DBエラーのため /congestion の古いキャッシュを返す");
-                ctx.header("Cache-Control", "no-store");
-                ctx.json(cached);
-                return;
-            }
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
-                    "detail", "DB error"));
+            return arr;
         }
     }
     // 管理者が混雑レベルを更新するエンドポイント。認証必須。
