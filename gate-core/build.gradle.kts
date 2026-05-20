@@ -1,6 +1,6 @@
 plugins {
     id("application")
-    id("com.gradleup.shadow") version "8.3.6"
+    id("com.gradleup.shadow") version "9.4.1"
     id("org.graalvm.buildtools.native") version "0.10.3"
 }
 
