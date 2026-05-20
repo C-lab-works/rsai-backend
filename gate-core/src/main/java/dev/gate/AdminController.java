@@ -52,7 +52,8 @@ public class AdminController {
             DataController.clearCache();
             AnnouncementsController.clearCache();
             CongestionController.clearCache();
-            logger.info("cache cleared by={}", ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL));
+            String clearedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
+            logger.info("cache cleared by=" + clearedBy);
             ObjectNode res = mapper.createObjectNode();
             res.put("ok", true);
             ArrayNode cleared = res.putArray("cleared");
