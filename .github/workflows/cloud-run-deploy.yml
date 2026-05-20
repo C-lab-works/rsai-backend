@@ -13,7 +13,141 @@ env:
   VPC_CONNECTOR: ${{ vars.GCP_VPC_CONNECTOR }}
 
 jobs:
-  deploy:
+  # ── Spot VMでの高速ビルド（失敗しても続行）
+  deploy-fast:
+    runs-on: [self-hosted, spot]
+    continue-on-error: true
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push to Artifact Registry
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Generate Cloud Run service YAML
+        run: |
+          cat > service.yaml <<EOF
+          apiVersion: serving.knative.dev/v1
+          kind: Service
+          metadata:
+            name: ${{ env.SERVICE_NAME }}
+            labels:
+              cloud.googleapis.com/location: ${{ env.REGION }}
+          spec:
+            template:
+              metadata:
+                annotations:
+                  autoscaling.knative.dev/minScale: "0"
+                  autoscaling.knative.dev/maxScale: "10"
+                  run.googleapis.com/cpu-throttling: "false"
+                  run.googleapis.com/startup-cpu-boost: "true"
+                  run.googleapis.com/execution-environment: gen2
+                  run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
+                  run.googleapis.com/vpc-access-egress: all-traffic
+              spec:
+                containerConcurrency: 80
+                timeoutSeconds: 60
+                containers:
+                  - name: app
+                    image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+                    ports:
+                      - name: http1
+                        containerPort: 8080
+                    resources:
+                      limits:
+                        cpu: "1"
+                        memory: 512Mi
+                    env:
+                      - name: DB_HOST
+                        value: "${{ secrets.DB_HOST }}"
+                      - name: DB_PORT
+                        value: "${{ secrets.DB_PORT }}"
+                      - name: DB_NAME
+                        value: "${{ secrets.DB_NAME }}"
+                      - name: DB_USER
+                        value: "${{ secrets.DB_USER }}"
+                      - name: DB_PASSWORD
+                        value: "${{ secrets.DB_PASSWORD }}"
+                      - name: DB_SSL
+                        value: "${{ secrets.DB_SSL }}"
+                      - name: API_KEY
+                        value: "${{ secrets.API_KEY }}"
+                      - name: READ_ONLY_KEY
+                        value: "${{ secrets.READ_ONLY_KEY }}"
+                      - name: CORS_ALLOWED_ORIGIN
+                        value: "${{ secrets.CORS_ALLOWED_ORIGIN }}"
+                      - name: CF_ACCESS_AUD
+                        value: "${{ secrets.CF_ACCESS_AUD }}"
+                      - name: CF_ACCESS_TEAM_DOMAIN
+                        value: "${{ secrets.CF_ACCESS_TEAM_DOMAIN }}"
+                      - name: DISCORD_WEBHOOK_URL
+                        value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
+                      - name: ADMIN_EMAILS
+                        value: "${{ secrets.ADMIN_EMAILS }}"
+          EOF
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run services replace service.yaml \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-latest \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --member="allUsers" \
+            --role="roles/run.invoker" 2>/dev/null || true
+
+      - name: Fetch Cloud Run logs on failure
+        if: failure()
+        continue-on-error: true
+        run: |
+          REVISION=$(gcloud run revisions list \
+            --service="${{ env.SERVICE_NAME }}" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --format="value(metadata.name)" \
+            --limit=1)
+          echo "=== Logs for revision: $REVISION ==="
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${{ env.SERVICE_NAME }}\" AND resource.labels.revision_name=\"$REVISION\"" \
+            --project="${{ env.PROJECT_ID }}" \
+            --limit=100 \
+            --order=asc \
+            --format="table(timestamp,textPayload)" 2>&1 || true
+
+  # ── Spot VM失敗時のGitHub-hostedフォールバック
+  deploy-fallback:
+    needs: deploy-fast
+    if: needs.deploy-fast.result == 'failure'
     runs-on: ubuntu-latest
     permissions:
       contents: read
