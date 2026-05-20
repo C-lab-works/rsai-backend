@@ -48,11 +48,22 @@ public class AdminController {
 
     @PostMapping("/admin/cache/clear")
     public void clearCache(Context ctx) {
-        DataController.clearCache();
-        AnnouncementsController.clearCache();
-        CongestionController.clearCache();
-        logger.info("cache cleared by={}", ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL));
-        ctx.json(Map.of("ok", true, "cleared", List.of("events", "food", "map", "announcements", "congestion")));
+        try {
+            DataController.clearCache();
+            AnnouncementsController.clearCache();
+            CongestionController.clearCache();
+            logger.info("cache cleared by={}", ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL));
+            ObjectNode res = mapper.createObjectNode();
+            res.put("ok", true);
+            ArrayNode cleared = res.putArray("cleared");
+            for (String key : new String[]{"events", "food", "map", "announcements", "congestion"}) {
+                cleared.add(key);
+            }
+            ctx.json(res);
+        } catch (Exception e) {
+            logger.error("clearCache error", e);
+            ctx.status(500).json(Map.of("error", "Cache clear failed: " + e.getMessage()));
+        }
     }
 
     @GetMapping("/admin/debug/503")
