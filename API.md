@@ -1,6 +1,6 @@
 # rsai-backend API リファレンス
 
-Base URL: `https://api.r-sai2026.site`
+Base URL: `https://v2.r-sai2026.site`
 
 ---
 
