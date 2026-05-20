@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 10) {
-                logger.info("Seed data v10 already present — skipping");
+            if (v >= 11) {
+                logger.info("Seed data v11 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -62,8 +62,12 @@ public class DataSeeder {
                 logger.info("Migrating schema v9 -> v10");
                 migrateV9(conn);
             }
-            setSeedVersion(conn, 10);
-            logger.info("Seed data v10 ready");
+            if (v <= 10) {
+                logger.info("Migrating schema v10 -> v11");
+                migrateV10(conn);
+            }
+            setSeedVersion(conn, 11);
+            logger.info("Seed data v11 ready");
         }
     }
 
@@ -176,6 +180,12 @@ public class DataSeeder {
             exec(conn, "ALTER TABLE locations ADD COLUMN y DOUBLE");
             logger.info("Added y column to locations");
         } catch (Exception ignored) {}
+    }
+
+    private static void migrateV10(Connection conn) throws Exception {
+        exec(conn, "ALTER TABLE locations ADD COLUMN IF NOT EXISTS x DOUBLE");
+        exec(conn, "ALTER TABLE locations ADD COLUMN IF NOT EXISTS y DOUBLE");
+        logger.info("Ensured x, y columns on locations");
     }
 
     // ── DDL ───────────────────────────────────────────────────
