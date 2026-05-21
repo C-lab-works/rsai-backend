@@ -22,7 +22,7 @@ spec:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "0"
     spec:
-      containerConcurrency: 80
+      containerConcurrency: 120
       timeoutSeconds: 60
       containers:
         - image: REGION-docker.pkg.dev/PROJECT_ID/rsai-backend/rsai-backend:latest

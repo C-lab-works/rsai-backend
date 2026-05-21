@@ -111,7 +111,7 @@ jobs:
                   run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
                   run.googleapis.com/vpc-access-egress: all-traffic
               spec:
-                containerConcurrency: 80
+                containerConcurrency: 120
                 timeoutSeconds: 60
                 containers:
                   - name: app
@@ -247,7 +247,7 @@ jobs:
                   run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
                   run.googleapis.com/vpc-access-egress: all-traffic
               spec:
-                containerConcurrency: 80
+                containerConcurrency: 120
                 timeoutSeconds: 60
                 containers:
                   - name: app
