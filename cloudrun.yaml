@@ -43,11 +43,11 @@ spec:
           startupProbe:
             httpGet:
               path: /health
-            initialDelaySeconds: 0
+            initialDelaySeconds: 3
             periodSeconds: 1
-            failureThreshold: 60   # 最大60秒待つ（Cloud SQL接続 + スキーマ適用を想定）
-            timeoutSeconds: 2
+            failureThreshold: 60
+            timeoutSeconds: 5
           resources:
             limits:
-              cpu: "1"
-              memory: 1Gi
+              cpu: "2"
+              memory: 2Gi
