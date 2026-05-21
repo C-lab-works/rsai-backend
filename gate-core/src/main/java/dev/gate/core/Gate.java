@@ -125,7 +125,16 @@ public class Gate {
     public GateServer start(int port) throws Exception {
         started = true;
         // Java 21 Virtual Threads via Jetty's official API
-        QueuedThreadPool threadPool = new QueuedThreadPool();
+        // CancelledKeyException はコネクション切断時に Jetty が内部的に発生させる既知のノイズ。
+        // ThreadGroup の uncaughtException をオーバーライドしてスレッドレベルで抑制する。
+        ThreadGroup jettyGroup = new ThreadGroup("jetty") {
+            @Override
+            public void uncaughtException(Thread t, Throwable e) {
+                if (e instanceof java.nio.channels.CancelledKeyException) return;
+                super.uncaughtException(t, e);
+            }
+        };
+        QueuedThreadPool threadPool = new QueuedThreadPool(200, 8, 60000, -1, null, jettyGroup);
         threadPool.setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
         Server server = new Server(threadPool);
         ServerConnector connector = new ServerConnector(server);
