@@ -3,12 +3,6 @@ name: Deploy to Cloud Run
 on:
   push:
     branches: [master]
-  workflow_dispatch:
-    inputs:
-      run_load_test:
-        description: 'デプロイ後に7000リクエストのロードテストを実行する'
-        type: boolean
-        default: false
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
