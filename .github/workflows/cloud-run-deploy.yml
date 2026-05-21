@@ -162,8 +162,7 @@ jobs:
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
                         value: "${{ secrets.ADMIN_EMAILS }}"
-                      - name: SKIP_CF_IP_CHECK
-                        value: "${{ inputs.run_load_test == true && 'true' || 'false' }}"
+
           EOF
 
       - name: Deploy to Cloud Run
@@ -300,8 +299,7 @@ jobs:
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
                         value: "${{ secrets.ADMIN_EMAILS }}"
-                      - name: SKIP_CF_IP_CHECK
-                        value: "${{ inputs.run_load_test == true && 'true' || 'false' }}"
+
           EOF
 
       - name: Deploy to Cloud Run
