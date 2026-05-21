@@ -24,13 +24,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @GateController
 public class AdminController {
 
     private static final Logger logger = new Logger(AdminController.class);
-    private final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
+    private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
 
     // Allowlist: only these leading keywords are permitted in the SQL console.
     // ALTER is allowed only when followed by TABLE (see execSql).
@@ -353,7 +356,7 @@ public class AdminController {
                 .append(colName).append("` ").append(colType);
             if (notNull) sb.append(" NOT NULL");
             if (defaultVal != null && !defaultVal.isEmpty()) {
-                if (!defaultVal.matches("[a-zA-Z0-9._\\-]+")) {
+                if (!DEFAULT_VALUE_PATTERN.matcher(defaultVal).matches()) {
                     ctx.status(400).json(Map.of("error", "デフォルト値に使えない文字が含まれています")); return;
                 }
                 sb.append(" DEFAULT '").append(defaultVal).append("'");
@@ -639,7 +642,7 @@ public class AdminController {
     }
 
     private boolean isValidIdentifier(String s) {
-        return s != null && s.matches("[a-zA-Z0-9_]+");
+        return s != null && IDENTIFIER_PATTERN.matcher(s).matches();
     }
 
     private Object normalizeValue(Object val) {

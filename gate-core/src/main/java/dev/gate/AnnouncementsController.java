@@ -21,9 +21,9 @@ public class AnnouncementsController {
 
     private static final Logger logger = new Logger(AnnouncementsController.class);
     private static final long CACHE_TTL_MS = 30_000L;
-    private final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private record CacheEntry(Object data, long expiresAt) {}
+    private record CacheEntry(String json, long expiresAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private static final AtomicBoolean refreshing = new AtomicBoolean(false);
 
@@ -34,7 +34,7 @@ public class AnnouncementsController {
         CacheEntry entry = cache.get("announcements");
         if (entry != null) {
             ctx.header("Cache-Control", "public, max-age=30");
-            ctx.json(entry.data());
+            ctx.jsonRaw(entry.json());
             if (System.currentTimeMillis() >= entry.expiresAt()) {
                 scheduleRefresh();
             }
@@ -42,10 +42,10 @@ public class AnnouncementsController {
         }
         // 初回のみ同期取得
         try {
-            Object data = fetchAnnouncementsFromDb();
-            cache.put("announcements", new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
+            String json = fetchAnnouncementsFromDb();
+            cache.put("announcements", new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
             ctx.header("Cache-Control", "public, max-age=30");
-            ctx.json(data);
+            ctx.jsonRaw(json);
         } catch (Exception e) {
             logger.error("announcements error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -56,8 +56,8 @@ public class AnnouncementsController {
         if (!refreshing.compareAndSet(false, true)) return;
         Thread.ofVirtual().start(() -> {
             try {
-                Object data = fetchAnnouncementsFromDb();
-                cache.put("announcements", new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
+                String json = fetchAnnouncementsFromDb();
+                cache.put("announcements", new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
             } catch (Exception e) {
                 logger.warn("Background announcements cache refresh failed: " + e.getMessage());
             } finally {
@@ -66,7 +66,7 @@ public class AnnouncementsController {
         });
     }
 
-    private Object fetchAnnouncementsFromDb() throws Exception {
+    private String fetchAnnouncementsFromDb() throws Exception {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -75,7 +75,7 @@ public class AnnouncementsController {
                 "WHERE (display_from  IS NULL OR display_from  <= NOW()) " +
                 "  AND (display_until IS NULL OR display_until >= NOW()) " +
                 "ORDER BY is_emergency DESC, id DESC")) {
-            ObjectNode root = mapper.createObjectNode();
+            ObjectNode root = MAPPER.createObjectNode();
             ArrayNode arr  = root.putArray("announcements");
             while (rs.next()) {
                 ObjectNode n = arr.addObject();
@@ -88,7 +88,7 @@ public class AnnouncementsController {
                 if (from  != null) n.put("displayFrom",  from);
                 if (until != null) n.put("displayUntil", until);
             }
-            return root;
+            return MAPPER.writeValueAsString(root);
         }
     }
 }

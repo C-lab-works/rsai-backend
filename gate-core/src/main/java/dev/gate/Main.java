@@ -50,7 +50,7 @@ public class Main {
         // DB初期化・シード・メトリクスをバックグラウンドで起動。失敗時はリトライ（クラッシュループ回避）
         startDatabaseInit(dbConfig);
 
-        cfAccessAuth.prefetchJwks();
+        Thread.ofVirtual().start(cfAccessAuth::prefetchJwks);
         Runtime.getRuntime().addShutdownHook(
                 new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
 

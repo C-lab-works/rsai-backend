@@ -10,16 +10,17 @@ import java.util.Map;
 public class ApiKeyAuth implements Handler {
 
     private static final String HEADER = "X-API-Key";
-    private final String adminKey;
-    private final String readOnlyKey;
+    private final byte[] adminKeyBytes;
+    private final byte[] readOnlyKeyBytes;
 
     public ApiKeyAuth() {
         String key = System.getenv("API_KEY");
         if (key == null || key.isBlank()) {
             throw new IllegalStateException("API_KEY environment variable is not set");
         }
-        this.adminKey = key;
-        this.readOnlyKey = System.getenv("READ_ONLY_KEY");
+        this.adminKeyBytes = key.getBytes(StandardCharsets.UTF_8);
+        String rok = System.getenv("READ_ONLY_KEY");
+        this.readOnlyKeyBytes = rok != null ? rok.getBytes(StandardCharsets.UTF_8) : null;
     }
 
     @Override
@@ -34,9 +35,9 @@ public class ApiKeyAuth implements Handler {
             return;
         }
 
-        if (constantEquals(provided, adminKey)) return;
+        if (constantEquals(provided, adminKeyBytes)) return;
 
-        if (readOnlyKey != null && constantEquals(provided, readOnlyKey)) {
+        if (readOnlyKeyBytes != null && constantEquals(provided, readOnlyKeyBytes)) {
             if (ctx.path().startsWith("/admin")) {
                 ctx.status(403).json(Map.of("error", "Forbidden: admin access requires admin key")).halt();
                 return;
@@ -50,10 +51,8 @@ public class ApiKeyAuth implements Handler {
         ctx.status(401).json(Map.of("error", "Unauthorized")).halt();
     }
 
-    private static boolean constantEquals(String a, String b) {
+    private static boolean constantEquals(String a, byte[] b) {
         if (a == null || b == null) return false;
-        return MessageDigest.isEqual(
-            a.getBytes(StandardCharsets.UTF_8),
-            b.getBytes(StandardCharsets.UTF_8));
+        return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b);
     }
 }
