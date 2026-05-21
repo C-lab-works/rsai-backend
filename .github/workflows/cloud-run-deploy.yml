@@ -196,7 +196,7 @@ jobs:
   # ── Spot VM失敗時のGitHub-hostedフォールバック
   deploy-fallback:
     needs: [start-runner, deploy-fast]
-    if: contains(fromJSON('["failure","cancelled"]'), needs.deploy-fast.result)
+    if: always() && (needs.start-runner.result == 'failure' || contains(fromJSON('["failure","cancelled"]'), needs.deploy-fast.result))
     runs-on: ubuntu-latest
     permissions:
       contents: read
