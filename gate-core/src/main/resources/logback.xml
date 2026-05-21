@@ -1,4 +1,6 @@
 <configuration>
+    <turboFilter class="dev.gate.logging.CancelledKeyExceptionFilter"/>
+
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{HH:mm:ss} [%level] %logger{20} - %msg%n</pattern>
