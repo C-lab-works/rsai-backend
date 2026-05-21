@@ -121,8 +121,15 @@ jobs:
                         containerPort: 8080
                     resources:
                       limits:
-                        cpu: "1"
-                        memory: 512Mi
+                        cpu: "2"
+                        memory: 1Gi
+                    startupProbe:
+                      httpGet:
+                        path: /health
+                      initialDelaySeconds: 3
+                      periodSeconds: 1
+                      failureThreshold: 60
+                      timeoutSeconds: 5
                     env:
                       - name: DB_HOST
                         value: "${{ secrets.DB_HOST }}"
@@ -254,6 +261,13 @@ jobs:
                       limits:
                         cpu: "2"
                         memory: 1Gi
+                    startupProbe:
+                      httpGet:
+                        path: /health
+                      initialDelaySeconds: 3
+                      periodSeconds: 1
+                      failureThreshold: 60
+                      timeoutSeconds: 5
                     env:
                       - name: DB_HOST
                         value: "${{ secrets.DB_HOST }}"
