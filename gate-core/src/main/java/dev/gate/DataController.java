@@ -25,9 +25,9 @@ public class DataController {
     private static final Logger logger = new Logger(DataController.class);
     private static final long CACHE_TTL_MS = 30 * 1000L;
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = new ObjectMapper();
 
-    private record CacheEntry(Object data, long expiresAt) {}
+    private record CacheEntry(String json, long expiresAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicBoolean> refreshing = new ConcurrentHashMap<>();
 
@@ -51,7 +51,7 @@ public class DataController {
         CacheEntry entry = cache.get(key);
         if (entry != null) {
             ctx.header("Cache-Control", "public, max-age=30");
-            ctx.json(entry.data());
+            ctx.jsonRaw(entry.json());
             if (System.currentTimeMillis() >= entry.expiresAt()) {
                 scheduleRefresh(key, builder);
             }
@@ -59,10 +59,10 @@ public class DataController {
         }
         // 初回のみ同期取得
         try (Connection conn = Database.getConnection()) {
-            Object data = builder.build(conn);
-            cache.put(key, new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
+            String json = mapper.writeValueAsString(builder.build(conn));
+            cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
             ctx.header("Cache-Control", "public, max-age=30");
-            ctx.json(data);
+            ctx.jsonRaw(json);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -74,8 +74,8 @@ public class DataController {
         if (!flag.compareAndSet(false, true)) return;
         Thread.ofVirtual().start(() -> {
             try (Connection conn = Database.getConnection()) {
-                Object data = builder.build(conn);
-                cache.put(key, new CacheEntry(data, System.currentTimeMillis() + CACHE_TTL_MS));
+                String json = mapper.writeValueAsString(builder.build(conn));
+                cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
             } catch (Exception e) {
                 logger.warn("Background cache refresh failed for '{}': {}", key, e.getMessage());
             } finally {

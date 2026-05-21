@@ -94,6 +94,12 @@ public class Context {
         return this;
     }
 
+    public Context jsonRaw(String json) {
+        this.responseBody = json;
+        this.contentType = "application/json; charset=utf-8";
+        return this;
+    }
+
     public Context header(String key, String value) {
         if (key == null || key.contains("\r") || key.contains("\n") ||
             value == null || value.contains("\r") || value.contains("\n")) {
