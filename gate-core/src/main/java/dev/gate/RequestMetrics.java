@@ -8,6 +8,7 @@ import java.sql.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 public class RequestMetrics {
@@ -18,12 +19,14 @@ public class RequestMetrics {
     private static final RequestMetrics INSTANCE = new RequestMetrics();
 
     // 時間別リングバッファ
-    private final AtomicLong[] hourlyCounts  = new AtomicLong[HOURS];
-    private final AtomicLong[] hourlyErrors  = new AtomicLong[HOURS];
-    private final long[]       slotHour      = new long[HOURS];
-    private final Object[]     slotLocks     = new Object[HOURS];
-    private final long[]       lastFlushedReq = new long[HOURS];
-    private final long[]       lastFlushedErr = new long[HOURS];
+    private final AtomicLong[]    hourlyCounts   = new AtomicLong[HOURS];
+    private final AtomicLong[]    hourlyErrors   = new AtomicLong[HOURS];
+    private final long[]          slotHour       = new long[HOURS];
+    // ReentrantLockを使う。Java 21 のVirtual Threadで synchronized を使うと
+    // キャリアスレッドがピン留めされるため、高並列時にスループットが落ちる。
+    private final ReentrantLock[] slotLocks      = new ReentrantLock[HOURS];
+    private final long[]          lastFlushedReq = new long[HOURS];
+    private final long[]          lastFlushedErr = new long[HOURS];
 
     // エンドポイント集計
     private final ConcurrentHashMap<String, LongAdder> endpointCounts = new ConcurrentHashMap<>();
@@ -48,7 +51,7 @@ public class RequestMetrics {
             hourlyCounts[i]   = new AtomicLong(0);
             hourlyErrors[i]   = new AtomicLong(0);
             slotHour[i]       = currentHour - (HOURS - 1 - i);
-            slotLocks[i]      = new Object();
+            slotLocks[i]      = new ReentrantLock();
         }
         for (int i = 0; i < BUCKETS.length; i++) {
             histogram[i]        = new AtomicLong(0);
@@ -87,12 +90,15 @@ public class RequestMetrics {
                         long err = rs.getLong("errors");
                         int  s   = (int)(h % HOURS);
                         if (s < 0) s += HOURS;
-                        synchronized (slotLocks[s]) {
+                        slotLocks[s].lock();
+                        try {
                             slotHour[s] = h;
                             hourlyCounts[s].set(req);
                             hourlyErrors[s].set(err);
                             lastFlushedReq[s] = req;
                             lastFlushedErr[s] = err;
+                        } finally {
+                            slotLocks[s].unlock();
                         }
                     }
                 }
@@ -147,7 +153,8 @@ public class RequestMetrics {
                 int  s          = (int)(targetHour % HOURS);
                 if (s < 0) s += HOURS;
                 long req, err, diffReq, diffErr;
-                synchronized (slotLocks[s]) {
+                slotLocks[s].lock();
+                try {
                     if (slotHour[s] != targetHour) continue;
                     req     = hourlyCounts[s].get();
                     err     = hourlyErrors[s].get();
@@ -156,6 +163,8 @@ public class RequestMetrics {
                     if (diffReq <= 0 && diffErr <= 0) continue;
                     lastFlushedReq[s] = req;
                     lastFlushedErr[s] = err;
+                } finally {
+                    slotLocks[s].unlock();
                 }
                 ps.setLong(1, targetHour);
                 ps.setLong(2, diffReq > 0 ? diffReq : 0);
@@ -230,7 +239,8 @@ public class RequestMetrics {
 
         long hour = epochHour();
         int  slot = (int)(hour % HOURS);
-        synchronized (slotLocks[slot]) {
+        slotLocks[slot].lock();
+        try {
             if (slotHour[slot] != hour) {
                 hourlyCounts[slot].set(1);
                 hourlyErrors[slot].set(isError ? 1 : 0);
@@ -241,6 +251,8 @@ public class RequestMetrics {
                 hourlyCounts[slot].incrementAndGet();
                 if (isError) hourlyErrors[slot].incrementAndGet();
             }
+        } finally {
+            slotLocks[slot].unlock();
         }
 
         if (isError) {

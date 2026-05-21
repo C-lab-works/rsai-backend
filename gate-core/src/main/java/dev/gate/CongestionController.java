@@ -28,8 +28,12 @@ public class CongestionController {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    private static final long CACHE_TTL_MS = 10_000L;
-    private static final AtomicReference<String> cachedData = new AtomicReference<>();
+    // 他エンドポイントと揃えて30秒。2vCPUで瞬間7000req/sスパイクを受けやすくする。
+    private static final long CACHE_TTL_MS = 30_000L;
+    // CDNもキャッシュしてオリジン負荷を桁で下げる。
+    // 混雑レベルは最大30秒遅れて反映される（更新時はオリジン側 clearCache で次回取得を即トリガ）。
+    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+    private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();
     private static final AtomicLong cacheExpiresAt = new AtomicLong(0);
     private static final AtomicBoolean refreshing = new AtomicBoolean(false);
 
@@ -37,10 +41,10 @@ public class CongestionController {
 
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
-        String cached = cachedData.get();
+        byte[] cached = cachedData.get();
         if (cached != null) {
-            ctx.header("Cache-Control", "no-store");
-            ctx.jsonRaw(cached);
+            ctx.header("Cache-Control", CACHE_CONTROL);
+            ctx.jsonBytes(cached);
             if (System.currentTimeMillis() >= cacheExpiresAt.get()) {
                 scheduleRefresh();
             }
@@ -48,11 +52,11 @@ public class CongestionController {
         }
         // 初回のみ同期取得
         try {
-            String json = fetchCongestionFromDb();
+            byte[] json = fetchCongestionFromDb();
             cachedData.set(json);
             cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
-            ctx.header("Cache-Control", "no-store");
-            ctx.jsonRaw(json);
+            ctx.header("Cache-Control", CACHE_CONTROL);
+            ctx.jsonBytes(json);
         } catch (Exception e) {
             logger.error("getCongestion error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
@@ -63,7 +67,7 @@ public class CongestionController {
         if (!refreshing.compareAndSet(false, true)) return;
         Thread.ofVirtual().start(() -> {
             try {
-                String json = fetchCongestionFromDb();
+                byte[] json = fetchCongestionFromDb();
                 cachedData.set(json);
                 cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
             } catch (Exception e) {
@@ -74,7 +78,7 @@ public class CongestionController {
         });
     }
 
-    private String fetchCongestionFromDb() throws Exception {
+    private byte[] fetchCongestionFromDb() throws Exception {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -107,7 +111,7 @@ public class CongestionController {
                 String project = rs.getString("project");
                 if (project != null) n.put("project", project);
             }
-            return MAPPER.writeValueAsString(arr);
+            return MAPPER.writeValueAsBytes(arr);
         }
     }
     // 管理者が混雑レベルを更新するエンドポイント。認証必須。

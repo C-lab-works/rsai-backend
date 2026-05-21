@@ -13,11 +13,14 @@ public class Context {
 
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Logger logger = new Logger(Context.class);
+    private static final byte[] EMPTY_BYTES = new byte[0];
     static final int MAX_BODY_SIZE = 1024 * 1024; // 1 MB default
 
     private final String path;
     private final HttpServletRequest request;
-    private String responseBody = "";
+    // レスポンスボディは byte[] で保持し、PrintWriter経由のString→char[]→byte[]の二重変換を避ける。
+    // これによりGraalVM Native Imageでもサーブレットへ直接write(byte[])でき、CPU/メモリコピーを削減できる。
+    private byte[] responseBodyBytes = EMPTY_BYTES;
     private String contentType = "text/plain; charset=utf-8";
     private int statusCode = 200;
     private final Map<String, String> headers = new HashMap<>();
@@ -82,11 +85,14 @@ public class Context {
     public Context status(int code) { this.statusCode = code; return this; }
     public int statusCode() { return statusCode; }
 
-    public Context result(String body) { this.responseBody = body; return this; }
+    public Context result(String body) {
+        this.responseBodyBytes = body == null ? EMPTY_BYTES : body.getBytes(StandardCharsets.UTF_8);
+        return this;
+    }
 
     public Context json(Object object) {
         try {
-            this.responseBody = mapper.writeValueAsString(object);
+            this.responseBodyBytes = mapper.writeValueAsBytes(object);
             this.contentType = "application/json; charset=utf-8";
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize response: " + e.getMessage(), e);
@@ -95,7 +101,18 @@ public class Context {
     }
 
     public Context jsonRaw(String json) {
-        this.responseBody = json;
+        this.responseBodyBytes = json == null ? EMPTY_BYTES : json.getBytes(StandardCharsets.UTF_8);
+        this.contentType = "application/json; charset=utf-8";
+        return this;
+    }
+
+    /**
+     * 既にUTF-8でシリアライズ済みのバイト列を直接渡す。
+     * キャッシュ層が writeValueAsBytes の結果を保持する場合に最も効率的。
+     * 引数の配列はそのまま保持するため、呼び出し側で書き換えてはならない。
+     */
+    public Context jsonBytes(byte[] json) {
+        this.responseBodyBytes = json == null ? EMPTY_BYTES : json;
         this.contentType = "application/json; charset=utf-8";
         return this;
     }
@@ -109,7 +126,14 @@ public class Context {
         return this;
     }
 
-    public String responseBody() { return responseBody; }
+    /**
+     * 後方互換用。可能なら responseBodyBytes() を使うこと。
+     */
+    public String responseBody() {
+        return new String(responseBodyBytes, StandardCharsets.UTF_8);
+    }
+
+    public byte[] responseBodyBytes() { return responseBodyBytes; }
     public String contentType() { return contentType; }
     public Map<String, String> headers() { return Collections.unmodifiableMap(headers); }
 
