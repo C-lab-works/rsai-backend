@@ -4,6 +4,11 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      run_load_test:
+        description: 'デプロイ後に7000リクエストのロードテストを実行する'
+        type: boolean
+        default: false
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -157,6 +162,8 @@ jobs:
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
                         value: "${{ secrets.ADMIN_EMAILS }}"
+                      - name: SKIP_CF_IP_CHECK
+                        value: "${{ inputs.run_load_test == true && 'true' || 'false' }}"
           EOF
 
       - name: Deploy to Cloud Run
@@ -293,6 +300,8 @@ jobs:
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
                         value: "${{ secrets.ADMIN_EMAILS }}"
+                      - name: SKIP_CF_IP_CHECK
+                        value: "${{ inputs.run_load_test == true && 'true' || 'false' }}"
           EOF
 
       - name: Deploy to Cloud Run
@@ -328,3 +337,39 @@ jobs:
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
 
+  # ── CF バイパスしたロードテスト（workflow_dispatch で run_load_test=true 時のみ）
+  load-test:
+    needs: [deploy-fast, deploy-fallback]
+    if: github.event_name == 'workflow_dispatch' && inputs.run_load_test == true && (needs.deploy-fast.result == 'success' || needs.deploy-fallback.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Get Cloud Run URL
+        id: url
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --format="value(status.url)")
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Install hey
+        run: |
+          curl -sSfL https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 -o hey
+          chmod +x hey
+
+      - name: Run load test (7000 requests, concurrency 200)
+        run: |
+          ./hey -n 7000 -c 200 \
+            -H "X-API-Key: ${{ secrets.READ_ONLY_KEY }}" \
+            "${{ steps.url.outputs.url }}/congestion"
