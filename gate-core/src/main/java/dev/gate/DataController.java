@@ -27,7 +27,8 @@ public class DataController {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private record CacheEntry(String json, long expiresAt) {}
+    // キャッシュはシリアライズ済みUTF-8バイト列を保持し、リクエストごとのString生成/byte変換を省く。
+    private record CacheEntry(byte[] json, long expiresAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicBoolean> refreshing = new ConcurrentHashMap<>();
 
@@ -47,11 +48,15 @@ public class DataController {
     @FunctionalInterface
     interface Builder { Object build(Connection conn) throws Exception; }
 
+    // public,max-age=30 だとブラウザに30秒保持される。CDNもキャッシュできるよう s-maxage を分けて付与し、
+    // stale-while-revalidate で背面リフレッシュ中のオリジン負荷スパイクを押さえる。
+    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+
     private void serve(Context ctx, String key, Builder builder) {
         CacheEntry entry = cache.get(key);
         if (entry != null) {
-            ctx.header("Cache-Control", "public, max-age=30");
-            ctx.jsonRaw(entry.json());
+            ctx.header("Cache-Control", CACHE_CONTROL);
+            ctx.jsonBytes(entry.json());
             if (System.currentTimeMillis() >= entry.expiresAt()) {
                 scheduleRefresh(key, builder);
             }
@@ -59,10 +64,10 @@ public class DataController {
         }
         // 初回のみ同期取得
         try (Connection conn = Database.getConnection()) {
-            String json = mapper.writeValueAsString(builder.build(conn));
+            byte[] json = mapper.writeValueAsBytes(builder.build(conn));
             cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
-            ctx.header("Cache-Control", "public, max-age=30");
-            ctx.jsonRaw(json);
+            ctx.header("Cache-Control", CACHE_CONTROL);
+            ctx.jsonBytes(json);
         } catch (Exception e) {
             logger.error("DB error serving '{}': {}", key, e.getMessage());
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -74,7 +79,7 @@ public class DataController {
         if (!flag.compareAndSet(false, true)) return;
         Thread.ofVirtual().start(() -> {
             try (Connection conn = Database.getConnection()) {
-                String json = mapper.writeValueAsString(builder.build(conn));
+                byte[] json = mapper.writeValueAsBytes(builder.build(conn));
                 cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
             } catch (Exception e) {
                 logger.warn("Background cache refresh failed for '{}': {}", key, e.getMessage());

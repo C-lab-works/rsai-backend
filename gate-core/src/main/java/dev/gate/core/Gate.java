@@ -14,7 +14,7 @@ import org.eclipse.jetty.websocket.server.config.JettyWebSocketServletContainerI
 
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.OutputStream;
 import java.net.JarURLConnection;
 import java.net.URL;
 import java.nio.file.Paths;
@@ -239,9 +239,13 @@ public class Gate {
                 ctx.headers().forEach(response::setHeader);
                 response.setContentType(ctx.contentType());
 
-                PrintWriter writer = response.getWriter();
-                writer.print(ctx.responseBody());
-                writer.flush();
+                // String→char[]→byte[]の二重変換を避けるため、UTF-8 byte[] を直接書き込む。
+                // Content-Lengthも明示してチャンク化を抑制し、CDN/プロキシでのキャッシュ判定を安定させる。
+                byte[] body = ctx.responseBodyBytes();
+                response.setContentLength(body.length);
+                OutputStream out = response.getOutputStream();
+                if (body.length > 0) out.write(body);
+                out.flush();
             }
         }), "/*");
 

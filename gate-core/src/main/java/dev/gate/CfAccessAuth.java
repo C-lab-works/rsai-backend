@@ -20,11 +20,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 public class CfAccessAuth implements Handler {
@@ -40,6 +40,14 @@ public class CfAccessAuth implements Handler {
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
     private static final long CLOCK_SKEW_LEEWAY_SECS = 30L;
 
+    // JWT検証結果キャッシュ：トークン文字列 → (email or null, expiresAtEpochSec)
+    // 同一トークンが繰り返し来てもRSA検証は1回だけになる。
+    // キャッシュは10000件で上限を切り、超過時はクリア（最も古いものから抜く実装はGCコスト高いので簡易策）。
+    private static final int VERIFICATION_CACHE_MAX = 10_000;
+    // verifiedEmail が null の場合は検証失敗のネガティブキャッシュ
+    private record VerificationResult(String email, long expiresAtEpochSec) {}
+    private static final ConcurrentHashMap<String, VerificationResult> verificationCache = new ConcurrentHashMap<>();
+
     private static volatile Set<String> adminEmailsRef = Set.of();
 
     public static boolean isAdmin(String email) {
@@ -50,6 +58,8 @@ public class CfAccessAuth implements Handler {
     private final AtomicReference<ConcurrentHashMap<String, PublicKey>> keyCacheRef
             = new AtomicReference<>(new ConcurrentHashMap<>());
     private volatile Instant keysCachedAt = Instant.EPOCH;
+    // JWKS refresh は ReentrantLock を使用してVirtual Threadのキャリアピン留めを回避
+    private final ReentrantLock jwksLock = new ReentrantLock();
 
     private final String audience;
     private final String teamDomain;
@@ -106,13 +116,31 @@ public class CfAccessAuth implements Handler {
     public void prefetchJwks() {
         if (!enabled) return;
         try {
-            synchronized (this) {
+            jwksLock.lock();
+            try {
                 refreshKeysLocked();
+            } finally {
+                jwksLock.unlock();
             }
             logger.info("JWKS prefetch complete ({} keys cached)", keyCacheRef.get().size());
         } catch (Exception e) {
             logger.warn("JWKS prefetch failed (will retry on first request): {}", e.getMessage());
         }
+    }
+
+    /**
+     * JWT検証が必要なパスか判定する。
+     * <ul>
+     *   <li>/admin 以下：必須</li>
+     *   <li>POST /congestion/{code}：updated_by に検証済みemailが必要</li>
+     *   <li>それ以外：opportunistic検証は行わない（CPU節約）</li>
+     * </ul>
+     */
+    private static boolean needsJwtVerification(Context ctx) {
+        String path = ctx.path();
+        if (path.startsWith("/admin")) return true;
+        if ("POST".equalsIgnoreCase(ctx.method()) && path.startsWith("/congestion/")) return true;
+        return false;
     }
 
     @Override
@@ -128,16 +156,19 @@ public class CfAccessAuth implements Handler {
             return;
         }
 
+        // 大半のリクエスト（GET /events など）はJWT検証不要 → 即return
+        if (!needsJwtVerification(ctx)) return;
+
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
         if (ctx.path().startsWith("/admin")) {
-            // 管理エンドポイント: JWT が必須で、ADMIN_EMAILS に登録されたメールアドレスである必要がある（設定されている場合）
+            // 管理エンドポイント: JWT が必須で、ADMIN_EMAILS に登録されたメールアドレスである必要がある
             if (token == null || token.isBlank()) {
                 ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
                 return;
             }
             try {
-                String email = verifyAndExtractEmail(token);
+                String email = verifyAndExtractEmailCached(token);
                 if (!adminEmails.contains(email.toLowerCase())) {
                     logger.warn("Admin access denied for email={}", email);
                     ctx.status(403).json(Map.of("error", "Forbidden: admin access required")).halt();
@@ -149,12 +180,52 @@ public class CfAccessAuth implements Handler {
                 ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
             }
         } else if (token != null && !token.isBlank()) {
+            // POST /congestion/{code} 用：失敗してもhaltせず、updateCongestion側で401を返す
             try {
-                String email = verifyAndExtractEmail(token);
+                String email = verifyAndExtractEmailCached(token);
                 ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
             } catch (Exception e) {
                 logger.debug("CF Access JWT opportunistic extraction failed: {}", e.getMessage());
             }
+        }
+    }
+
+    /**
+     * 同一トークンの繰り返し検証をスキップするためのキャッシュ層。
+     * exp までは結果を再利用。失敗もネガティブキャッシュ（60秒）して総当たりを防ぐ。
+     */
+    private String verifyAndExtractEmailCached(String token) throws Exception {
+        long now = Instant.now().getEpochSecond();
+        VerificationResult cached = verificationCache.get(token);
+        if (cached != null && now < cached.expiresAtEpochSec()) {
+            if (cached.email() != null) return cached.email();
+            // ネガティブキャッシュ
+            throw new SecurityException("JWT previously rejected (cached)");
+        }
+
+        try {
+            String[] parts = token.split("\\.");
+            long exp = 0L;
+            if (parts.length == 3) {
+                try {
+                    JsonNode payload = mapper.readTree(decodeBase64Url(parts[1]));
+                    exp = payload.path("exp").asLong(0);
+                } catch (Exception ignored) {}
+            }
+            String email = verifyAndExtractEmail(token);
+            // キャッシュ満杯ならクリア（簡易策）
+            if (verificationCache.size() >= VERIFICATION_CACHE_MAX) {
+                verificationCache.clear();
+            }
+            long cacheExp = exp > 0 ? exp : (now + 300); // expが取れなければ5分
+            verificationCache.put(token, new VerificationResult(email, cacheExp));
+            return email;
+        } catch (Exception e) {
+            // ネガティブキャッシュ：60秒だけ拒否を記憶
+            if (verificationCache.size() < VERIFICATION_CACHE_MAX) {
+                verificationCache.put(token, new VerificationResult(null, now + 60));
+            }
+            throw e;
         }
     }
 
@@ -225,7 +296,8 @@ public class CfAccessAuth implements Handler {
             if (cached != null) return cached;
         }
 
-        synchronized (this) {
+        jwksLock.lock();
+        try {
             current = keyCacheRef.get();
             if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
                 PublicKey cached = current.get(kid);
@@ -237,12 +309,14 @@ public class CfAccessAuth implements Handler {
             PublicKey key = keyCacheRef.get().get(kid);
             if (key == null) throw new SecurityException("No JWK found for kid=" + kid);
             return key;
+        } finally {
+            jwksLock.unlock();
         }
     }
 
     /**
      * JWKS を取得し、キーキャッシュをアトミックに置き換える。
-     * {@code synchronized(this)} の下で呼び出す必要がある。
+     * {@code jwksLock.lock()} の下で呼び出す必要がある。
      */
     private void refreshKeysLocked() throws Exception {
         logger.info("Refreshing JWKS from {}", certsUrl);

@@ -8,6 +8,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Cloudflareのいずれかのプロキシ経由のリクエストのみを許可するフィルタ。
@@ -56,6 +57,12 @@ public class CloudflareIpFilter implements Handler {
     private final List<CidrBlock> blocks;
     private final boolean skipCheck;
 
+    // 文字列IP → Cloudflareマッチ結果のキャッシュ。InetAddress生成とCIDR線形走査を初回のみにする。
+    // 7000reqのスパイクで同一edge IPが何千回も見えるためデカで効く。
+    // キャッシュ上限とクリア閾値をもとにメモリ不足・多様なIP洪水を防ぐ。
+    private static final int IP_CACHE_MAX = 50_000;
+    private final ConcurrentHashMap<String, Boolean> ipMatchCache = new ConcurrentHashMap<>();
+
     public CloudflareIpFilter() {
         this.skipCheck = "true".equalsIgnoreCase(System.getenv("SKIP_CF_IP_CHECK"));
         if (skipCheck) {
@@ -102,17 +109,28 @@ public class CloudflareIpFilter implements Handler {
     // CIDRマッチング
 
     private boolean isCloudflareIp(String ipStr) {
+        Boolean cached = ipMatchCache.get(ipStr);
+        if (cached != null) return cached;
+
         InetAddress addr;
         try {
             addr = InetAddress.getByName(ipStr);
         } catch (UnknownHostException e) {
+            putIpCache(ipStr, false);
             return false;
         }
+        boolean matched = false;
         for (CidrBlock block : blocks) {
             if (addr.getClass() != block.network().getClass()) continue;
-            if (matches(addr, block)) return true;
+            if (matches(addr, block)) { matched = true; break; }
         }
-        return false;
+        putIpCache(ipStr, matched);
+        return matched;
+    }
+
+    private void putIpCache(String ipStr, boolean matched) {
+        if (ipMatchCache.size() >= IP_CACHE_MAX) ipMatchCache.clear();
+        ipMatchCache.put(ipStr, matched);
     }
 
     private boolean matches(InetAddress addr, CidrBlock block) {
