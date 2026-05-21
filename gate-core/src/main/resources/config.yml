@@ -7,5 +7,5 @@ database:
   name: rsai
   user: root
   password: ""
-  maxPoolSize: 33
+  maxPoolSize: 15
   ssl: false

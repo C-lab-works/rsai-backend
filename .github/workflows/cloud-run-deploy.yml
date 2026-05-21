@@ -109,7 +109,7 @@ jobs:
               metadata:
                 annotations:
                   autoscaling.knative.dev/minScale: "0"
-                  autoscaling.knative.dev/maxScale: "10"
+                  autoscaling.knative.dev/maxScale: "30"
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
@@ -246,7 +246,7 @@ jobs:
               metadata:
                 annotations:
                   autoscaling.knative.dev/minScale: "0"
-                  autoscaling.knative.dev/maxScale: "10"
+                  autoscaling.knative.dev/maxScale: "30"
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
