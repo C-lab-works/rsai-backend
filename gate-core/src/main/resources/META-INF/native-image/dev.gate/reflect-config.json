@@ -23,6 +23,9 @@
     "allDeclaredConstructors": true, "allDeclaredMethods": true, "allDeclaredFields": true },
   { "name": "dev.gate.core.Config$DatabaseConfig",
     "allDeclaredConstructors": true, "allDeclaredMethods": true, "allDeclaredFields": true },
+  { "name": "dev.gate.logging.CancelledKeyExceptionFilter",
+    "allDeclaredConstructors": true, "allDeclaredMethods": true },
+
   { "name": "ch.qos.logback.classic.Logger",
     "allDeclaredConstructors": true, "allDeclaredMethods": true },
   { "name": "ch.qos.logback.classic.PatternLayout",
