@@ -8,6 +8,7 @@ import dev.gate.core.GateServer;
 import dev.gate.core.Logger;
 
 import java.io.InputStream;
+import java.nio.channels.CancelledKeyException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -20,6 +21,16 @@ public class Main {
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
 
     public static void main(String[] args) throws Exception {
+        // Jetty の CancelledKeyException は接続クローズ時の既知の無害なノイズ。
+        // GraalVM native image はこれを uncaught exception として stderr に直接出力するため
+        // logback フィルタでは捕捉できず、ここで抑制する。
+        Thread.UncaughtExceptionHandler previousHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            if (throwable instanceof CancelledKeyException) return;
+            if (previousHandler != null) previousHandler.uncaughtException(thread, throwable);
+            else log.error("Uncaught exception in thread {}: {}", thread.getName(), throwable.getMessage(), throwable);
+        });
+
         String version = "unknown";
         try (InputStream vs = Main.class.getResourceAsStream("/version.txt")) {
             if (vs != null) version = new String(vs.readAllBytes(), StandardCharsets.UTF_8).trim();
