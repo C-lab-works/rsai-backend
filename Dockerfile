@@ -1,11 +1,8 @@
-# G1 GC は glibc 環境専用。musl は不可。
+# native-image:21 は Oracle Linux 10.1 ベース (GLIBC 2.39)。
+# ランタイムも OL10 に展わせることで GLIBC ミスマッチを解消。
 # GFTC は商用・本番利用も無料 (2023年以降): https://www.oracle.com/downloads/licenses/graal-free-license.html
 FROM container-registry.oracle.com/graalvm/native-image:21 AS build
 WORKDIR /app
-
-# ビルド環境の OS / GLIBC バージョンをログに出力して確定する。
-RUN cat /etc/os-release && ldd --version 2>&1 | head -3
-
 COPY settings.gradle.kts gradlew ./
 COPY gradle/ gradle/
 COPY gate-core/build.gradle.kts gate-core/
@@ -15,9 +12,8 @@ COPY gate-core/src gate-core/src
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-# TODO: 上の RUN のログで GLIBC バージョンを確認したら、
-#       合致するランタイムイメージに固定する。
-FROM oraclelinux:9-slim
+# OL10 = GLIBC 2.39。native-image:21 (OL10.1ベース) と一致。
+FROM oraclelinux:10-slim
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080
