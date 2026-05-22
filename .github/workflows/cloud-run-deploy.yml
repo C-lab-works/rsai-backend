@@ -161,6 +161,8 @@ jobs:
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
                         value: "${{ secrets.ADMIN_EMAILS }}"
+                      - name: LOG_LEVEL
+                        value: "${{ vars.LOG_LEVEL }}"
 
           EOF
 
@@ -310,6 +312,8 @@ jobs:
                         value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
                       - name: ADMIN_EMAILS
                         value: "${{ secrets.ADMIN_EMAILS }}"
+                      - name: LOG_LEVEL
+                        value: "${{ vars.LOG_LEVEL }}"
 
           EOF
 
