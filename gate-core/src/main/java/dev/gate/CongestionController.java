@@ -34,7 +34,8 @@ public class CongestionController {
     private static final AtomicLong lastFetchedAt = new AtomicLong(0);
     private static final AtomicBoolean refreshing = new AtomicBoolean(false);
     private static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
-    private static final long MAX_STALE_MS = 12 * 3600 * 1000L;
+    private static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
+    private static final long MAX_STALE_MS = 18 * 3600 * 1000L;
 
     public static void clearCache() { cacheExpiresAt.set(0); }
 
@@ -43,6 +44,7 @@ public class CongestionController {
         byte[] cached = cachedData.get();
         if (cached != null) {
             long now = System.currentTimeMillis();
+            // 「通常の状態(cacheExpiresAt!=0)」または「クリアされていても18時間以内」ならキャッシュを返す
             if (cacheExpiresAt.get() != 0 || (now - lastFetchedAt.get()) <= MAX_STALE_MS) {
                 ctx.header("Cache-Control", CACHE_CONTROL);
                 ctx.jsonBytes(cached);
@@ -52,6 +54,7 @@ public class CongestionController {
                 return;
             }
         }
+        // 初回、またはキャッシュが本当に古すぎる場合の同期取得
         try {
             byte[] json = fetchCongestionFromDb();
             cachedData.set(json);
@@ -71,17 +74,21 @@ public class CongestionController {
         if (!refreshing.compareAndSet(false, true)) return;
         Thread.ofVirtual().start(() -> {
             try {
+                // 成功した時だけ、新しいデータで丸ごと置き換える。
+                // これにより、DB側で削除された場所もキャッシュから自然に消える。
                 byte[] json = fetchCongestionFromDb();
                 cachedData.set(json);
                 long fetchedAt = System.currentTimeMillis();
                 cacheExpiresAt.set(fetchedAt + CACHE_TTL_MS);
                 lastFetchedAt.set(fetchedAt);
-                refreshFailCount.set(0);           
+                refreshFailCount.set(0);
+                hasNotifiedFailure.set(false); // 復旧したらリセット
             } catch (Exception e) {
+                // 失敗しても cachedData はそのまま（＝古いデータを使い続ける）
                 logger.warn("Background congestion cache refresh failed (using stale data): " + e.getMessage());
                 int fails = refreshFailCount.incrementAndGet();
-                if (fails == 3) {
-                    dev.gate.DiscordWebhook.sendError("CACHE", "/congestion", 500, "Background refresh failed 3 times: " + e.getMessage());
+                if (fails >= 3 && hasNotifiedFailure.compareAndSet(false, true)) {
+                    dev.gate.DiscordWebhook.sendError("CACHE", "/congestion", 500, "Background refresh failed " + fails + " times: " + e.getMessage());
                 }
             } finally {
                 refreshing.set(false);
