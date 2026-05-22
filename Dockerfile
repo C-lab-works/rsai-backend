@@ -15,7 +15,9 @@ COPY gate-core/src gate-core/src
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-FROM gcr.io/distroless/base-debian12
+# ビルドイメージ (Oracle Linux 8 / GLIBC 2.38) と同じ GLIBC を持つランタイムイメージを使用。
+# distroless/base-debian12 は GLIBC 2.36 止まりのため、ネイティブバイナリが起動できない。
+FROM oraclelinux:8-slim
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080
