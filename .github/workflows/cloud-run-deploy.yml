@@ -197,6 +197,18 @@ jobs:
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
 
+      # deploy-fast 失敗時に buildcache タグを削除し、
+      # fallback がクリーンなキャッシュで再ビルドできるようにする。
+      - name: Purge stale buildcache on failure
+        if: failure()
+        continue-on-error: true
+        run: |
+          gcloud artifacts docker tags delete \
+            "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache" \
+            --project="${{ env.PROJECT_ID }}" \
+            --quiet 2>/dev/null || true
+          echo "buildcache tag purged (or did not exist)"
+
   # ── Spot VM失敗時のGitHub-hostedフォールバック
   deploy-fallback:
     needs: [start-runner, deploy-fast]
@@ -227,7 +239,6 @@ jobs:
         with:
           context: .
           push: true
-          no-cache: true
           tags: |
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
