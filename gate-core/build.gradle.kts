@@ -49,10 +49,11 @@ graalvmNative {
                 "-H:+UnlockExperimentalVMOptions",
                 "-H:+AddAllCharsets",
                 "-H:+StaticExecutableWithDynamicLibC",
-                // G1 GC: 2 vCPU コンテナと 7000 req/s ピークを想定した場合、
-                // シリアル GC よりスループットが出やすく、GC ポーズも短くなる。
-                // Linux x86_64 でのみサポートされている (Cloud Run は Linux x86_64)。
-                "--gc=G1",
+                // デフォルトの Serial GC を使用。
+                // G1 GC は Oracle GraalVM (Enterprise/Free Tier) のみで GraalVM Community Edition では
+                // サポートされていないため、現状の Dockerfile ベース (graalvm-community-java21) では使用不可。
+                // スループットとリテンシ両面で G1 の方が望ましいため、使うなら Dockerfile を
+                // Oracle GraalVM イメージに切り替える必要がある (別 PR)。
                 // ヒープ上限を 1536 MB に明示。Cloud Run コンテナメモリ 2 GiB に対し、
                 // スタック / Direct バッファ / ネイティブ部分用に ~500 MB ヘッドルームを残す。
                 // それ以上を使うようになったら OOM-kill の手前で GC が動くようにし、
