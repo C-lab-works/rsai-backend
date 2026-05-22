@@ -83,14 +83,14 @@ public class CongestionController {
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
                  "SELECT l.id AS location_id, l.location_code, l.name, l.floor, l.svg_id, l.x, l.y, " +
-                 "  COALESCE(cs.level, 0) AS level, " +
+                 "  cs.level, " +
                  "  cs.updated_at, " +
                  "  (SELECT p.title FROM timetables t " +
                  "   JOIN projects p ON p.id = t.project_id " +
                  "   WHERE t.location_id = l.id AND t.event_date >= CURDATE() " +
                  "   ORDER BY t.event_date, t.start_time LIMIT 1) AS project " +
                  "FROM locations l " +
-                 "LEFT JOIN congestion_status cs ON cs.location_code = l.location_code " +
+                 "INNER JOIN congestion_status cs ON cs.location_code = l.location_code " +
                  "ORDER BY l.floor, l.id")) {
             ArrayNode arr = MAPPER.createArrayNode();
             while (rs.next()) {
