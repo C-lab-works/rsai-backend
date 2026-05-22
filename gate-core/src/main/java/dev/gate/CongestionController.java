@@ -43,9 +43,7 @@ public class CongestionController {
         byte[] cached = cachedData.get();
         if (cached != null) {
             long now = System.currentTimeMillis();
-            // 12時間経ったら強制キャッシュクリア　DB障害の場合はここがタイムリミット
-            if (cacheExpiresAt.get() == 0 && (now - lastFetchedAt.get()) > MAX_STALE_MS) {
-            } else {
+            if (cacheExpiresAt.get() != 0 || (now - lastFetchedAt.get()) <= MAX_STALE_MS) {
                 ctx.header("Cache-Control", CACHE_CONTROL);
                 ctx.jsonBytes(cached);
                 if (now >= cacheExpiresAt.get()) {

@@ -28,15 +28,12 @@ public class DataController {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     // キャッシュはシリアライズ済みUTF-8バイト列を保持し、リクエストごとのString生成/byte変換を省く。
-    // lastFetchedAt を追加し、clearCache() 後も「最後に正常取得した時刻」を追跡できるようにする。
     private record CacheEntry(byte[] json, long expiresAt, long lastFetchedAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicBoolean> refreshing = new ConcurrentHashMap<>();
 
     /**
-     * 起動時にトップレベルのキャッシュを事前に埋める。同一ポッドでの初回リクエストが
-     * 同期 DB クエリをヒットしてコールドスタート直後の応答時間が跨ね上がるのを防ぐ。
-     * データがない/スキーマ未作成の状態でも例外を飲んで雙方の起動をブロックしない。
+     * 起動時にトップレベルのキャッシュを事前に埋める。
      */
     public static void prewarm() {
         DataController instance = new DataController();
@@ -48,8 +45,8 @@ public class DataController {
     private void warmKey(String key, Builder builder) {
         try (Connection conn = Database.getConnection()) {
             byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-            long fetchedAt = System.currentTimeMillis();
-            cache.put(key, new CacheEntry(json, fetchedAt + CACHE_TTL_MS, fetchedAt));
+            long now = System.currentTimeMillis();
+            cache.put(key, new CacheEntry(json, now + CACHE_TTL_MS, now));
             logger.info("prewarm OK: {}", key);
         } catch (Exception e) {
             logger.warn("prewarm スキップ ({}): {}", key, e.getMessage());
@@ -65,20 +62,14 @@ public class DataController {
     @GetMapping("/map")
     public void map(Context ctx) { serve(ctx, "map", this::buildMap); }
 
-    // cache+serve
-
     @FunctionalInterface
     interface Builder { Object build(Connection conn) throws Exception; }
 
-    // public,max-age=30 だとブラウザに30秒保持される。CDNもキャッシュできるよう s-maxage を分けて付与し、
-    // stale-while-revalidate で背面リフレッシュ中のオリジン負荷スパイクを押さえる。
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
-    // キャッシュがこの期間以上リフレッシュに失敗している場合は破棄する（3時間）
     private static final long MAX_STALE_MS = 3 * 3600 * 1000L;
 
     public static void clearCache() {
         // 全エントリーの有効期限を0にしてリフレッシュを促すが、データは保持してDB障害時のフォールバックにする。
-        // lastFetchedAt は保持したまま expiresAt だけ 0 にする（stale判定に使うため）。
         cache.replaceAll((k, v) -> new CacheEntry(v.json(), 0, v.lastFetchedAt()));
     }
 
@@ -86,13 +77,8 @@ public class DataController {
         CacheEntry entry = cache.get(key);
         if (entry != null) {
             long now = System.currentTimeMillis();
-            // expiresAt == 0 はキャッシュクリア直後を表す。
-            // lastFetchedAt を使って「最終取得から3時間以上経過している」場合のみ
-            // キャッシュを破棄して同期取得フローへ落とす（DB障害時は古いデータを使い続ける）。
-            if (entry.expiresAt() == 0 && (now - entry.lastFetchedAt()) > MAX_STALE_MS) {
-                cache.remove(key);
-                // fall through to sync fetch below
-            } else {
+            // 「通常の状態(expiresAt!=0)」または「クリアされていても3時間以内」ならキャッシュを返す
+            if (entry.expiresAt() != 0 || (now - entry.lastFetchedAt()) <= MAX_STALE_MS) {
                 ctx.header("Cache-Control", CACHE_CONTROL);
                 ctx.jsonBytes(entry.json());
                 if (now >= entry.expiresAt()) {
@@ -101,11 +87,11 @@ public class DataController {
                 return;
             }
         }
-        // 初回、またはキャッシュが本当に古すぎる場合の同期取得
+        // 初回、またはキャッシュが古すぎる場合の同期取得
         try (Connection conn = Database.getConnection()) {
             byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-            long fetchedAt = System.currentTimeMillis();
-            cache.put(key, new CacheEntry(json, fetchedAt + CACHE_TTL_MS, fetchedAt));
+            long now = System.currentTimeMillis();
+            cache.put(key, new CacheEntry(json, now + CACHE_TTL_MS, now));
             ctx.header("Cache-Control", CACHE_CONTROL);
             ctx.jsonBytes(json);
         } catch (Exception e) {
@@ -114,6 +100,7 @@ public class DataController {
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
+
     private static final ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> refreshFailCounts = new ConcurrentHashMap<>();
 
     private void scheduleRefresh(String key, Builder builder) {
@@ -122,9 +109,8 @@ public class DataController {
         Thread.ofVirtual().start(() -> {
             try (Connection conn = Database.getConnection()) {
                 byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-                long fetchedAt = System.currentTimeMillis();
-                cache.put(key, new CacheEntry(json, fetchedAt + CACHE_TTL_MS, fetchedAt));
-                // 成功時にカウンターリセット
+                long now = System.currentTimeMillis();
+                cache.put(key, new CacheEntry(json, now + CACHE_TTL_MS, now));
                 refreshFailCounts.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicInteger(0)).set(0);
             } catch (Exception e) {
                 logger.warn("Background cache refresh failed for '{}': {}", key, e.getMessage());
@@ -137,8 +123,6 @@ public class DataController {
             }
         });
     }
-
-    // /events
 
     private Object buildEvents(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
@@ -218,15 +202,11 @@ public class DataController {
         return root;
     }
 
-    // /food
-
     private Object buildFood(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
-
         ArrayNode foods = root.putArray("foods");
         try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-               "SELECT id, name, description, image_url FROM foods ORDER BY id")) {
+             ResultSet rs = s.executeQuery("SELECT id, name, description, image_url FROM foods ORDER BY id")) {
             while (rs.next()) {
                 ObjectNode f = foods.addObject();
                 f.put("id",   rs.getInt("id"));
@@ -235,12 +215,9 @@ public class DataController {
                 putStringOrNull(f, "imageUrl",    rs.getString("image_url"));
             }
         }
-
         ArrayNode menus = root.putArray("menus");
         try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-               "SELECT id, food_id, name, price, description, is_sold_out " +
-               "FROM menus ORDER BY food_id, id")) {
+             ResultSet rs = s.executeQuery("SELECT id, food_id, name, price, description, is_sold_out FROM menus ORDER BY food_id, id")) {
             while (rs.next()) {
                 ObjectNode m = menus.addObject();
                 m.put("id",     rs.getInt("id"));
@@ -253,19 +230,14 @@ public class DataController {
                 if (!rs.wasNull()) m.put("isSoldOut", soldOut == 1);
             }
         }
-
         return root;
     }
 
-    // /map
-
     private Object buildMap(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
-
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-               "SELECT id, name, floor, location_code, svg_id, x, y FROM locations ORDER BY floor, id")) {
+             ResultSet rs = s.executeQuery("SELECT id, name, floor, location_code, svg_id, x, y FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",    rs.getInt("id"));
@@ -278,11 +250,8 @@ public class DataController {
                 putDoubleOrNull(l, "y", rs);
             }
         }
-
         return root;
     }
-
-    // util
 
     private void addTimetableRow(ObjectNode t, ResultSet rs) throws Exception {
         t.put("id",         rs.getInt("id"));
