@@ -35,7 +35,14 @@ public class CongestionController {
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
     private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();
     private static final AtomicLong cacheExpiresAt = new AtomicLong(0);
+    // 最後にDBから正常にデータを取得した時刻。clearCache() で expiresAt が 0 になっても
+    // この値は保持されるため、「本当に3時間以上古いか」を正確に判定できる。
+    private static final AtomicLong lastFetchedAt = new AtomicLong(0);
     private static final AtomicBoolean refreshing = new AtomicBoolean(false);
+    private static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
+
+    // キャッシュがこの期間以上リフレッシュに失敗している場合は破棄する（3時間）
+    private static final long MAX_STALE_MS = 3 * 3600 * 1000L;
 
     public static void clearCache() { cacheExpiresAt.set(0); }
 
@@ -43,22 +50,32 @@ public class CongestionController {
     public void getCongestion(Context ctx) {
         byte[] cached = cachedData.get();
         if (cached != null) {
-            ctx.header("Cache-Control", CACHE_CONTROL);
-            ctx.jsonBytes(cached);
-            if (System.currentTimeMillis() >= cacheExpiresAt.get()) {
-                scheduleRefresh();
+            long now = System.currentTimeMillis();
+            // expiresAt == 0 はキャッシュクリア直後を表す。
+            // lastFetchedAt を使って「最終取得から3時間以上経過している」場合のみ
+            // キャッシュを破棄して同期取得フローへ落とす。
+            // （cacheExpiresAt を使うと常に now - 0 = 現在時刻 > MAX_STALE_MS になりバグになる）
+            if (cacheExpiresAt.get() == 0 && (now - lastFetchedAt.get()) > MAX_STALE_MS) {
+            } else {
+                ctx.header("Cache-Control", CACHE_CONTROL);
+                ctx.jsonBytes(cached);
+                if (now >= cacheExpiresAt.get()) {
+                    scheduleRefresh();
+                }
+                return;
             }
-            return;
         }
-        // 初回のみ同期取得
         try {
             byte[] json = fetchCongestionFromDb();
             cachedData.set(json);
-            cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
+            long fetchedAt = System.currentTimeMillis();
+            cacheExpiresAt.set(fetchedAt + CACHE_TTL_MS);
+            lastFetchedAt.set(fetchedAt);
             ctx.header("Cache-Control", CACHE_CONTROL);
             ctx.jsonBytes(json);
         } catch (Exception e) {
-            logger.error("getCongestion error", e);
+            logger.error("getCongestion error (no valid cache)", e);
+            dev.gate.DiscordWebhook.sendError("GET", "/congestion", 503, "DB error (no cache): " + e.getMessage());
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
         }
     }
@@ -69,9 +86,16 @@ public class CongestionController {
             try {
                 byte[] json = fetchCongestionFromDb();
                 cachedData.set(json);
-                cacheExpiresAt.set(System.currentTimeMillis() + CACHE_TTL_MS);
+                long fetchedAt = System.currentTimeMillis();
+                cacheExpiresAt.set(fetchedAt + CACHE_TTL_MS);
+                lastFetchedAt.set(fetchedAt);
+                refreshFailCount.set(0); // 成功時にリセット           
             } catch (Exception e) {
-                logger.warn("Background congestion cache refresh failed: " + e.getMessage());
+                logger.warn("Background congestion cache refresh failed (using stale data): " + e.getMessage());
+                int fails = refreshFailCount.incrementAndGet();
+                if (fails == 3) {
+                    dev.gate.DiscordWebhook.sendError("CACHE", "/congestion", 500, "Background refresh failed 3 times: " + e.getMessage());
+                }
             } finally {
                 refreshing.set(false);
             }

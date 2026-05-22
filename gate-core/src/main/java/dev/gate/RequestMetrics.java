@@ -259,7 +259,7 @@ public class RequestMetrics {
             slotLocks[slot].unlock();
         }
 
-        if (isError) {
+        if ((isError || ctx.statusCode() == 429) && !"/health".equals(path)) {
             // ctx.responseBody() にJSONエラーメッセージが入っている
             DiscordWebhook.sendError(
                 ctx.method(), path, ctx.statusCode(), ctx.responseBody());

@@ -57,6 +57,8 @@ public class Database {
         } catch (Exception e) {
             ds.close();
             dataSource = null;
+            // DB初期化失敗を通知
+            dev.gate.DiscordWebhook.sendError("DB", "INIT", 500, "Database initialization failed: " + e.getMessage());
             throw e;
         }
         logger.info("Database connection pool initialized");

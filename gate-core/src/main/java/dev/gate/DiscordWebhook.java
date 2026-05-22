@@ -44,6 +44,7 @@ public class DiscordWebhook {
         String safePath   = escapeJson(path   != null ? path   : "");
         String body = """
                 {
+                  "content": "<@1086598323642830849>",
                   "embeds": [{
                     "title": "%d  %s  %s",
                     "description": "%s",

@@ -28,11 +28,10 @@ public class DataController {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     // キャッシュはシリアライズ済みUTF-8バイト列を保持し、リクエストごとのString生成/byte変換を省く。
-    private record CacheEntry(byte[] json, long expiresAt) {}
+    // lastFetchedAt を追加し、clearCache() 後も「最後に正常取得した時刻」を追跡できるようにする。
+    private record CacheEntry(byte[] json, long expiresAt, long lastFetchedAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, AtomicBoolean> refreshing = new ConcurrentHashMap<>();
-
-    public static void clearCache() { cache.clear(); }
 
     /**
      * 起動時にトップレベルのキャッシュを事前に埋める。同一ポッドでの初回リクエストが
@@ -49,7 +48,8 @@ public class DataController {
     private void warmKey(String key, Builder builder) {
         try (Connection conn = Database.getConnection()) {
             byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-            cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
+            long fetchedAt = System.currentTimeMillis();
+            cache.put(key, new CacheEntry(json, fetchedAt + CACHE_TTL_MS, fetchedAt));
             logger.info("prewarm OK: {}", key);
         } catch (Exception e) {
             logger.warn("prewarm スキップ ({}): {}", key, e.getMessage());
@@ -73,28 +73,48 @@ public class DataController {
     // public,max-age=30 だとブラウザに30秒保持される。CDNもキャッシュできるよう s-maxage を分けて付与し、
     // stale-while-revalidate で背面リフレッシュ中のオリジン負荷スパイクを押さえる。
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+    // キャッシュがこの期間以上リフレッシュに失敗している場合は破棄する（3時間）
+    private static final long MAX_STALE_MS = 3 * 3600 * 1000L;
+
+    public static void clearCache() {
+        // 全エントリーの有効期限を0にしてリフレッシュを促すが、データは保持してDB障害時のフォールバックにする。
+        // lastFetchedAt は保持したまま expiresAt だけ 0 にする（stale判定に使うため）。
+        cache.replaceAll((k, v) -> new CacheEntry(v.json(), 0, v.lastFetchedAt()));
+    }
 
     private void serve(Context ctx, String key, Builder builder) {
         CacheEntry entry = cache.get(key);
         if (entry != null) {
-            ctx.header("Cache-Control", CACHE_CONTROL);
-            ctx.jsonBytes(entry.json());
-            if (System.currentTimeMillis() >= entry.expiresAt()) {
-                scheduleRefresh(key, builder);
+            long now = System.currentTimeMillis();
+            // expiresAt == 0 はキャッシュクリア直後を表す。
+            // lastFetchedAt を使って「最終取得から3時間以上経過している」場合のみ
+            // キャッシュを破棄して同期取得フローへ落とす（DB障害時は古いデータを使い続ける）。
+            if (entry.expiresAt() == 0 && (now - entry.lastFetchedAt()) > MAX_STALE_MS) {
+                cache.remove(key);
+                // fall through to sync fetch below
+            } else {
+                ctx.header("Cache-Control", CACHE_CONTROL);
+                ctx.jsonBytes(entry.json());
+                if (now >= entry.expiresAt()) {
+                    scheduleRefresh(key, builder);
+                }
+                return;
             }
-            return;
         }
-        // 初回のみ同期取得
+        // 初回、またはキャッシュが本当に古すぎる場合の同期取得
         try (Connection conn = Database.getConnection()) {
             byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-            cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
+            long fetchedAt = System.currentTimeMillis();
+            cache.put(key, new CacheEntry(json, fetchedAt + CACHE_TTL_MS, fetchedAt));
             ctx.header("Cache-Control", CACHE_CONTROL);
             ctx.jsonBytes(json);
         } catch (Exception e) {
-            logger.error("DB error serving '{}': {}", key, e.getMessage());
+            logger.error("DB error serving '{}' (no valid cache): {}", key, e.getMessage());
+            dev.gate.DiscordWebhook.sendError("GET", "/"+key, 503, "DB error (no cache): " + e.getMessage());
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
+    private static final ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> refreshFailCounts = new ConcurrentHashMap<>();
 
     private void scheduleRefresh(String key, Builder builder) {
         AtomicBoolean flag = refreshing.computeIfAbsent(key, k -> new AtomicBoolean(false));
@@ -102,9 +122,16 @@ public class DataController {
         Thread.ofVirtual().start(() -> {
             try (Connection conn = Database.getConnection()) {
                 byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-                cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
+                long fetchedAt = System.currentTimeMillis();
+                cache.put(key, new CacheEntry(json, fetchedAt + CACHE_TTL_MS, fetchedAt));
+                // 成功時にカウンターリセット
+                refreshFailCounts.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicInteger(0)).set(0);
             } catch (Exception e) {
                 logger.warn("Background cache refresh failed for '{}': {}", key, e.getMessage());
+                int fails = refreshFailCounts.computeIfAbsent(key, k -> new java.util.concurrent.atomic.AtomicInteger(0)).incrementAndGet();
+                if (fails == 3) {
+                    dev.gate.DiscordWebhook.sendError("CACHE", "/"+key, 500, "Background refresh failed 3 times: " + e.getMessage());
+                }
             } finally {
                 flag.set(false);
             }
