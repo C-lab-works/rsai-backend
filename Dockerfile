@@ -12,9 +12,10 @@ COPY gate-core/src gate-core/src
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-# ランタイムも同じ OL10 イメージ。GLIBC ミスマッチが構造上発生しない。
+# ランタイムも同じ OL10 イメージ。
+# ベースイメージの ENTRYPOINT が java なので ENTRYPOINT で上書きする。
 FROM container-registry.oracle.com/graalvm/native-image:21-ol10
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080
-CMD ["./app"]
+ENTRYPOINT ["/app/app"]
