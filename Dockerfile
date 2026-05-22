@@ -1,7 +1,7 @@
-# Oracle GraalVM (native-image:21) はデフォルトで Oracle Linux 9 ベース (GLIBC 2.34)。
-# ランタイムも OL9 に展わせることで GLIBC ミスマッチを解消。
+# -muslib タグで musl libc を使った完全静的リンクのネイティブバイナリを生成。
+# ランタイムの GLIBC バージョンに一切依存しない。
 # GFTC は商用・本番利用も無料 (2023年以降): https://www.oracle.com/downloads/licenses/graal-free-license.html
-FROM container-registry.oracle.com/graalvm/native-image:21 AS build
+FROM container-registry.oracle.com/graalvm/native-image:21-muslib AS build
 WORKDIR /app
 COPY settings.gradle.kts gradlew ./
 COPY gradle/ gradle/
@@ -12,8 +12,8 @@ COPY gate-core/src gate-core/src
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
 
-# OL9 = GLIBC 2.34。native-image:21 (OL9ベース) と一致する。
-FROM oraclelinux:9-slim
+# 完全静的リンクなので glibc 不要。distroless/static で最小構成。
+FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080
