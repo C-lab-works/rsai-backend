@@ -6,11 +6,12 @@
         </encoder>
     </appender>
 
-    <!-- サードパーティライブラリの冗長な INFO を抑制 -->
-    <logger name="org.eclipse.jetty" level="WARN"/>
-    <logger name="com.zaxxer.hikari" level="WARN"/>
-    <logger name="com.mysql" level="WARN"/>
-    <logger name="org.slf4j" level="WARN"/>
+    <!-- サードパーティライブラリの冗長なログを抑制 -->
+    <!-- additivity="false" で root への伝播を止め、root レベルに関わらず確実に抑制する -->
+    <logger name="org.eclipse.jetty" level="OFF"  additivity="false"/>
+    <logger name="com.zaxxer.hikari" level="WARN" additivity="false"/>
+    <logger name="com.mysql"         level="WARN" additivity="false"/>
+    <logger name="org.slf4j"         level="WARN" additivity="false"/>
 
     <!-- アプリ内ログは LOG_LEVEL 環境変数で制御 (デフォルト INFO) -->
     <root level="${LOG_LEVEL:-INFO}">
