@@ -48,7 +48,16 @@ graalvmNative {
                 "-H:+ReportExceptionStackTraces",
                 "-H:+UnlockExperimentalVMOptions",
                 "-H:+AddAllCharsets",
-                "-H:+StaticExecutableWithDynamicLibC"
+                "-H:+StaticExecutableWithDynamicLibC",
+                // G1 GC: 2 vCPU コンテナと 7000 req/s ピークを想定した場合、
+                // シリアル GC よりスループットが出やすく、GC ポーズも短くなる。
+                // Linux x86_64 でのみサポートされている (Cloud Run は Linux x86_64)。
+                "--gc=G1",
+                // ヒープ上限を 1536 MB に明示。Cloud Run コンテナメモリ 2 GiB に対し、
+                // スタック / Direct バッファ / ネイティブ部分用に ~500 MB ヘッドルームを残す。
+                // それ以上を使うようになったら OOM-kill の手前で GC が動くようにし、
+                // コンテナクラッシュより OutOfMemoryError のほうがトリアージしやすい。
+                "-R:MaxHeapSize=1536m"
             )
         }
     }

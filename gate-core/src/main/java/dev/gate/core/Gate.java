@@ -165,6 +165,11 @@ public class Gate {
                 if (path == null || path.isEmpty()) path = "/";
                 if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
 
+                // ホットパスでは request.getMethod() を複数回参照するのでローカルで 1 回だけ取る。
+                // Jetty の HttpServletRequest実装では getMethod() はフィールド読みだが、
+                // ホットパスでは回数 = req の不必要なレピートを避ける。
+                final String httpMethod = request.getMethod();
+
                 Context ctx = new Context(path, request);
 
                 try {
@@ -209,10 +214,10 @@ public class Gate {
                     }
 
                     if (!ctx.isHalted()) {
-                        if ("OPTIONS".equals(request.getMethod())) {
+                        if ("OPTIONS".equals(httpMethod)) {
                             ctx.status(204);
                         } else {
-                            String key = request.getMethod() + ':' + path;
+                            String key = httpMethod + ':' + path;
                             router.find(key).ifPresentOrElse(
                                 match -> {
                                     ctx.setPathParams(match.pathParams());

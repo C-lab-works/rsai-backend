@@ -43,11 +43,15 @@ spec:
           startupProbe:
             httpGet:
               path: /health
-            initialDelaySeconds: 7
+            # /health はアプリケーション起動直後から 503 を返せるため、
+            # 7 秒も待たずにプローブを始めてキャイッチアップを早める。
+            initialDelaySeconds: 3
             periodSeconds: 5
             failureThreshold: 60
             timeoutSeconds: 5
           resources:
             limits:
               cpu: "2"
-              memory: 1Gi
+              # GC ヘッドルーム確保とピーク負荷時の安定性のため 1Gi → 2Gi に拡張。
+              # -R:MaxHeapSize=1536m と合わせて1Gi のストレスを転げる。
+              memory: 2Gi

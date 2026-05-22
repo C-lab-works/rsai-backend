@@ -34,6 +34,28 @@ public class DataController {
 
     public static void clearCache() { cache.clear(); }
 
+    /**
+     * 起動時にトップレベルのキャッシュを事前に埋める。同一ポッドでの初回リクエストが
+     * 同期 DB クエリをヒットしてコールドスタート直後の応答時間が跨ね上がるのを防ぐ。
+     * データがない/スキーマ未作成の状態でも例外を飲んで雙方の起動をブロックしない。
+     */
+    public static void prewarm() {
+        DataController instance = new DataController();
+        instance.warmKey("events", instance::buildEvents);
+        instance.warmKey("food",   instance::buildFood);
+        instance.warmKey("map",    instance::buildMap);
+    }
+
+    private void warmKey(String key, Builder builder) {
+        try (Connection conn = Database.getConnection()) {
+            byte[] json = mapper.writeValueAsBytes(builder.build(conn));
+            cache.put(key, new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
+            logger.info("prewarm OK: {}", key);
+        } catch (Exception e) {
+            logger.warn("prewarm スキップ ({}): {}", key, e.getMessage());
+        }
+    }
+
     @GetMapping("/events")
     public void events(Context ctx) { serve(ctx, "events", this::buildEvents); }
 

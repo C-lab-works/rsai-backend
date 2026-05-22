@@ -36,7 +36,11 @@ public class RequestMetrics {
     private final AtomicLong[] histogram        = new AtomicLong[BUCKETS.length];
     private final AtomicLong[] lastFlushedHisto = new AtomicLong[BUCKETS.length];
 
-    private final ThreadLocal<Long> requestStart = new ThreadLocal<>();
+    // 開始時刻は Context attribute に保持する。
+    // 以前は ThreadLocal を使っていたが、Java 21 Virtual Thread では各 VT ごとに
+    // 独立した TL スロットを保持するため、7000 req/s 規模の同時実行時に余分なメモリ/オーバーヘッドが発生する。
+    // Context は 1 リクエスト 1 インスタンスなので attribute で十分かつ低コスト。
+    private static final String START_NANOS_ATTR = "_req_start_nanos";
 
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -222,16 +226,16 @@ public class RequestMetrics {
 
     // beforeフィルタ
 
-    public void startTimer() {
-        requestStart.set(System.nanoTime());
+    public void startTimer(Context ctx) {
+        ctx.setAttribute(START_NANOS_ATTR, System.nanoTime());
     }
 
     // afterフィルタ
 
     public void record(Context ctx) {
-        try {
         // /admin/* はスキップ（/admin/debug/* はカウント）
-        if (ctx.path().startsWith("/admin") && !ctx.path().startsWith("/admin/debug/")) {
+        String path = ctx.path();
+        if (path.startsWith("/admin") && !path.startsWith("/admin/debug/")) {
             return;
         }
 
@@ -258,24 +262,21 @@ public class RequestMetrics {
         if (isError) {
             // ctx.responseBody() にJSONエラーメッセージが入っている
             DiscordWebhook.sendError(
-                ctx.method(), ctx.path(), ctx.statusCode(), ctx.responseBody());
+                ctx.method(), path, ctx.statusCode(), ctx.responseBody());
         }
 
-        Long start = requestStart.get();
+        Long start = ctx.getAttribute(START_NANOS_ATTR);
         if (start != null) {
             long ms  = (System.nanoTime() - start) / 1_000_000L;
             int idx = upperBucketIndex(ms);
             histogram[idx].incrementAndGet();
         }
 
-        String key = ctx.method().toUpperCase() + " " + ctx.path();
+        String key = ctx.method() + " " + path;
         if (endpointCounts.size() < MAX_KEYS) {
             endpointCounts.computeIfAbsent(key, k -> new LongAdder()).increment();
         } else {
             endpointCounts.computeIfPresent(key, (k, v) -> { v.increment(); return v; });
-        }
-        } finally {
-            requestStart.remove();
         }
     }
 
