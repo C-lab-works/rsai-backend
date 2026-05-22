@@ -27,22 +27,14 @@ public class CongestionController {
     private static final Logger logger = new Logger(CongestionController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    // 他エンドポイントと揃えて30秒。2vCPUで瞬間7000req/sスパイクを受けやすくする。
     private static final long CACHE_TTL_MS = 30_000L;
-    // CDNもキャッシュしてオリジン負荷を桁で下げる。
-    // 混雑レベルは最大30秒遅れて反映される（更新時はオリジン側 clearCache で次回取得を即トリガ）。
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
     private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();
     private static final AtomicLong cacheExpiresAt = new AtomicLong(0);
-    // 最後にDBから正常にデータを取得した時刻。clearCache() で expiresAt が 0 になっても
-    // この値は保持されるため、「本当に3時間以上古いか」を正確に判定できる。
     private static final AtomicLong lastFetchedAt = new AtomicLong(0);
     private static final AtomicBoolean refreshing = new AtomicBoolean(false);
     private static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
-
-    // キャッシュがこの期間以上リフレッシュに失敗している場合は破棄する（3時間）
-    private static final long MAX_STALE_MS = 3 * 3600 * 1000L;
+    private static final long MAX_STALE_MS = 12 * 3600 * 1000L;
 
     public static void clearCache() { cacheExpiresAt.set(0); }
 
@@ -51,10 +43,7 @@ public class CongestionController {
         byte[] cached = cachedData.get();
         if (cached != null) {
             long now = System.currentTimeMillis();
-            // expiresAt == 0 はキャッシュクリア直後を表す。
-            // lastFetchedAt を使って「最終取得から3時間以上経過している」場合のみ
-            // キャッシュを破棄して同期取得フローへ落とす。
-            // （cacheExpiresAt を使うと常に now - 0 = 現在時刻 > MAX_STALE_MS になりバグになる）
+            // 12時間経ったら強制キャッシュクリア　DB障害の場合はここがタイムリミット
             if (cacheExpiresAt.get() == 0 && (now - lastFetchedAt.get()) > MAX_STALE_MS) {
             } else {
                 ctx.header("Cache-Control", CACHE_CONTROL);
@@ -89,7 +78,7 @@ public class CongestionController {
                 long fetchedAt = System.currentTimeMillis();
                 cacheExpiresAt.set(fetchedAt + CACHE_TTL_MS);
                 lastFetchedAt.set(fetchedAt);
-                refreshFailCount.set(0); // 成功時にリセット           
+                refreshFailCount.set(0);           
             } catch (Exception e) {
                 logger.warn("Background congestion cache refresh failed (using stale data): " + e.getMessage());
                 int fails = refreshFailCount.incrementAndGet();
