@@ -34,6 +34,8 @@ public class AdminController {
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
+    // スペース正規化と単語分割で使うパターン。リクごとに Pattern.compile() されるのを避ける。
+    private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
     // Allowlist: only these leading keywords are permitted in the SQL console.
     // ALTER is allowed only when followed by TABLE (see execSql).
@@ -388,8 +390,8 @@ public class AdminController {
             for (String raw : splitStatements(sql)) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
-                String norm = stripSqlComments(stmt).toUpperCase().replaceAll("\\s+", " ").trim();
-                String[] words = norm.split("\\s+", 3);
+                String norm = WHITESPACE_PATTERN.matcher(stripSqlComments(stmt).toUpperCase()).replaceAll(" ").trim();
+                String[] words = WHITESPACE_PATTERN.split(norm, 3);
                 String first = words.length > 0 ? words[0] : "";
                 if (!ALLOWED_SQL_KEYWORDS.contains(first)) {
                     ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + first));

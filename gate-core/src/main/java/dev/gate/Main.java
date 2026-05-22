@@ -66,7 +66,7 @@ public class Main {
                 ? baseOrigin
                 : baseOrigin + "," + extraOrigins;
         gate.cors(corsValue);
-        gate.before(ctx -> RequestMetrics.get().startTimer());
+        gate.before(ctx -> RequestMetrics.get().startTimer(ctx));
         // 起動中は /health とOPTIONS以外に503を返す（readinessゲート）
         gate.before(ctx -> {
             if ("/health".equals(ctx.path())) return;
@@ -112,6 +112,10 @@ public class Main {
                     if (!Database.isReady()) Database.init(dbConfig);
                     DataSeeder.seed();
                     RequestMetrics.get().init();
+                    // トップレベルキャッシュを起動時にバックグラウンドで埋める。
+                    // /events /food /map の初回リクエストで DB 同期クエリが走り P95 が跨ね上がるのを避ける。
+                    // 万一失敗しても serve() が同期フォールバックするので起動をブロックしない。
+                    Thread.ofVirtual().start(DataController::prewarm);
                     APP_READY.set(true);
                     log.info("DB準備完了 — 全ルート起動");
                 } catch (Exception e) {
