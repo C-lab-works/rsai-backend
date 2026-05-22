@@ -1,4 +1,8 @@
-FROM ghcr.io/graalvm/native-image-community:21 AS build
+# Oracle GraalVM (native-image) を使用。
+# GraalVM Community Edition では G1 GC が使えないため、
+# G1 GC を有効化するために Oracle GraalVM (GFTC ライセンス) に切り替え。
+# GFTC は商用・本番利用も無料 (2023年以降): https://www.oracle.com/downloads/licenses/graal-free-license.html
+FROM container-registry.oracle.com/graalvm/native-image:21 AS build
 WORKDIR /app
 # Copy build config first — changes rarely, keeps dependency layer cached
 COPY settings.gradle.kts gradlew ./
