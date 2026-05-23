@@ -84,8 +84,8 @@ public class GcpMetricsController {
             .put("from", start.toString())
             .put("to",   end.toString());
 
-        ArrayNode reqArr   = root.putArray("requestCount");
-        ArrayNode instArr  = root.putArray("instanceCount");
+        ArrayNode reqArr   = root.putArray("request_count");
+        ArrayNode instArr  = root.putArray("instance_count");
         ArrayNode cpuArr   = root.putObject("cpu").putArray("default");
 
         for (int i = 0; i < numBuckets; i++) {
@@ -108,8 +108,8 @@ public class GcpMetricsController {
             .put("from", start.toString())
             .put("to",   end.toString());
 
-        ArrayNode reqArr  = root.putArray("requestCount");
-        ArrayNode instArr = root.putArray("instanceCount");
+        ArrayNode reqArr  = root.putArray("request_count");
+        ArrayNode instArr = root.putArray("instance_count");
         ArrayNode cpuArr  = root.putObject("cpu").putArray("default");
 
         for (int i = 0; i < numBuckets; i++) {

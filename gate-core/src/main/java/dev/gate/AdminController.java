@@ -92,8 +92,8 @@ public class AdminController {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     ObjectNode n = arr.addObject();
-                    n.put("name",     rs.getString("TABLE_NAME"));
-                    n.put("rowCount", rs.getLong("TABLE_ROWS"));
+                    n.put("name",      rs.getString("TABLE_NAME"));
+                    n.put("row_count", rs.getLong("TABLE_ROWS"));
                 }
             }
             ctx.json(arr);
@@ -537,12 +537,12 @@ public class AdminController {
         long[] perc     = m.getPercentiles();
 
         ObjectNode root = mapper.createObjectNode();
-        root.put("totalRequests", total);
-        root.put("errorCount",    errors);
-        root.put("errorRate",     errRate);
-        root.put("p50ms",         perc[0]);
-        root.put("p95ms",         perc[1]);
-        root.put("maxInstances",  10);
+        root.put("total_requests", total);
+        root.put("error_count",    errors);
+        root.put("error_rate",     errRate);
+        root.put("p50_ms",         perc[0]);
+        root.put("p95_ms",         perc[1]);
+        root.put("max_instances",  10);
 
         ArrayNode chart = root.putArray("chart");
         for (long v : m.getHourlyCounts()) chart.add(v);
@@ -578,9 +578,9 @@ public class AdminController {
 
         long todayTotal     = todayEps.stream().mapToLong(Map.Entry::getValue).sum();
         long yesterdayTotal = yesterdayEps.stream().mapToLong(Map.Entry::getValue).sum();
-        root.put("todayTotal",     todayTotal);
-        root.put("yesterdayTotal", yesterdayTotal);
-        root.put("diff",           todayTotal - yesterdayTotal);
+        root.put("today_total",     todayTotal);
+        root.put("yesterday_total", yesterdayTotal);
+        root.put("diff",            todayTotal - yesterdayTotal);
 
         Map<String, long[]> merged = new LinkedHashMap<>();
         for (var e : todayEps)     merged.computeIfAbsent(e.getKey(), k -> new long[2])[0] = e.getValue();

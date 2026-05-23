@@ -98,7 +98,7 @@ public class DataController {
                 l.put("id",    rs.getInt("id"));
                 l.put("name",  rs.getString("name"));
                 l.put("floor", rs.getInt("floor"));
-                putStringOrNull(l, "locationCode", rs.getString("location_code"));
+                putStringOrNull(l, "location_code", rs.getString("location_code"));
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
             }
@@ -126,18 +126,18 @@ public class DataController {
                 p.put("title", rs.getString("title"));
                 putStringOrNull(p, "organizer",   rs.getString("organizer"));
                 putStringOrNull(p, "description", rs.getString("description"));
-                putStringOrNull(p, "imageUrl",    rs.getString("image_url"));
+                putStringOrNull(p, "image_url",   rs.getString("image_url"));
                 int locId = rs.getInt("location_id");
-                if (!rs.wasNull()) p.put("locationId", locId);
+                if (!rs.wasNull()) p.put("location_id", locId);
             }
         }
 
-        ArrayNode projectCategories = root.putArray("projectCategories");
+        ArrayNode projectCategories = root.putArray("project_categories");
         catMap.forEach((projectId, catIds) ->
             catIds.forEach(catId -> {
                 ObjectNode pc = projectCategories.addObject();
-                pc.put("projectId",  projectId);
-                pc.put("categoryId", catId);
+                pc.put("project_id",  projectId);
+                pc.put("category_id", catId);
             })
         );
 
@@ -168,7 +168,7 @@ public class DataController {
                 f.put("id",   rs.getInt("id"));
                 f.put("name", rs.getString("name"));
                 putStringOrNull(f, "description", rs.getString("description"));
-                putStringOrNull(f, "imageUrl",    rs.getString("image_url"));
+                putStringOrNull(f, "image_url",   rs.getString("image_url"));
             }
         }
 
@@ -179,14 +179,14 @@ public class DataController {
                "FROM menus ORDER BY food_id, id")) {
             while (rs.next()) {
                 ObjectNode m = menus.addObject();
-                m.put("id",     rs.getInt("id"));
-                m.put("foodId", rs.getInt("food_id"));
-                m.put("name",   rs.getString("name"));
+                m.put("id",      rs.getInt("id"));
+                m.put("food_id", rs.getInt("food_id"));
+                m.put("name",    rs.getString("name"));
                 int price = rs.getInt("price");
                 if (!rs.wasNull()) m.put("price", price);
                 putStringOrNull(m, "description", rs.getString("description"));
                 int soldOut = rs.getInt("is_sold_out");
-                if (!rs.wasNull()) m.put("isSoldOut", soldOut == 1);
+                if (!rs.wasNull()) m.put("is_sold_out", soldOut == 1);
             }
         }
 
@@ -207,9 +207,9 @@ public class DataController {
                 l.put("id",    rs.getInt("id"));
                 l.put("name",  rs.getString("name"));
                 l.put("floor", rs.getInt("floor"));
-                putStringOrNull(l, "locationCode", rs.getString("location_code"));
+                putStringOrNull(l, "location_code", rs.getString("location_code"));
                 int svgId = rs.getInt("svg_id");
-                if (!rs.wasNull()) l.put("svgId", svgId);
+                if (!rs.wasNull()) l.put("svg_id", svgId);
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
             }
@@ -221,11 +221,11 @@ public class DataController {
     // util
 
     private void addTimetableRow(ObjectNode t, ResultSet rs) throws Exception {
-        t.put("id",         rs.getInt("id"));
-        t.put("projectId",  rs.getInt("project_id"));
-        t.put("locationId", rs.getInt("location_id"));
-        t.put("date",       rs.getString("event_date"));
-        t.put("isAllDay",   rs.getInt("is_all_day") == 1);
+        t.put("id",          rs.getInt("id"));
+        t.put("project_id",  rs.getInt("project_id"));
+        t.put("location_id", rs.getInt("location_id"));
+        t.put("date",        rs.getString("event_date"));
+        t.put("is_all_day",  rs.getInt("is_all_day") == 1);
         putStringOrNull(t, "start", rs.getString("start_time"));
         putStringOrNull(t, "end",   rs.getString("end_time"));
     }

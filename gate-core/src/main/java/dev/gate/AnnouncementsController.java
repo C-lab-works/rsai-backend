@@ -77,10 +77,10 @@ public class AnnouncementsController {
         n.put("id", rs.getInt("id"));
         n.put("title", rs.getString("title"));
         n.put("content", rs.getString("content"));
-        n.put("isEmergency", rs.getInt("is_emergency") == 1);
+        n.put("is_emergency", rs.getInt("is_emergency") == 1);
 
-        putIfNotNull(n, "displayFrom", rs.getString("display_from"));
-        putIfNotNull(n, "displayUntil", rs.getString("display_until"));
+        putIfNotNull(n, "display_from", rs.getString("display_from"));
+        putIfNotNull(n, "display_until", rs.getString("display_until"));
     }
 
     private static void putIfNotNull(ObjectNode n, String fieldName, String value) {

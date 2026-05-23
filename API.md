@@ -38,25 +38,25 @@ Base URL: `https://v2.r-sai2026.site`
     { "id": 1, "name": "ステージ系" }
   ],
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "locationCode": "02", "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "x": 43.02042086431134, "y": 141.52233128287835 }
   ],
   "projects": [
-    { "id": 1, "title": "中一企画1", "organizer": "1-1", "locationId": 15 }
+    { "id": 1, "title": "中一企画1", "organizer": "1-1", "location_id": 15 }
   ],
-  "projectCategories": [
-    { "projectId": 1, "categoryId": 2 }
+  "project_categories": [
+    { "project_id": 1, "category_id": 2 }
   ],
   "timetables": [
-    { "id": 16, "projectId": 30, "locationId": 2, "date": "2026-07-04", "isAllDay": false, "start": "10:00:00", "end": "10:20:00" }
+    { "id": 16, "project_id": 30, "location_id": 2, "date": "2026-07-04", "is_all_day": false, "start": "10:00:00", "end": "10:20:00" }
   ]
 }
 ```
 
-> `projects[].locationId` — 拠点が未設定の場合は省略される。  
-> `projects[].organizer` / `.description` / `.imageUrl` — 設定されている場合のみ含まれる。  
-> `timetables[].start` / `.end` — `isAllDay` が `true` の場合は省略される。  
-> `projectCategories` — project と category の多対多リレーション。  
-> `locations[].locationCode` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
+> `projects[].location_id` — 拠点が未設定の場合は省略される。  
+> `projects[].organizer` / `.description` / `.image_url` — 設定されている場合のみ含まれる。  
+> `timetables[].start` / `.end` — `is_all_day` が `true` の場合は省略される。  
+> `project_categories` — project と category の多対多リレーション。  
+> `locations[].location_code` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
 > `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
@@ -69,18 +69,18 @@ Base URL: `https://v2.r-sai2026.site`
 ```json
 {
   "foods": [
-    { "id": 1, "name": "保護者会", "description": "店舗の説明", "imageUrl": "https://example.com/image.jpg" },
+    { "id": 1, "name": "保護者会", "description": "店舗の説明", "image_url": "https://example.com/image.jpg" },
     { "id": 2, "name": "test商店" }
   ],
   "menus": [
-    { "id": 1, "foodId": 1, "name": "フランクフルト", "price": 200, "description": "美味しい", "isSoldOut": false },
-    { "id": 3, "foodId": 2, "name": "いろはす", "price": 700, "isSoldOut": false }
+    { "id": 1, "food_id": 1, "name": "フランクフルト", "price": 200, "description": "美味しい", "is_sold_out": false },
+    { "id": 3, "food_id": 2, "name": "いろはす", "price": 700, "is_sold_out": false }
   ]
 }
 ```
 
-> `foods[].description` / `.imageUrl` — 設定されている場合のみ含まれる。  
-> `menus[].price` / `.description` / `.isSoldOut` — 設定されている場合のみ含まれる。
+> `foods[].description` / `.image_url` — 設定されている場合のみ含まれる。  
+> `menus[].price` / `.description` / `.is_sold_out` — 設定されている場合のみ含まれる。
 
 ---
 
@@ -92,13 +92,13 @@ Base URL: `https://v2.r-sai2026.site`
 ```json
 {
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "locationCode": "02", "svgId": 5, "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "svg_id": 5, "x": 43.02042086431134, "y": 141.52233128287835 }
   ]
 }
 ```
 
-> `locations[].locationCode` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
-> `locations[].svgId` — SVG アイコン ID（整数）。設定されている場合のみ含まれる。  
+> `locations[].location_code` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
+> `locations[].svg_id` — SVG アイコン ID（整数）。設定されている場合のみ含まれる。  
 > `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
 
 ---
@@ -111,13 +111,13 @@ Base URL: `https://v2.r-sai2026.site`
 ```json
 {
   "announcements": [
-    { "id": 2, "content": "【緊急】お知らせ内容", "isEmergency": true },
-    { "id": 1, "content": "通常お知らせ内容", "isEmergency": false, "displayFrom": "2026-07-01 00:00:00", "displayUntil": "2026-07-05 23:59:59" }
+    { "id": 2, "content": "【緊急】お知らせ内容", "is_emergency": true },
+    { "id": 1, "content": "通常お知らせ内容", "is_emergency": false, "display_from": "2026-07-01 00:00:00", "display_until": "2026-07-05 23:59:59" }
   ]
 }
 ```
 
-> `displayFrom` / `displayUntil` — 設定されている場合のみ含まれる。
+> `display_from` / `display_until` — 設定されている場合のみ含まれる。
 
 ---
 
