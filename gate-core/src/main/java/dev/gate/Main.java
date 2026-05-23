@@ -4,7 +4,6 @@ import dev.gate.core.Config;
 import dev.gate.core.ConfigLoader;
 import dev.gate.core.Database;
 import dev.gate.core.Gate;
-import dev.gate.core.GateServer;
 import dev.gate.core.Logger;
 
 import java.io.InputStream;
@@ -71,7 +70,7 @@ public class Main {
 
         // --- Startup ---
 
-        GateServer server = gate.start(config.getPort());
+        gate.start(config.getPort());
         log.info("rsai-backend is running on port {}", config.getPort());
     }
 

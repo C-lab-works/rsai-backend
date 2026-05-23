@@ -70,10 +70,8 @@ public class DataSeeder {
                 logger.info("Migrating schema v11 -> v12");
                 migrateV11(conn);
             }
-            if (v <= 12) {
-                logger.info("Migrating schema v12 -> v13");
-                migrateV12(conn);
-            }
+            logger.info("Migrating schema v12 -> v13");
+            migrateV12(conn);
             setSeedVersion(conn, 13);
             logger.info("Seed data v13 ready");
         }
