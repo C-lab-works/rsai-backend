@@ -28,24 +28,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
-
+// Cloudflare Access JWT 認証のミドルウェア 管理者用認証
 public class CfAccessAuth implements Handler {
-
     public static final String ATTR_VERIFIED_EMAIL = "cf_verified_email";
-
     private static final Logger logger = new Logger(CfAccessAuth.class);
     private static final ObjectMapper mapper = new ObjectMapper();
+
     private static final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
     private static final long CLOCK_SKEW_LEEWAY_SECS = 30L;
-
-    // JWT検証結果キャッシュ：トークン文字列 → (email or null, expiresAtEpochSec)
-    // 10,000件を超えると古いものから順に削除される LRU キャッシュ。
     private static final int VERIFICATION_CACHE_MAX = 10_000;
     private record VerificationResult(String email, long expiresAtEpochSec) {}
+
     private static final Map<String, VerificationResult> verificationCache =
         Collections.synchronizedMap(
             new LinkedHashMap<String, VerificationResult>(256, 0.75f, true) {
@@ -57,7 +54,7 @@ public class CfAccessAuth implements Handler {
         );
 
     private static volatile Set<String> adminEmailsRef = Set.of();
-
+    // メールアドレスチェック
     public static boolean isAdmin(String email) {
         if (email == null || email.isBlank()) return false;
         return adminEmailsRef.contains(email.toLowerCase());
@@ -65,20 +62,21 @@ public class CfAccessAuth implements Handler {
 
     private final AtomicReference<ConcurrentHashMap<String, PublicKey>> keyCacheRef
             = new AtomicReference<>(new ConcurrentHashMap<>());
-    private volatile Instant keysCachedAt = Instant.EPOCH;
-    // JWKS refresh は ReentrantLock を使用してVirtual Threadのキャリアピン留めを回避
-    private final ReentrantLock jwksLock = new ReentrantLock();
 
+    private volatile Instant keysCachedAt = Instant.EPOCH;
+    private final ReentrantLock jwksLock = new ReentrantLock();
     private final String audience;
     private final String teamDomain;
     private final String certsUrl;
     private final boolean enabled;
     private final Set<String> adminEmails;
 
+    // 初期化部分。環境変数が入ってないかつ開発無効化フラグが立ってない場合は例外を出しクラッシュさせる。
     public CfAccessAuth() {
+        // github secrets　
         String aud     = System.getenv("CF_ACCESS_AUD");
         String domain  = System.getenv("CF_ACCESS_TEAM_DOMAIN");
-        String devFlag = System.getenv("CF_ACCESS_DEV_DISABLE");
+        String devFlag = System.getenv("CF_ACCESS_DEV_DISABLE"); // 開発環境用　本番環境ではfalseにすること。
         String admins  = System.getenv("ADMIN_EMAILS");
         this.adminEmails = (admins != null && !admins.isBlank())
             ? Arrays.stream(admins.split(","))
@@ -90,7 +88,7 @@ public class CfAccessAuth implements Handler {
 
         if (aud == null || aud.isBlank() || domain == null || domain.isBlank()) {
             if (!"true".equalsIgnoreCase(devFlag)) {
-                throw new IllegalStateException(
+                throw new IllegalStateException( // CF_ACCESS_AUDとCF_ACCESS_TEAM_DOMAINが入ってない場合はクラッシュさせる (localはCF_ACCESS_DEV_DISABLE=trueで回避)
                     "CfAccessAuth: CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN must be set. " +
                     "To disable CF Access JWT validation in development, set CF_ACCESS_DEV_DISABLE=true.");
             }
@@ -110,7 +108,7 @@ public class CfAccessAuth implements Handler {
             this.enabled    = true;
             logger.info("CfAccessAuth enabled. Audience={} Certs={} AdminEmails={}", audience, certsUrl, adminEmails.size());
             if (this.adminEmails.isEmpty()) {
-                throw new IllegalStateException(
+                throw new IllegalStateException( // 管理者アクセスに必要なメールアドレスが設定されていない場合もクラッシュさせる。
                     "CfAccessAuth: ADMIN_EMAILS must be set when CF Access is enabled. " +
                     "An empty list would grant admin access to every authenticated user.");
             }
@@ -118,9 +116,6 @@ public class CfAccessAuth implements Handler {
         }
     }
 
-    /**
-     * Eagerly fetches and caches the JWKS public keys.
-     */
     public void prefetchJwks() {
         if (!enabled) return;
         try {
@@ -136,9 +131,7 @@ public class CfAccessAuth implements Handler {
         }
     }
 
-    /**
-     * JWT検証が必要なパスか判定する。
-     */
+    // JWT認証が必要かどうかの判定。
     private static boolean needsJwtVerification(Context ctx) {
         String path = ctx.path();
         if (path.startsWith("/admin")) return true;
@@ -190,10 +183,7 @@ public class CfAccessAuth implements Handler {
         }
     }
 
-    /**
-     * 同一トークンの繰り返し検証をスキップするためのキャッシュ層。
-     * LRU により自動で上限管理される。
-     */
+    // 負荷軽減のためJWT結果のキャッシュ
     private String verifyAndExtractEmailCached(String token) throws Exception {
         long now = Instant.now().getEpochSecond();
         VerificationResult cached = verificationCache.get(token);
@@ -212,11 +202,10 @@ public class CfAccessAuth implements Handler {
                 } catch (Exception ignored) {}
             }
             String email = verifyAndExtractEmail(token);
-            long cacheExp = exp > 0 ? exp : (now + 300); // expが取れなければ5分
+            long cacheExp = exp > 0 ? exp : (now + 300);
             verificationCache.put(token, new VerificationResult(email, cacheExp));
             return email;
         } catch (Exception e) {
-            // ネガティブキャッシュ：60秒だけ拒否を記憶
             verificationCache.put(token, new VerificationResult(null, now + 60));
             throw e;
         }
@@ -258,7 +247,8 @@ public class CfAccessAuth implements Handler {
         if (nbf > 0 && now + 60 < nbf) throw new SecurityException("JWT not yet valid (nbf=" + nbf + ")");
 
         // 発行者を検証
-        String iss = payload.path("iss").asText("");
+        JsonNode issNode = payload.path("iss");
+        String iss = issNode.isNull() || issNode.isMissingNode() ? "" : issNode.asText();
         if (!teamDomain.equals(iss)) throw new SecurityException("JWT issuer mismatch: " + iss);
 
         // オーディエンスを検証
@@ -275,7 +265,8 @@ public class CfAccessAuth implements Handler {
         }
         if (!audMatched) throw new SecurityException("JWT audience mismatch");
 
-        String email = payload.path("email").asText(null);
+        JsonNode emailNode = payload.path("email");
+        String email = emailNode.isNull() || emailNode.isMissingNode() ? null : emailNode.asText();
         if (email == null || email.isBlank()) throw new SecurityException("JWT missing email claim");
         return email;
     }

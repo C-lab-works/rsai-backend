@@ -56,10 +56,6 @@ public class CloudflareIpFilter implements Handler {
 
     private final List<CidrBlock> blocks;
     private final boolean skipCheck;
-
-    // 文字列IP → Cloudflareマッチ結果のキャッシュ。InetAddress生成とCIDR線形走査を初回のみにする。
-    // 7000reqのスパイクで同一edge IPが何千回も見えるためデカで効く。
-    // キャッシュ上限とクリア閾値をもとにメモリ不足・多様なIP洪水を防ぐ。
     private static final int IP_CACHE_MAX = 50_000;
     private final ConcurrentHashMap<String, Boolean> ipMatchCache = new ConcurrentHashMap<>();
 
@@ -87,11 +83,6 @@ public class CloudflareIpFilter implements Handler {
     }
 
     // IP解決
-
-    /**
-     * X-Forwarded-Forの最右端IPを取得してCloudflare edgeのIPとして返す。
-     * XFFヘッダーがない場合はnullを返す（Cloudflare未経由と判定）。
-     */
     private String resolveCloudflareIp(Context ctx) {
         String xff = ctx.requestHeader("X-Forwarded-For");
         if (xff != null && !xff.isBlank()) {

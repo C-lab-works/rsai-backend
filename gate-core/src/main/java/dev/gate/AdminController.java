@@ -11,9 +11,7 @@ import dev.gate.mapping.DeleteMapping;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
-
 import dev.gate.CfAccessAuth;
-
 import java.sql.*;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -26,7 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
+// /admin 用エンドポイント　管理者専用
 @GateController
 public class AdminController {
 
@@ -49,12 +47,11 @@ public class AdminController {
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
     );
 
-    // debug
-
+    // 管理パネルからキャッシュを削除するエンドポイント
+    // 即時ポーリングさせてキャッシュを更新させる
     @PostMapping("/admin/cache/clear")
     public void clearCache(Context ctx) {
         try {
-            // ポーラー駆動への変更に伴い、物理削除ではなく即時リフレッシュを実行する
             new DataController().refreshAll();
             AnnouncementsController.refreshCache();
             CongestionController.refreshCache();
@@ -75,14 +72,14 @@ public class AdminController {
         }
     }
 
+    // 管理者パネルから意図的に503エラーを発生させるエンドポイント
     @GetMapping("/admin/debug/503")
     public void debug503(Context ctx) {
         String instanceId = Optional.ofNullable(System.getenv("HOSTNAME")).orElse("local");
         ctx.status(503).json(Map.of("error", "Debug: intentional 503 (instance: " + instanceId + ")"));
     }
 
-    // tables
-
+    //管理者パネルのdbページでテーブル一覧を取得するエンドポイント
     @GetMapping("/admin/tables")
     public void listTables(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -105,6 +102,7 @@ public class AdminController {
         }
     }
 
+    // 管理者パネルのdbページでテーブルの内容を取得するエンドポイント
     @GetMapping("/admin/tables/{table}")
     public void getTable(Context ctx) {
         String table = ctx.pathParam("table");
@@ -158,6 +156,7 @@ public class AdminController {
         }
     }
 
+    // 管理者パネルのdbページでテーブルの行を更新するエンドポイント
     @PutMapping("/admin/tables/{table}/{pk}")
     public void updateRow(Context ctx) {
         String table = ctx.pathParam("table");
@@ -206,6 +205,7 @@ public class AdminController {
         }
     }
 
+    // 管理者パネルのdbページでテーブルの行を削除するエンドポイント
     @DeleteMapping("/admin/tables/{table}/{pk}")
     public void deleteRow(Context ctx) {
         String table = ctx.pathParam("table");
@@ -230,7 +230,7 @@ public class AdminController {
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
         }
     }
-
+    // 管理者パネルのdbページでテーブルの行を追加するエンドポイント
     @PostMapping("/admin/tables/{table}")
     public void insertRow(Context ctx) {
         String table = ctx.pathParam("table");
@@ -281,6 +281,7 @@ public class AdminController {
         }
     }
 
+    // 管理者パネルのdbページでテーブルを作成するエンドポイント
     @PostMapping("/admin/ddl/tables")
     public void createTable(Context ctx) {
         try (Connection conn = Database.getConnection()) {
@@ -328,6 +329,7 @@ public class AdminController {
         }
     }
 
+    // 管理者パネルのdbページでテーブルにカラムを追加するエンドポイント
     @PostMapping("/admin/ddl/tables/{table}/columns")
     public void addColumn(Context ctx) {
         String table = ctx.pathParam("table");
@@ -372,8 +374,7 @@ public class AdminController {
         }
     }
 
-    // sql
-
+    // 管理者パネルのdbページでSQLクエリを実行するエンドポイント　一番重要
     @PostMapping("/admin/sql")
     public void execSql(Context ctx) {
         String executor = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
@@ -524,8 +525,7 @@ public class AdminController {
         return "クエリ実行に失敗しました";
     }
 
-    // stats
-
+    // 管理者パネルのstatsページでリクエスト統計を取得するエンドポイント
     @GetMapping("/admin/stats")
     public void stats(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -597,8 +597,6 @@ public class AdminController {
         }
         ctx.json(root);
     }
-
-    // util
 
     private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throws SQLException {
         int type = meta.getColumnType(i);

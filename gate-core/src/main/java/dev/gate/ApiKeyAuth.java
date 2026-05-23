@@ -6,7 +6,7 @@ import dev.gate.core.Handler;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
-
+// APIキー認証のミドルウェア
 public class ApiKeyAuth implements Handler {
 
     private static final String HEADER = "X-API-Key";
@@ -26,7 +26,6 @@ public class ApiKeyAuth implements Handler {
     @Override
     public void handle(Context ctx) {
         if ("/health".equals(ctx.path())) return;
-        // CORSプリフライトはAPI keyチェックをスキップ
         if ("OPTIONS".equals(ctx.method())) return;
 
         String provided = ctx.requestHeader(HEADER);
@@ -53,12 +52,6 @@ public class ApiKeyAuth implements Handler {
 
     private static boolean constantEquals(String a, byte[] b) {
         if (a == null || b == null) return false;
-        // API キーは ASCII のみを想定しているので、長さチェックを先に行うことで
-        // 不一致ケースでオブジェクト生成を抑制できる。
-        // 同じ長さの付け似せキーに対しては依然 timing-safe な比較を行う。
-        // 一般に API キーは UTF-8 で ASCII だけで構成されるため
-        // String#length() と byte[] の長さは一致する。万一 ASCII 以外が渡された場合も
-        // length()<bytes となり不一致と判定されるため安全。
         if (a.length() != b.length) return false;
         return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b);
     }

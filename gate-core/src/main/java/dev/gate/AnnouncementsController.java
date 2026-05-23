@@ -15,6 +15,7 @@ import java.sql.Statement;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+// /announcements エンドポイント
 @GateController
 public class AnnouncementsController {
 
@@ -24,10 +25,7 @@ public class AnnouncementsController {
 
     private record CacheEntry(byte[] json, long lastFetchedAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
-
-    /**
-     * 起動時および手動リフレッシュ用の静的メソッド。
-     */
+    // キャッシュを更新するやつ　管理者更新用
     public static void refreshCache() throws Exception {
         AnnouncementsController instance = new AnnouncementsController();
         byte[] json = instance.fetchAnnouncementsFromDb();
