@@ -27,76 +27,42 @@ public class CongestionController {
     private static final Logger logger = new Logger(CongestionController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final long CACHE_TTL_MS = 30_000L;
+
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
     private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();
-    private static final AtomicLong cacheExpiresAt = new AtomicLong(0);
     private static final AtomicLong lastFetchedAt = new AtomicLong(0);
-    private static final AtomicBoolean refreshing = new AtomicBoolean(false);
-    private static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
-    private static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
-    private static final long MAX_STALE_MS = 18 * 3600 * 1000L;
 
-    public static void clearCache() { cacheExpiresAt.set(0); }
+    // ポーラー用失敗カウンターと通知フラグ
+    public static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    public static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
+
+    public static void clearCache() {
+        // 完全キャッシュファーストのため、クリアは無効化（またはポーラーに任せる）
+    }
 
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
         byte[] cached = cachedData.get();
-        if (cached != null) {
-            long now = System.currentTimeMillis();
-            // 「通常の状態(cacheExpiresAt!=0)」または「クリアされていても18時間以内」ならキャッシュを返す
-            if (cacheExpiresAt.get() != 0 || (now - lastFetchedAt.get()) <= MAX_STALE_MS) {
-                ctx.header("Cache-Control", CACHE_CONTROL);
-                ctx.jsonBytes(cached);
-                if (now >= cacheExpiresAt.get()) {
-                    scheduleRefresh();
-                }
-                return;
-            }
+        if (cached == null) {
+            ctx.status(503).json(Map.of("error", "warming up"));
+            return;
         }
-        // 初回、またはキャッシュが本当に古すぎる場合の同期取得
-        try {
-            byte[] json = fetchCongestionFromDb();
-            cachedData.set(json);
-            long fetchedAt = System.currentTimeMillis();
-            cacheExpiresAt.set(fetchedAt + CACHE_TTL_MS);
-            lastFetchedAt.set(fetchedAt);
-            ctx.header("Cache-Control", CACHE_CONTROL);
-            ctx.jsonBytes(json);
-        } catch (Exception e) {
-            logger.error("getCongestion error (no valid cache)", e);
-            dev.gate.DiscordWebhook.sendError("GET", "/congestion", 503, "DB error (no cache): " + e.getMessage());
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
-        }
+        ctx.header("Cache-Control", CACHE_CONTROL);
+        ctx.jsonBytes(cached);
     }
 
-    private void scheduleRefresh() {
-        if (!refreshing.compareAndSet(false, true)) return;
-        Thread.ofVirtual().start(() -> {
-            try {
-                // 成功した時だけ、新しいデータで丸ごと置き換える。
-                // これにより、DB側で削除された場所もキャッシュから自然に消える。
-                byte[] json = fetchCongestionFromDb();
-                cachedData.set(json);
-                long fetchedAt = System.currentTimeMillis();
-                cacheExpiresAt.set(fetchedAt + CACHE_TTL_MS);
-                lastFetchedAt.set(fetchedAt);
-                refreshFailCount.set(0);
-                hasNotifiedFailure.set(false); // 復旧したらリセット
-            } catch (Exception e) {
-                // 失敗しても cachedData はそのまま（＝古いデータを使い続ける）
-                logger.warn("Background congestion cache refresh failed (using stale data): " + e.getMessage());
-                int fails = refreshFailCount.incrementAndGet();
-                if (fails >= 3 && hasNotifiedFailure.compareAndSet(false, true)) {
-                    dev.gate.DiscordWebhook.sendError("CACHE", "/congestion", 500, "Background refresh failed " + fails + " times: " + e.getMessage());
-                }
-            } finally {
-                refreshing.set(false);
-            }
-        });
+    /**
+     * バックグラウンドポーラーから呼び出される更新メソッド。
+     */
+    public static void refreshCache() throws Exception {
+        byte[] json = fetchCongestionFromDb();
+        cachedData.set(json);
+        lastFetchedAt.set(System.currentTimeMillis());
+        refreshFailCount.set(0);
+        hasNotifiedFailure.set(false);
     }
 
-    private byte[] fetchCongestionFromDb() throws Exception {
+    private static byte[] fetchCongestionFromDb() throws Exception {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -132,6 +98,7 @@ public class CongestionController {
             return MAPPER.writeValueAsBytes(arr);
         }
     }
+
     // 管理者が混雑レベルを更新するエンドポイント。認証必須。
     @PostMapping("/congestion/{code}")
     public void updateCongestion(Context ctx) {
@@ -182,7 +149,7 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
-            cacheExpiresAt.set(0);
+            // キャッシュはポーラーによる次回の更新を待つ
             ctx.json(Map.of("ok", true, "location_code", locationCode, "level", level));
         } catch (Exception e) {
             logger.error("updateCongestion error", e);

@@ -20,6 +20,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,12 +43,18 @@ public class CfAccessAuth implements Handler {
     private static final long CLOCK_SKEW_LEEWAY_SECS = 30L;
 
     // JWT検証結果キャッシュ：トークン文字列 → (email or null, expiresAtEpochSec)
-    // 同一トークンが繰り返し来てもRSA検証は1回だけになる。
-    // キャッシュは10000件で上限を切り、超過時はクリア（最も古いものから抜く実装はGCコスト高いので簡易策）。
+    // 10,000件を超えると古いものから順に削除される LRU キャッシュ。
     private static final int VERIFICATION_CACHE_MAX = 10_000;
-    // verifiedEmail が null の場合は検証失敗のネガティブキャッシュ
     private record VerificationResult(String email, long expiresAtEpochSec) {}
-    private static final ConcurrentHashMap<String, VerificationResult> verificationCache = new ConcurrentHashMap<>();
+    private static final Map<String, VerificationResult> verificationCache =
+        Collections.synchronizedMap(
+            new LinkedHashMap<String, VerificationResult>(256, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, VerificationResult> eldest) {
+                    return size() > VERIFICATION_CACHE_MAX;
+                }
+            }
+        );
 
     private static volatile Set<String> adminEmailsRef = Set.of();
 
@@ -130,11 +138,6 @@ public class CfAccessAuth implements Handler {
 
     /**
      * JWT検証が必要なパスか判定する。
-     * <ul>
-     *   <li>/admin 以下：必須</li>
-     *   <li>POST /congestion/{code}：updated_by に検証済みemailが必要</li>
-     *   <li>それ以外：opportunistic検証は行わない（CPU節約）</li>
-     * </ul>
      */
     private static boolean needsJwtVerification(Context ctx) {
         String path = ctx.path();
@@ -156,13 +159,11 @@ public class CfAccessAuth implements Handler {
             return;
         }
 
-        // 大半のリクエスト（GET /events など）はJWT検証不要 → 即return
         if (!needsJwtVerification(ctx)) return;
 
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
         if (ctx.path().startsWith("/admin")) {
-            // 管理エンドポイント: JWT が必須で、ADMIN_EMAILS に登録されたメールアドレスである必要がある
             if (token == null || token.isBlank()) {
                 ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
                 return;
@@ -180,7 +181,6 @@ public class CfAccessAuth implements Handler {
                 ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
             }
         } else if (token != null && !token.isBlank()) {
-            // POST /congestion/{code} 用：失敗してもhaltせず、updateCongestion側で401を返す
             try {
                 String email = verifyAndExtractEmailCached(token);
                 ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);
@@ -192,14 +192,13 @@ public class CfAccessAuth implements Handler {
 
     /**
      * 同一トークンの繰り返し検証をスキップするためのキャッシュ層。
-     * exp までは結果を再利用。失敗もネガティブキャッシュ（60秒）して総当たりを防ぐ。
+     * LRU により自動で上限管理される。
      */
     private String verifyAndExtractEmailCached(String token) throws Exception {
         long now = Instant.now().getEpochSecond();
         VerificationResult cached = verificationCache.get(token);
         if (cached != null && now < cached.expiresAtEpochSec()) {
             if (cached.email() != null) return cached.email();
-            // ネガティブキャッシュ
             throw new SecurityException("JWT previously rejected (cached)");
         }
 
@@ -213,18 +212,12 @@ public class CfAccessAuth implements Handler {
                 } catch (Exception ignored) {}
             }
             String email = verifyAndExtractEmail(token);
-            // キャッシュ満杯ならクリア（簡易策）
-            if (verificationCache.size() >= VERIFICATION_CACHE_MAX) {
-                verificationCache.clear();
-            }
             long cacheExp = exp > 0 ? exp : (now + 300); // expが取れなければ5分
             verificationCache.put(token, new VerificationResult(email, cacheExp));
             return email;
         } catch (Exception e) {
             // ネガティブキャッシュ：60秒だけ拒否を記憶
-            if (verificationCache.size() < VERIFICATION_CACHE_MAX) {
-                verificationCache.put(token, new VerificationResult(null, now + 60));
-            }
+            verificationCache.put(token, new VerificationResult(null, now + 60));
             throw e;
         }
     }
@@ -314,10 +307,6 @@ public class CfAccessAuth implements Handler {
         }
     }
 
-    /**
-     * JWKS を取得し、キーキャッシュをアトミックに置き換える。
-     * {@code jwksLock.lock()} の下で呼び出す必要がある。
-     */
     private void refreshKeysLocked() throws Exception {
         logger.info("Refreshing JWKS from {}", certsUrl);
         HttpRequest req = HttpRequest.newBuilder()

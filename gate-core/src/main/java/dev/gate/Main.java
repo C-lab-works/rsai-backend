@@ -8,121 +8,96 @@ import dev.gate.core.GateServer;
 import dev.gate.core.Logger;
 
 import java.io.InputStream;
-import java.nio.channels.CancelledKeyException;
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
-
     private static final Logger log = new Logger(Main.class);
-
-    /** 起動完了したらtrueになる */
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
 
-    public static void main(String[] args) throws Exception {
-        // Jetty の CancelledKeyException は接続クローズ時の既知の無害なノイズ。
-        // GraalVM native image はこれを uncaught exception として stderr に直接出力するため
-        // logback フィルタでは捕捉できず、ここで抑制する。
-        Thread.UncaughtExceptionHandler previousHandler = Thread.getDefaultUncaughtExceptionHandler();
-        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            if (throwable instanceof CancelledKeyException) return;
-            if (previousHandler != null) previousHandler.uncaughtException(thread, throwable);
-            else log.error("Uncaught exception in thread {}: {}", thread.getName(), throwable.getMessage(), throwable);
-        });
+    private static final ScheduledExecutorService bg =
+            Executors.newScheduledThreadPool(3, r -> {
+                Thread t = new Thread(r, "bg-poller");
+                t.setDaemon(true);
+                return t;
+            });
 
-        String version = "unknown";
-        try (InputStream vs = Main.class.getResourceAsStream("/version.txt")) {
-            if (vs != null) version = new String(vs.readAllBytes(), StandardCharsets.UTF_8).trim();
-        } catch (Exception ignored) {}
-        System.out.println("rsai-backend v" + version + " starting");
+    public static void main(String[] args) throws Exception {
+        String version = loadVersion();
+        log.info("Starting rsai-backend {}...", version);
 
         Config config = ConfigLoader.load();
-        // PORT環境変数はconfig.ymlを上書きする（Cloud Runが注入）
-        String portEnv = System.getenv("PORT");
-        int port = (portEnv != null && !portEnv.isBlank())
-                ? Integer.parseInt(portEnv.trim())
-                : config.getPort();
+        Gate gate = new Gate(config.getPort());
 
+        // CF Access 認証ハンドラの初期化
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
+        cfAccessAuth.prefetchJwks();
 
-        Config.DatabaseConfig dbConfig = config.getDatabase();
-        // DB初期化・シード・メトリクスをバックグラウンドで起動。失敗時はリトライ（クラッシュループ回避）
-        startDatabaseInit(dbConfig);
+        // Database init (background thread)
+        startDatabaseInit(config.getDatabase(), cfAccessAuth);
 
-        Thread.ofVirtual().start(cfAccessAuth::prefetchJwks);
-        Runtime.getRuntime().addShutdownHook(
-                new Thread(RequestMetrics.get()::shutdown, "metrics-shutdown"));
+        // --- Middleware & Auth ---
 
-        Gate gate = new Gate();
-        // CORS_ALLOWED_ORIGINはカンマ区切り複数指定可。CORS_ALLOWED_EXTRA_ORIGINSで開発用追加（例: localhost）
-        String allowedOrigin = System.getenv("CORS_ALLOWED_ORIGIN");
-        String extraOrigins  = System.getenv("CORS_ALLOWED_EXTRA_ORIGINS");
-        if (allowedOrigin == null || allowedOrigin.isBlank()) {
-            System.err.println("WARNING: CORS_ALLOWED_ORIGIN is not set — CORS will be disabled");
-        }
-        String baseOrigin = (allowedOrigin != null && !allowedOrigin.isBlank()) ? allowedOrigin : "";
-        String corsValue  = (baseOrigin.isBlank() || extraOrigins == null || extraOrigins.isBlank())
-                ? baseOrigin
-                : baseOrigin + "," + extraOrigins;
-        gate.cors(corsValue);
-        gate.before(ctx -> RequestMetrics.get().startTimer(ctx));
-        // 起動中は /health とOPTIONS以外に503を返す（readinessゲート）
-        gate.before(ctx -> {
-            if ("/health".equals(ctx.path())) return;
-            if ("OPTIONS".equals(ctx.method())) return;
-            if (!APP_READY.get()) {
-                ctx.status(503).json(Map.of("status", "starting")).halt();
-            }
-        });
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
+        gate.before(new SecurityHeaders());
+
+        RequestMetrics metrics = RequestMetrics.get();
+        metrics.init();
+        gate.before(metrics::startTimer);
+        gate.after(metrics::record);
+
+        // --- Core routes ---
+
         gate.get("/health", ctx -> {
             if (APP_READY.get()) {
-                ctx.json(Map.of("status", "ok"));
+                ctx.json(java.util.Map.of("status", "ok", "version", version));
             } else {
-                ctx.status(503).json(Map.of("status", "starting"));
+                ctx.status(503).json(java.util.Map.of("status", "starting", "version", version));
             }
         });
 
-        gate.after(SecurityHeaders.get()::handle);
-        gate.after(RequestMetrics.get()::record);
+        gate.scan(new DataController());
+        gate.scan(new CongestionController());
+        gate.scan(new AnnouncementsController());
+        gate.scan(new AdminController());
+        gate.scan(new GcpMetricsController());
 
-        // 全ルートを起動時に登録。DBが揃うまではreadinessフィルタが503を返す
-        gate.register(new DataController());
-        gate.register(new CongestionController());
-        gate.register(new AdminController());
-        gate.register(new AnnouncementsController());
-        gate.register(new GcpMetricsController());
+        // --- Startup ---
 
-        GateServer server = gate.start(port);
-        server.join();
+        GateServer server = gate.start();
+        log.info("rsai-backend is running on port {}", config.getPort());
     }
 
-    /**
-     * DB初期化・シード・メトリクスをバックグラウンドデーモンスレッドで起動。
-     * 失敗時は指数バックオフ（2s → 30s）でリトライし、起動完了までは全ルートが503を返す。
-     */
-    private static void startDatabaseInit(Config.DatabaseConfig dbConfig) {
+    private static void startDatabaseInit(Config.DatabaseConfig dbConfig, CfAccessAuth cfAccessAuth) {
         Thread t = new Thread(() -> {
-            long backoffMs = 2_000L;
-            while (!APP_READY.get()) {
+            long backoffMs = 2000L;
+            while (true) {
                 try {
-                    if (!Database.isReady()) Database.init(dbConfig);
+                    Database.init(dbConfig);
                     DataSeeder.seed();
-                    RequestMetrics.get().init();
-                    // トップレベルキャッシュを起動時にバックグラウンドで埋める。
-                    // /events /food /map の初回リクエストで DB 同期クエリが走り P95 が跨ね上がるのを避ける。
-                    // 万一失敗しても serve() が同期フォールバックするので起動をブロックしない。
-                    Thread.ofVirtual().start(DataController::prewarm);
+
+                    // 起動時キャッシュ初回充填（同期）
+                    log.info("Performing initial cache fill...");
+                    new DataController().refreshAll();
+                    CongestionController.refreshCache();
+                    log.info("Initial cache fill OK");
+
                     APP_READY.set(true);
-                    log.info("DB準備完了 — 全ルート起動");
+                    log.info("Application is now READY");
+
+                    startBackgroundJobs(cfAccessAuth);
+                    return;
                 } catch (Exception e) {
-                    log.error("DB初期化失敗。" + (backoffMs / 1000) + "秒後にリトライ", e);
+                    log.error("Database initialization failed: {}. Retrying in {}ms...", e.getMessage(), backoffMs);
                     try {
                         Thread.sleep(backoffMs);
-                    } catch (InterruptedException ie) {
+                    } catch (InterruptedException ex) {
                         Thread.currentThread().interrupt();
                         return;
                     }
@@ -132,5 +107,55 @@ public class Main {
         }, "db-init");
         t.setDaemon(true);
         t.start();
+    }
+
+    private static void startBackgroundJobs(CfAccessAuth cfAccessAuth) {
+        final DataController dataController = new DataController();
+        final AtomicInteger dataFailCount = new AtomicInteger(0);
+        final AtomicInteger congestionFailCount = new AtomicInteger(0);
+
+        // 30秒ごとにevents/food/mapを更新
+        bg.scheduleAtFixedRate(() -> {
+            try {
+                dataController.refreshAll();
+                dataFailCount.set(0);
+            } catch (Exception e) {
+                int fails = dataFailCount.incrementAndGet();
+                log.warn("DataController poll failed ({}): {}", fails, e.getMessage());
+                if (fails == 1 || fails % 5 == 0) {
+                    DiscordWebhook.sendError("POLL", "/events,/food,/map", 500,
+                            "Poll failed (" + fails + "): " + e.getMessage());
+                }
+            }
+        }, 30, 30, TimeUnit.SECONDS);
+
+        // 30秒ごとに混雑情報を更新
+        bg.scheduleAtFixedRate(() -> {
+            try {
+                CongestionController.refreshCache();
+                congestionFailCount.set(0);
+            } catch (Exception e) {
+                int fails = congestionFailCount.incrementAndGet();
+                log.warn("CongestionController poll failed ({}): {}", fails, e.getMessage());
+                if (fails == 1 || fails % 5 == 0) {
+                    DiscordWebhook.sendError("POLL", "/congestion", 500,
+                            "Poll failed (" + fails + "): " + e.getMessage());
+                }
+            }
+        }, 30, 30, TimeUnit.SECONDS);
+
+        // 50分ごとにJWKS公開鍵を事前更新（TTL=60分の10分前）
+        bg.scheduleAtFixedRate(cfAccessAuth::prefetchJwks, 50, 50, TimeUnit.MINUTES);
+    }
+
+    private static String loadVersion() {
+        try (InputStream is = Main.class.getClassLoader().getResourceAsStream("version.txt")) {
+            if (is == null) return "unknown";
+            Properties props = new Properties();
+            props.load(is);
+            return props.getProperty("version", "unknown");
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 }
