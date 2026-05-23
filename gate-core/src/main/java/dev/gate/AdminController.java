@@ -34,6 +34,7 @@ public class AdminController {
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
+    // SQLコマンドホワイトリスト
     private static final Set<String> ALLOWED_SQL_KEYWORDS = Set.of(
         "SELECT", "INSERT", "UPDATE", "DELETE",
         "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "ANALYZE",

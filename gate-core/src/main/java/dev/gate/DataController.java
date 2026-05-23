@@ -23,15 +23,9 @@ public class DataController {
 
     private static final Logger logger = new Logger(DataController.class);
     private static final ObjectMapper mapper = new ObjectMapper();
-
-    // キャッシュはシリアライズ済みUTF-8バイト列を保持。
-    // lastFetchedAt を保持し、データの鮮度を追跡できるようにする。
     private record CacheEntry(byte[] json, long lastFetchedAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    /**
-     * 起動時にトップレベルのキャッシュを事前に埋める。
-     */
     public static void prewarm() {
         DataController instance = new DataController();
         try {

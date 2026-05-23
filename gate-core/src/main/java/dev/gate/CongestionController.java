@@ -20,25 +20,18 @@ import dev.gate.core.Database;
 import dev.gate.core.Logger;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
-
+// 混雑度システム
 @GateController
 public class CongestionController {
 
     private static final Logger logger = new Logger(CongestionController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
     private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();
     private static final AtomicLong lastFetchedAt = new AtomicLong(0);
-
-    // ポーラー用失敗カウンターと通知フラグ
     public static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
     public static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
-
-    public static void clearCache() {
-        // 完全キャッシュファーストのため、クリアは無効化（またはポーラーに任せる）
-    }
 
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
@@ -51,9 +44,6 @@ public class CongestionController {
         ctx.jsonBytes(cached);
     }
 
-    /**
-     * バックグラウンドポーラーから呼び出される更新メソッド。
-     */
     public static void refreshCache() throws Exception {
         byte[] json = fetchCongestionFromDb();
         cachedData.set(json);
@@ -62,6 +52,7 @@ public class CongestionController {
         hasNotifiedFailure.set(false);
     }
 
+    // DBから取得してjson形式への変換
     private static byte[] fetchCongestionFromDb() throws Exception {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
@@ -149,7 +140,6 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
-            // キャッシュはポーラーによる次回の更新を待つ
             ctx.json(Map.of("ok", true, "location_code", locationCode, "level", level));
         } catch (Exception e) {
             logger.error("updateCongestion error", e);

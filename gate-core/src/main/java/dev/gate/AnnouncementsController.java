@@ -22,19 +22,34 @@ public class AnnouncementsController {
     private static final Logger logger = new Logger(AnnouncementsController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+    private static final String CACHE_KEY = "announcements";
+    private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """
+            SELECT id, title, content, is_emergency, display_from, display_until
+            FROM announcements
+            WHERE (display_from IS NULL OR display_from <= NOW())
+              AND (display_until IS NULL OR display_until >= NOW())
+            ORDER BY is_emergency DESC, id DESC
+            """;
 
-    private record CacheEntry(byte[] json, long lastFetchedAt) {}
+    private record CacheEntry(byte[] json) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+
     // キャッシュを更新するやつ　管理者更新用
     public static void refreshCache() throws Exception {
-        AnnouncementsController instance = new AnnouncementsController();
-        byte[] json = instance.fetchAnnouncementsFromDb();
-        cache.put("announcements", new CacheEntry(json, System.currentTimeMillis()));
+        try {
+            byte[] json = fetchAnnouncementsFromDb();
+            cache.put(CACHE_KEY, new CacheEntry(json));
+            logger.info("announcements cache refreshed");
+        } catch (Exception e) {
+            logger.error("announcements refreshCache failed", e);
+            throw e;
+        }
     }
 
+    // キャッシュからアナウンス内容を返す
     @GetMapping("/announcements")
     public void list(Context ctx) {
-        CacheEntry entry = cache.get("announcements");
+        CacheEntry entry = cache.get(CACHE_KEY);
         if (entry == null) {
             ctx.status(503).json(Map.of("error", "warming up"));
             return;
@@ -43,29 +58,34 @@ public class AnnouncementsController {
         ctx.jsonBytes(entry.json());
     }
 
-    private byte[] fetchAnnouncementsFromDb() throws Exception {
+    // DBからjsonへの変換
+    private static byte[] fetchAnnouncementsFromDb() throws Exception {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-                "SELECT id, title, content, is_emergency, display_from, display_until " +
-                "FROM announcements " +
-                "WHERE (display_from  IS NULL OR display_from  <= NOW()) " +
-                "  AND (display_until IS NULL OR display_until >= NOW()) " +
-                "ORDER BY is_emergency DESC, id DESC")) {
+             ResultSet rs = s.executeQuery(SELECT_ACTIVE_ANNOUNCEMENTS_SQL)) {
             ObjectNode root = MAPPER.createObjectNode();
-            ArrayNode arr  = root.putArray("announcements");
+            ArrayNode arr = root.putArray("announcements");
             while (rs.next()) {
-                ObjectNode n = arr.addObject();
-                n.put("id",          rs.getInt("id"));
-                n.put("title",       rs.getString("title"));
-                n.put("content",     rs.getString("content"));
-                n.put("isEmergency", rs.getInt("is_emergency") == 1);
-                String from  = rs.getString("display_from");
-                String until = rs.getString("display_until");
-                if (from  != null) n.put("displayFrom",  from);
-                if (until != null) n.put("displayUntil", until);
+                appendAnnouncement(arr.addObject(), rs);
             }
             return MAPPER.writeValueAsBytes(root);
+        }
+    }
+
+    // nullチェックとフィールド名変更
+    private static void appendAnnouncement(ObjectNode n, ResultSet rs) throws Exception {
+        n.put("id", rs.getInt("id"));
+        n.put("title", rs.getString("title"));
+        n.put("content", rs.getString("content"));
+        n.put("isEmergency", rs.getInt("is_emergency") == 1);
+
+        putIfNotNull(n, "displayFrom", rs.getString("display_from"));
+        putIfNotNull(n, "displayUntil", rs.getString("display_until"));
+    }
+
+    private static void putIfNotNull(ObjectNode n, String fieldName, String value) {
+        if (value != null) {
+            n.put(fieldName, value);
         }
     }
 }
