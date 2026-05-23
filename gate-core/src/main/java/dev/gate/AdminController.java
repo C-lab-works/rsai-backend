@@ -34,11 +34,8 @@ public class AdminController {
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
-    // スペース正規化と単語分割で使うパターン。リクごとに Pattern.compile() されるのを避ける。
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
-    // Allowlist: only these leading keywords are permitted in the SQL console.
-    // ALTER is allowed only when followed by TABLE (see execSql).
     private static final Set<String> ALLOWED_SQL_KEYWORDS = Set.of(
         "SELECT", "INSERT", "UPDATE", "DELETE",
         "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "ANALYZE",
@@ -57,21 +54,24 @@ public class AdminController {
     @PostMapping("/admin/cache/clear")
     public void clearCache(Context ctx) {
         try {
-            DataController.clearCache();
-            AnnouncementsController.clearCache();
-            CongestionController.clearCache();
+            // ポーラー駆動への変更に伴い、物理削除ではなく即時リフレッシュを実行する
+            new DataController().refreshAll();
+            AnnouncementsController.refreshCache();
+            CongestionController.refreshCache();
+
             String clearedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
-            logger.info("cache cleared by=" + clearedBy);
+            logger.info("cache refreshed by=" + clearedBy);
+
             ObjectNode res = mapper.createObjectNode();
             res.put("ok", true);
-            ArrayNode cleared = res.putArray("cleared");
+            ArrayNode cleared = res.putArray("refreshed");
             for (String key : new String[]{"events", "food", "map", "announcements", "congestion"}) {
                 cleared.add(key);
             }
             ctx.json(res);
         } catch (Exception e) {
             logger.error("clearCache error", e);
-            ctx.status(500).json(Map.of("error", "Cache clear failed: " + e.getMessage()));
+            ctx.status(500).json(Map.of("error", "Cache refresh failed: " + e.getMessage()));
         }
     }
 
@@ -173,7 +173,6 @@ public class AdminController {
             String pkCol = getPkColumn(conn, resolvedTable);
             if (pkCol == null) { ctx.status(400).json(Map.of("error", "主キーが見つかりません")); return; }
 
-            // DB-sourced column list breaks taint chain
             List<String> updateCols = getColumnNames(conn, resolvedTable).stream()
                     .filter(c -> body.containsKey(c) && !c.equals(pkCol))
                     .collect(Collectors.toList());
@@ -244,7 +243,6 @@ public class AdminController {
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
 
-            // DB-sourced column list breaks taint chain
             List<String> insertCols = getColumnNames(conn, resolvedTable).stream()
                     .filter(body::containsKey)
                     .collect(Collectors.toList());
@@ -319,7 +317,7 @@ public class AdminController {
             }
             sb.append(String.join(", ", colDefs)).append(")");
 
-            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); } // lgtm[java/sql-injection]
+            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("createTable syntax error: {}", e.getMessage());
@@ -363,7 +361,7 @@ public class AdminController {
                 }
                 sb.append(" DEFAULT '").append(defaultVal).append("'");
             }
-            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); } // lgtm[java/sql-injection]
+            try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("addColumn syntax error: {}", e.getMessage());
@@ -394,20 +392,20 @@ public class AdminController {
                 String[] words = WHITESPACE_PATTERN.split(norm, 3);
                 String first = words.length > 0 ? words[0] : "";
                 if (!ALLOWED_SQL_KEYWORDS.contains(first)) {
-                    ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + first));
+                    ctx.status(403).json(Map.of("error", "この操作は許可されています: " + first));
                     return;
                 }
                 if ("ALTER".equals(first)) {
                     String second = words.length > 1 ? words[1] : "";
                     if (!"TABLE".equals(second)) {
-                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: ALTER " + second));
+                        ctx.status(403).json(Map.of("error", "この操作は許可されています: ALTER " + second));
                         return;
                     }
                 }
                 logger.info("execSql by={} len={}", executor, stmt.length());
                 try (Statement s = conn.createStatement()) {
                     s.setQueryTimeout(30);
-                    boolean hasRs = s.execute(stmt); // lgtm[java/sql-injection] — intentional admin SQL console, protected by CF Access auth
+                    boolean hasRs = s.execute(stmt);
                     lastResult = mapper.createObjectNode();
                     ArrayNode colsNode = lastResult.putArray("cols");
                     ArrayNode rowsNode = lastResult.putArray("rows");
@@ -439,40 +437,37 @@ public class AdminController {
         }
     }
 
-    // Single-pass O(n) SQL comment stripper. /*! ... */ (executable comments) keep their body.
-    // Note: over-broad by design — never hides a keyword MySQL would execute.
     private static String stripSqlComments(String s) {
-        // no regex — avoids ReDoS (CWE-1333)
         StringBuilder out = new StringBuilder(s.length());
         int n = s.length();
         for (int i = 0; i < n; ) {
             char c = s.charAt(i);
-            if (c == '-' && i + 1 < n && s.charAt(i + 1) == '-') {        // -- line comment
+            if (c == '-' && i + 1 < n && s.charAt(i + 1) == '-') {
                 i += 2;
                 while (i < n && s.charAt(i) != '\n') i++;
                 out.append(' ');
                 continue;
             }
-            if (c == '#') {                                              // # line comment
+            if (c == '#') {
                 i++;
                 while (i < n && s.charAt(i) != '\n') i++;
                 out.append(' ');
                 continue;
             }
-            if (c == '/' && i + 1 < n && s.charAt(i + 1) == '*') {        // block comment
+            if (c == '/' && i + 1 < n && s.charAt(i + 1) == '*') {
                 boolean exec = (i + 2 < n && s.charAt(i + 2) == '!');
                 i += 2;
-                if (exec) {                                              // /*! [version]
+                if (exec) {
                     i++;
                     while (i < n && Character.isDigit(s.charAt(i))) i++;
                 }
                 int start = i;
                 while (i + 1 < n && !(s.charAt(i) == '*' && s.charAt(i + 1) == '/')) i++;
-                if (i + 1 < n) {                                         // closed: */
+                if (i + 1 < n) {
                     if (exec) out.append(' ').append(s, start, i).append(' ');
                     else      out.append(' ');
                     i += 2;
-                } else {                                                 // unterminated
+                } else {
                     if (exec) out.append(' ').append(s, start, n).append(' ');
                     else      out.append(' ');
                     i = n;
@@ -485,7 +480,6 @@ public class AdminController {
         return out.toString();
     }
 
-    // Splits SQL on semicolons while respecting quoted strings and backtick identifiers.
     private static List<String> splitStatements(String sql) {
         List<String> stmts = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
@@ -709,8 +703,6 @@ public class AdminController {
         return null;
     }
 
-    /** Resolves a user-supplied table name against INFORMATION_SCHEMA via PreparedStatement.
-     *  Returns the DB-sourced TABLE_NAME (breaking CodeQL taint chain), or null if not found. */
     private String resolveTableName(Connection conn, String name) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES " +
@@ -722,7 +714,6 @@ public class AdminController {
         }
     }
 
-    /** Returns column names for the given table in definition order (DB-sourced). */
     private List<String> getColumnNames(Connection conn, String table) throws SQLException {
         List<String> cols = new ArrayList<>();
         try (ResultSet rs = conn.getMetaData().getColumns(null, null, table, null)) {

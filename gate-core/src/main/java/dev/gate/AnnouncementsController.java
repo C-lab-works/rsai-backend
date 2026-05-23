@@ -14,57 +14,35 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @GateController
 public class AnnouncementsController {
 
     private static final Logger logger = new Logger(AnnouncementsController.class);
-    private static final long CACHE_TTL_MS = 30_000L;
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
 
-    private record CacheEntry(byte[] json, long expiresAt) {}
+    private record CacheEntry(byte[] json, long lastFetchedAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
-    private static final AtomicBoolean refreshing = new AtomicBoolean(false);
 
-    public static void clearCache() { cache.clear(); }
+    /**
+     * 起動時および手動リフレッシュ用の静的メソッド。
+     */
+    public static void refreshCache() throws Exception {
+        AnnouncementsController instance = new AnnouncementsController();
+        byte[] json = instance.fetchAnnouncementsFromDb();
+        cache.put("announcements", new CacheEntry(json, System.currentTimeMillis()));
+    }
 
     @GetMapping("/announcements")
     public void list(Context ctx) {
         CacheEntry entry = cache.get("announcements");
-        if (entry != null) {
-            ctx.header("Cache-Control", CACHE_CONTROL);
-            ctx.jsonBytes(entry.json());
-            if (System.currentTimeMillis() >= entry.expiresAt()) {
-                scheduleRefresh();
-            }
+        if (entry == null) {
+            ctx.status(503).json(Map.of("error", "warming up"));
             return;
         }
-        // 初回のみ同期取得
-        try {
-            byte[] json = fetchAnnouncementsFromDb();
-            cache.put("announcements", new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
-            ctx.header("Cache-Control", CACHE_CONTROL);
-            ctx.jsonBytes(json);
-        } catch (Exception e) {
-            logger.error("announcements error", e);
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
-        }
-    }
-
-    private void scheduleRefresh() {
-        if (!refreshing.compareAndSet(false, true)) return;
-        Thread.ofVirtual().start(() -> {
-            try {
-                byte[] json = fetchAnnouncementsFromDb();
-                cache.put("announcements", new CacheEntry(json, System.currentTimeMillis() + CACHE_TTL_MS));
-            } catch (Exception e) {
-                logger.warn("Background announcements cache refresh failed: " + e.getMessage());
-            } finally {
-                refreshing.set(false);
-            }
-        });
+        ctx.header("Cache-Control", CACHE_CONTROL);
+        ctx.jsonBytes(entry.json());
     }
 
     private byte[] fetchAnnouncementsFromDb() throws Exception {
