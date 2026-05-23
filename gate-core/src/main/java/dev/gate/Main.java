@@ -31,7 +31,7 @@ public class Main {
         log.info("Starting rsai-backend {}...", version);
 
         Config config = ConfigLoader.load();
-        Gate gate = new Gate(config.getPort());
+        Gate gate = new Gate();
 
         // CF Access 認証ハンドラの初期化
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
@@ -45,7 +45,7 @@ public class Main {
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
-        gate.before(new SecurityHeaders());
+        gate.before(SecurityHeaders.get());
 
         RequestMetrics metrics = RequestMetrics.get();
         metrics.init();
@@ -62,15 +62,16 @@ public class Main {
             }
         });
 
-        gate.scan(new DataController());
-        gate.scan(new CongestionController());
-        gate.scan(new AnnouncementsController());
-        gate.scan(new AdminController());
-        gate.scan(new GcpMetricsController());
+        // インスタンスを明示的に登録
+        gate.register(new DataController());
+        gate.register(new CongestionController());
+        gate.register(new AnnouncementsController());
+        gate.register(new AdminController());
+        gate.register(new GcpMetricsController());
 
         // --- Startup ---
 
-        GateServer server = gate.start();
+        GateServer server = gate.start(config.getPort());
         log.info("rsai-backend is running on port {}", config.getPort());
     }
 
@@ -86,6 +87,7 @@ public class Main {
                     log.info("Performing initial cache fill...");
                     new DataController().refreshAll();
                     CongestionController.refreshCache();
+                    AnnouncementsController.refreshCache();
                     log.info("Initial cache fill OK");
 
                     APP_READY.set(true);
