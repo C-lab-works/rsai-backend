@@ -10,6 +10,7 @@ env:
   SERVICE_NAME: rsai-backend
   REPOSITORY: rsai-backend
   VPC_CONNECTOR: ${{ vars.GCP_VPC_CONNECTOR }}
+  MIN_SCALE: ${{ vars.MIN_SCALE }}
   RUNNER_VM: github-runner
   RUNNER_ZONE: asia-northeast1-a
 
@@ -103,7 +104,7 @@ jobs:
             template:
               metadata:
                 annotations:
-                  autoscaling.knative.dev/minScale: "0"
+                  autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
                   autoscaling.knative.dev/maxScale: "30"
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
@@ -122,14 +123,10 @@ jobs:
                     resources:
                       limits:
                         cpu: "2"
-                        # 1Gi → 2Gi へ拡張。GC ヘッドルームとピーク負荷時の安定性確保。
-                        # GraalVM 側で -R:MaxHeapSize=1536m を明示しているため
-                        # スタック/Direct/ネイティブ部分に ~500 MB ヘッドルームが残る。
                         memory: 2Gi
                     startupProbe:
                       httpGet:
                         path: /health
-                      # /health は起動直後から 503 を返せるため、7 秒も待たず 3 秒でプローブ開始。
                       initialDelaySeconds: 3
                       periodSeconds: 5
                       failureThreshold: 60
@@ -258,7 +255,7 @@ jobs:
             template:
               metadata:
                 annotations:
-                  autoscaling.knative.dev/minScale: "0"
+                  autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
                   autoscaling.knative.dev/maxScale: "30"
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
