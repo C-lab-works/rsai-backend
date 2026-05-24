@@ -45,6 +45,9 @@
   { "name": "org.eclipse.jetty.util.thread.QueuedThreadPool",
     "allDeclaredConstructors": true, "allDeclaredMethods": true },
 
+  { "name": "dev.gate.CfMetricsController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+
   { "name": "dev.gate.DataController",
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.CongestionController",

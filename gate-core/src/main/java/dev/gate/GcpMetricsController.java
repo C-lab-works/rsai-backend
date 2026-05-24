@@ -56,9 +56,6 @@ public class GcpMetricsController {
             String service     = System.getenv().getOrDefault("K_SERVICE", "");
             String periodStr   = periodSeconds + "s";
 
-            long[]   requestCount   = queryLongMetric(accessToken, projectId, service,
-                "run.googleapis.com/request_count",
-                "ALIGN_SUM", "REDUCE_SUM", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
             long[]   instanceCount  = queryLongMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/instance_count",
                 "ALIGN_MAX", "REDUCE_MAX", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
@@ -67,7 +64,7 @@ public class GcpMetricsController {
                 "ALIGN_PERCENTILE_50", "REDUCE_PERCENTILE_50", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
 
             ctx.json(buildResponse(alignedStart, alignedEnd, periodSeconds, numBuckets,
-                requestCount, instanceCount, cpuUtilization));
+                instanceCount, cpuUtilization));
         } catch (Exception e) {
             logger.warn("gcpMetrics unavailable (not on GCP?): {}", e.getMessage());
             ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets));
@@ -77,22 +74,19 @@ public class GcpMetricsController {
     // レスポンス構築
 
     private ObjectNode buildResponse(Instant start, Instant end, int periodSeconds, int numBuckets,
-                                     long[] requestCount, long[] instanceCount, double[] cpuUtilization) {
+                                     long[] instanceCount, double[] cpuUtilization) {
         ObjectNode root = mapper.createObjectNode();
 
         root.putObject("range")
             .put("from", start.toString())
             .put("to",   end.toString());
 
-        ArrayNode reqArr   = root.putArray("request_count");
-        ArrayNode instArr  = root.putArray("instance_count");
-        ArrayNode cpuArr   = root.putObject("cpu").putArray("default");
+        ArrayNode instArr = root.putArray("instance_count");
+        ArrayNode cpuArr  = root.putObject("cpu").putArray("default");
 
         for (int i = 0; i < numBuckets; i++) {
             long tMs = (start.getEpochSecond() + (long)(i + 1) * periodSeconds) * 1000L;
-            reqArr.addObject().put("t", tMs).put("v", requestCount[i]);
             instArr.addObject().put("t", tMs).put("v", instanceCount[i]);
-            // 0.0〜1.0の小数で保持（フロントで×100して%表示）
             cpuArr.addObject().put("t", tMs)
                               .put("v", Math.round(cpuUtilization[i] * 100000.0) / 100000.0);
         }
@@ -108,13 +102,11 @@ public class GcpMetricsController {
             .put("from", start.toString())
             .put("to",   end.toString());
 
-        ArrayNode reqArr  = root.putArray("request_count");
         ArrayNode instArr = root.putArray("instance_count");
         ArrayNode cpuArr  = root.putObject("cpu").putArray("default");
 
         for (int i = 0; i < numBuckets; i++) {
             long tMs = (start.getEpochSecond() + (long)(i + 1) * periodSeconds) * 1000L;
-            reqArr.addObject().put("t", tMs).put("v", 0);
             instArr.addObject().put("t", tMs).put("v", 0);
             cpuArr.addObject().put("t", tMs).put("v", 0.0);
         }

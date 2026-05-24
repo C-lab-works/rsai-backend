@@ -160,6 +160,10 @@ jobs:
                         value: "${{ secrets.ADMIN_EMAILS }}"
                       - name: LOG_LEVEL
                         value: "${{ vars.LOG_LEVEL || 'INFO' }}"
+                      - name: CF_API_TOKEN
+                        value: "${{ secrets.CF_API_TOKEN }}"
+                      - name: CF_ZONE_ID
+                        value: "${{ secrets.CF_ZONE_ID }}"
                       - name: RUNMODE
                         value: "cloudrun"
 
@@ -313,6 +317,10 @@ jobs:
                         value: "${{ secrets.ADMIN_EMAILS }}"
                       - name: LOG_LEVEL
                         value: "${{ vars.LOG_LEVEL || 'INFO' }}"
+                      - name: CF_API_TOKEN
+                        value: "${{ secrets.CF_API_TOKEN }}"
+                      - name: CF_ZONE_ID
+                        value: "${{ secrets.CF_ZONE_ID }}"
                       - name: RUNMODE
                         value: "cloudrun"
 
