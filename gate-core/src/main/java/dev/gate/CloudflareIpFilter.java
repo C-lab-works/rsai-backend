@@ -12,11 +12,7 @@ import dev.gate.core.Logger;
 
 /**
  * Cloudflareのいずれかのプロキシ経由のリクエストのみを許可するフィルタ。
- * 環境変数 {@code RUNMODE} で動作を切り替える:
- * <ul>
- *   <li>{@code azure}（デフォルト）: EnvoyサイドカーがremoteAddrを書き換えるためXFFの最右端の非プライベートIPを検証</li>
- *   <li>{@code cloudrun}: XFFの最左端IPを検証</li>
- * </ul>
+ * XFFの最右端の非プライベートIPを検証する（Azure/Cloud Run共通）。
  * ローカル開発時は環境変数 {@code SKIP_CF_IP_CHECK=true} でスキップ可能。
  * IPレンジは https://www.cloudflare.com/ips-v4 / ips-v6 を参照。
  */
@@ -62,19 +58,13 @@ public class CloudflareIpFilter implements Handler {
     private static final int IP_CACHE_MAX = 50_000;
     private final ConcurrentHashMap<String, Boolean> ipMatchCache = new ConcurrentHashMap<>();
 
-    private enum IpResolveMode { AZURE, CLOUDRUN }
-
-    private final IpResolveMode resolveMode;
-
     public CloudflareIpFilter() {
         this.skipCheck = "true".equalsIgnoreCase(System.getenv("SKIP_CF_IP_CHECK"));
         if (skipCheck) {
             logger.warn("SKIP_CF_IP_CHECK=true — CloudflareIPチェック無効(開発環境専用)");
         }
-        String modeEnv = System.getenv("RUNMODE");
-        this.resolveMode = "cloudrun".equalsIgnoreCase(modeEnv) ? IpResolveMode.CLOUDRUN : IpResolveMode.AZURE;
         this.blocks = buildBlocks();
-        logger.info("CloudflareIpFilter initialized: mode={} cidrBlocks={}", resolveMode, blocks.size());
+        logger.info("CloudflareIpFilter initialized: cidrBlocks={}", blocks.size());
     }
 
     @Override
@@ -82,9 +72,7 @@ public class CloudflareIpFilter implements Handler {
         if (skipCheck) return;
         if (EXEMPT_PATHS.contains(ctx.path())) return;
 
-        String candidateIp = resolveMode == IpResolveMode.CLOUDRUN
-                ? resolveClientIp(ctx)
-                : resolveCloudflareIp(ctx);
+        String candidateIp = resolveCloudflareIp(ctx);
         if (candidateIp == null || !isCloudflareIp(candidateIp)) {
             String xff = ctx.requestHeader("X-Forwarded-For");
             logger.warn("Request rejected: not from Cloudflare. candidate={} XFF={} path={}",
@@ -93,7 +81,7 @@ public class CloudflareIpFilter implements Handler {
         }
     }
 
-    // Azure: EnvoyサイドカーがremoteAddrを書き換えるためXFFの最右端の非プライベートIPを使用
+    // XFFの最右端の非プライベートIPがCloudflareのIP（Azure/Cloud Run共通）
     private String resolveCloudflareIp(Context ctx) {
         String xff = ctx.requestHeader("X-Forwarded-For");
         if (xff != null && !xff.isBlank()) {
@@ -107,15 +95,6 @@ public class CloudflareIpFilter implements Handler {
         }
         return null;
     }
-    // Cloud Run: XFFの最左端IPがCloudflareのIP
-    private String resolveClientIp(Context ctx) {
-        String xff = ctx.requestHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
-        }
-        return ctx.remoteAddr(); // fallback
-    }
-
     // CIDRマッチング
     private boolean isCloudflareIp(String ipStr) {
         Boolean cached = ipMatchCache.get(ipStr);

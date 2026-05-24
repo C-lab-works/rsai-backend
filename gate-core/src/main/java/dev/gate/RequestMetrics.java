@@ -383,7 +383,7 @@ public class RequestMetrics {
             logger.warn("refreshSnapshot failed: {}", e.getMessage());
         }
     }
-
+    // p50 p95 計算のDBクエリ  
     private long[] computePercentilesFromDb(Connection conn) throws Exception {
         try (Statement st = conn.createStatement();
              ResultSet rs = st.executeQuery(
