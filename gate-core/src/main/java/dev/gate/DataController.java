@@ -9,6 +9,8 @@ import dev.gate.core.Database;
 import dev.gate.core.Logger;
 import dev.gate.mapping.GetMapping;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -17,13 +19,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.zip.GZIPOutputStream;
 
 @GateController
 public class DataController {
 
     private static final Logger logger = new Logger(DataController.class);
     private static final ObjectMapper mapper = new ObjectMapper();
-    private record CacheEntry(byte[] json, long lastFetchedAt) {}
+    private record CacheEntry(byte[] json, byte[] jsonGzip, long lastFetchedAt) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
     public static void prewarm() {
@@ -45,8 +48,8 @@ public class DataController {
     private void refreshKey(String key, Builder builder) throws Exception {
         try (Connection conn = Database.getConnection()) {
             byte[] json = mapper.writeValueAsBytes(builder.build(conn));
-            long now = System.currentTimeMillis();
-            cache.put(key, new CacheEntry(json, now));
+            byte[] gzip = gzip(json);
+            cache.put(key, new CacheEntry(json, gzip, System.currentTimeMillis()));
         }
     }
 
@@ -71,7 +74,20 @@ public class DataController {
             return;
         }
         ctx.header("Cache-Control", CACHE_CONTROL);
-        ctx.jsonBytes(entry.json());
+        String ae = ctx.requestHeader("Accept-Encoding");
+        if (ae != null && ae.contains("gzip")) {
+            ctx.header("Content-Encoding", "gzip").jsonBytes(entry.jsonGzip());
+        } else {
+            ctx.jsonBytes(entry.json());
+        }
+    }
+
+    private static byte[] gzip(byte[] data) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream(data.length / 3);
+        try (GZIPOutputStream gos = new GZIPOutputStream(baos)) {
+            gos.write(data);
+        }
+        return baos.toByteArray();
     }
 
     // /events
@@ -194,7 +210,6 @@ public class DataController {
     }
 
     // /map
-
     private Object buildMap(Connection conn) throws Exception {
         ObjectNode root = mapper.createObjectNode();
 
@@ -218,8 +233,7 @@ public class DataController {
         return root;
     }
 
-    // util
-
+    // フィールド名の短縮/rename
     private void addTimetableRow(ObjectNode t, ResultSet rs) throws Exception {
         t.put("id",          rs.getInt("id"));
         t.put("project_id",  rs.getInt("project_id"));

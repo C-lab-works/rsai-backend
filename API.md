@@ -38,7 +38,7 @@ Base URL: `https://v2.r-sai2026.site`
     { "id": 1, "name": "ステージ系" }
   ],
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "x": 158.5, "y": 218.0 }
   ],
   "projects": [
     { "id": 1, "title": "中一企画1", "organizer": "1-1", "location_id": 15 }
@@ -57,7 +57,7 @@ Base URL: `https://v2.r-sai2026.site`
 > `timetables[].start` / `.end` — `is_all_day` が `true` の場合は省略される。  
 > `project_categories` — project と category の多対多リレーション。  
 > `locations[].location_code` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
-> `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
+> `locations[].x` / `.y` — マップ上のピクセル座標。設定されていない場合は省略される。
 
 ---
 
@@ -92,14 +92,15 @@ Base URL: `https://v2.r-sai2026.site`
 ```json
 {
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "svg_id": 5, "x": 43.02042086431134, "y": 141.52233128287835 }
+    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "x": 158.5, "y": 218.0 },
+    { "id": 22, "name": "階段1-中学教室", "floor": 1, "location_code": "S1JH", "svg_id": 2, "x": 249.0, "y": 175.0 }
   ]
 }
 ```
 
 > `locations[].location_code` — 場所の識別コード（例: `"02"`, `"T1J"`）。  
 > `locations[].svg_id` — SVG アイコン ID（整数）。設定されている場合のみ含まれる。  
-> `locations[].x` / `.y` — 緯度・経度。設定されていない場合は省略される。
+> `locations[].x` / `.y` — マップ上のピクセル座標。設定されていない場合は省略される。
 
 ---
 

@@ -160,6 +160,8 @@ jobs:
                         value: "${{ secrets.ADMIN_EMAILS }}"
                       - name: LOG_LEVEL
                         value: "${{ vars.LOG_LEVEL }}"
+                      - name: RUNMODE
+                        value: "cloudrun"
 
           EOF
 
@@ -311,6 +313,8 @@ jobs:
                         value: "${{ secrets.ADMIN_EMAILS }}"
                       - name: LOG_LEVEL
                         value: "${{ vars.LOG_LEVEL }}"
+                      - name: RUNMODE
+                        value: "cloudrun"
 
           EOF
 

@@ -9,7 +9,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.Collectors;
 
 public class RequestMetrics {
     private static final Logger logger      = new Logger(RequestMetrics.class);
@@ -35,6 +34,16 @@ public class RequestMetrics {
     // レイテンシヒストグラム
     private final AtomicLong[] histogram        = new AtomicLong[BUCKETS.length];
     private final AtomicLong[] lastFlushedHisto = new AtomicLong[BUCKETS.length];
+
+    // 読み取り用スナップショット（45秒ごとのflush後に更新、volatile参照スワップでロック不要）
+    private record MetricsSnapshot(
+        long totalRequests,
+        long errorCount,
+        long[] hourlyCounts,
+        long[] percentiles,
+        List<Map.Entry<String, Long>> topEndpoints
+    ) {}
+    private volatile MetricsSnapshot snapshot = null;
 
     // 開始時刻は Context attribute に保持する。
     // 以前は ThreadLocal を使っていたが、Java 21 Virtual Thread では各 VT ごとに
@@ -72,7 +81,7 @@ public class RequestMetrics {
     public void init() {
         loadFromDb();
         scheduler.scheduleAtFixedRate(this::flushAll, 45, 45, TimeUnit.SECONDS);
-        logger.info("RequestMetrics永続化有効（45秒ごとにフラッシュ）");
+        logger.info("RequestMetrics永続化有効(45秒ごとにフラッシュ)");
     }
 
     public void shutdown() {
@@ -136,12 +145,14 @@ public class RequestMetrics {
         } catch (Exception e) {
             logger.warn("RequestMetrics: DB復元失敗（初期値で起動）: {}", e.getMessage());
         }
+        refreshSnapshot();
     }
 
     private void flushAll() {
         flushHourly();
         flushEndpoints();
         flushHistogram();
+        refreshSnapshot();
     }
 
     private void flushHourly() {
@@ -280,109 +291,39 @@ public class RequestMetrics {
         }
     }
 
-    // 読み取り（DB経由・マルチインスタンス対応）
+    // 読み取り（snapshotから返す。45秒ごとのflushで更新される）
 
     public long getTotalRequests() {
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "SELECT COALESCE(SUM(requests),0) FROM metrics_hourly WHERE hour >= ?")) {
-            ps.setLong(1, epochHour() - (HOURS - 1));
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getLong(1) : 0L;
-            }
-        } catch (Exception e) {
-            logger.warn("getTotalRequests DB error: {}", e.getMessage());
-            return 0L;
-        }
+        MetricsSnapshot s = snapshot;
+        return s != null ? s.totalRequests() : 0L;
     }
 
     public long getErrorCount() {
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "SELECT COALESCE(SUM(errors),0) FROM metrics_hourly WHERE hour >= ?")) {
-            ps.setLong(1, epochHour() - (HOURS - 1));
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getLong(1) : 0L;
-            }
-        } catch (Exception e) {
-            logger.warn("getErrorCount DB error: {}", e.getMessage());
-            return 0L;
-        }
+        MetricsSnapshot s = snapshot;
+        return s != null ? s.errorCount() : 0L;
     }
 
     public double getErrorRate() {
-        long total = getTotalRequests();
-        long err   = getErrorCount();
-        return total == 0 ? 0.0 : (err * 100.0) / total;
+        MetricsSnapshot s = snapshot;
+        if (s == null || s.totalRequests() == 0) return 0.0;
+        return (s.errorCount() * 100.0) / s.totalRequests();
     }
 
     public long[] getHourlyCounts() {
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "SELECT hour, requests FROM metrics_hourly WHERE hour >= ? ORDER BY hour ASC")) {
-            long currentHour = epochHour();
-            ps.setLong(1, currentHour - (HOURS - 1));
-            long[] result = new long[HOURS];
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    long h   = rs.getLong("hour");
-                    int  idx = (int)(h - (currentHour - (HOURS - 1)));
-                    if (idx >= 0 && idx < HOURS) result[idx] = rs.getLong("requests");
-                }
-            }
-            return result;
-        } catch (Exception e) {
-            logger.warn("getHourlyCounts DB error: {}", e.getMessage());
-            return new long[HOURS];
-        }
+        MetricsSnapshot s = snapshot;
+        return s != null ? s.hourlyCounts().clone() : new long[HOURS];
     }
 
     public long[] getPercentiles() {
-        try (Connection conn = Database.getConnection();
-             Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery(
-                     "SELECT bucket_ms, count FROM metrics_latency_histogram ORDER BY bucket_ms")) {
-            long[] counts = new long[BUCKETS.length];
-            long total    = 0;
-            while (rs.next()) {
-                int idx = bucketIndex(rs.getInt("bucket_ms"));
-                if (idx >= 0) { counts[idx] = rs.getLong("count"); total += counts[idx]; }
-            }
-            if (total == 0) return new long[]{0, 0};
-            long p50 = percentileFromHistogram(counts, total, 50);
-            long p95 = percentileFromHistogram(counts, total, 95);
-            return new long[]{p50, p95};
-        } catch (Exception e) {
-            logger.warn("getPercentiles DB error: {}", e.getMessage());
-            return new long[]{0, 0};
-        }
-    }
-
-    private long percentileFromHistogram(long[] counts, long total, int pct) {
-        long target = (long) Math.ceil(total * pct / 100.0);
-        long cumul  = 0;
-        for (int i = 0; i < BUCKETS.length; i++) {
-            cumul += counts[i];
-            if (cumul >= target) return BUCKETS[i];
-        }
-        return BUCKETS[BUCKETS.length - 1];
+        MetricsSnapshot s = snapshot;
+        return s != null ? s.percentiles() : new long[]{0, 0};
     }
 
     public List<Map.Entry<String, Long>> getTopEndpoints(int n) {
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "SELECT endpoint, SUM(hits) AS hits FROM metrics_endpoints " +
-                     "GROUP BY endpoint ORDER BY SUM(hits) DESC LIMIT ?")) {
-            ps.setInt(1, n);
-            List<Map.Entry<String, Long>> result = new ArrayList<>();
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) result.add(Map.entry(rs.getString("endpoint"), rs.getLong("hits")));
-            }
-            return result;
-        } catch (Exception e) {
-            logger.warn("getTopEndpoints DB error: {}", e.getMessage());
-            return Collections.emptyList();
-        }
+        MetricsSnapshot s = snapshot;
+        if (s == null) return Collections.emptyList();
+        List<Map.Entry<String, Long>> all = s.topEndpoints();
+        return n >= all.size() ? all : all.subList(0, n);
     }
 
     public List<Map.Entry<String, Long>> getEndpointsByDate(String date) {
@@ -401,7 +342,77 @@ public class RequestMetrics {
         }
     }
 
+    // snapshotをDBから再構築（flushAll・loadFromDb後に呼ぶ）
+    private void refreshSnapshot() {
+        try (Connection conn = Database.getConnection()) {
+            long currentHour = epochHour();
+            long since = currentHour - (HOURS - 1);
+
+            long total = 0, errors = 0;
+            long[] hourly = new long[HOURS];
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT hour, requests, errors FROM metrics_hourly WHERE hour >= ?")) {
+                ps.setLong(1, since);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        long h   = rs.getLong("hour");
+                        long req = rs.getLong("requests");
+                        long err = rs.getLong("errors");
+                        total  += req;
+                        errors += err;
+                        int idx = (int)(h - since);
+                        if (idx >= 0 && idx < HOURS) hourly[idx] = req;
+                    }
+                }
+            }
+
+            long[] percents = computePercentilesFromDb(conn);
+
+            List<Map.Entry<String, Long>> top = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT endpoint, SUM(hits) AS hits FROM metrics_endpoints " +
+                    "GROUP BY endpoint ORDER BY SUM(hits) DESC LIMIT 20")) {
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next())
+                        top.add(Map.entry(rs.getString("endpoint"), rs.getLong("hits")));
+                }
+            }
+
+            snapshot = new MetricsSnapshot(total, errors, hourly, percents, List.copyOf(top));
+        } catch (Exception e) {
+            logger.warn("refreshSnapshot failed: {}", e.getMessage());
+        }
+    }
+
+    private long[] computePercentilesFromDb(Connection conn) throws Exception {
+        try (Statement st = conn.createStatement();
+             ResultSet rs = st.executeQuery(
+                     "SELECT bucket_ms, count FROM metrics_latency_histogram ORDER BY bucket_ms")) {
+            long[] counts = new long[BUCKETS.length];
+            long total    = 0;
+            while (rs.next()) {
+                int idx = bucketIndex(rs.getInt("bucket_ms"));
+                if (idx >= 0) { counts[idx] = rs.getLong("count"); total += counts[idx]; }
+            }
+            if (total == 0) return new long[]{0, 0};
+            return new long[]{
+                percentileFromHistogram(counts, total, 50),
+                percentileFromHistogram(counts, total, 95)
+            };
+        }
+    }
+
     // バケットヘルパー
+
+    private long percentileFromHistogram(long[] counts, long total, int pct) {
+        long target = (long) Math.ceil(total * pct / 100.0);
+        long cumul  = 0;
+        for (int i = 0; i < BUCKETS.length; i++) {
+            cumul += counts[i];
+            if (cumul >= target) return BUCKETS[i];
+        }
+        return BUCKETS[BUCKETS.length - 1];
+    }
 
     private int upperBucketIndex(long ms) {
         for (int i = BUCKETS.length - 1; i >= 0; i--) {

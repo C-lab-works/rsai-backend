@@ -11,7 +11,6 @@ import dev.gate.mapping.DeleteMapping;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
-import dev.gate.CfAccessAuth;
 import java.sql.*;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;

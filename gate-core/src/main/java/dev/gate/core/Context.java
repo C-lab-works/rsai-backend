@@ -46,6 +46,8 @@ public class Context {
 
     public String requestHeader(String name) { return request.getHeader(name); }
 
+    public String remoteAddr() { return request.getRemoteAddr(); }  
+    
     public String body() {
         if (cachedBody != null) return cachedBody;
         try {

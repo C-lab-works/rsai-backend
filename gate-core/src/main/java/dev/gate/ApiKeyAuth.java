@@ -16,13 +16,14 @@ public class ApiKeyAuth implements Handler {
     public ApiKeyAuth() {
         String key = System.getenv("API_KEY");
         if (key == null || key.isBlank()) {
-            throw new IllegalStateException("API_KEY environment variable is not set");
+            throw new IllegalStateException("API_KEY environment variable is not set"); // APIキーが設定されてないとクラッシュ
         }
         this.adminKeyBytes = key.getBytes(StandardCharsets.UTF_8);
         String rok = System.getenv("READ_ONLY_KEY");
         this.readOnlyKeyBytes = rok != null ? rok.getBytes(StandardCharsets.UTF_8) : null;
     }
 
+    // 認証ロジック
     @Override
     public void handle(Context ctx) {
         if ("/health".equals(ctx.path())) return;
@@ -50,6 +51,7 @@ public class ApiKeyAuth implements Handler {
         ctx.status(401).json(Map.of("error", "Unauthorized")).halt();
     }
 
+    // タイミング攻撃対策
     private static boolean constantEquals(String a, byte[] b) {
         if (a == null || b == null) return false;
         if (a.length() != b.length) return false;

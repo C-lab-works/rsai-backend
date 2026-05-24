@@ -298,6 +298,7 @@ public class CfAccessAuth implements Handler {
         }
     }
 
+    // JWKSキャッシュ更新
     private void refreshKeysLocked() throws Exception {
         logger.info("Refreshing JWKS from {}", certsUrl);
         HttpRequest req = HttpRequest.newBuilder()

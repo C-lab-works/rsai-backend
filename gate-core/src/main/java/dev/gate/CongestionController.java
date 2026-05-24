@@ -33,6 +33,7 @@ public class CongestionController {
     public static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
     public static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
 
+    // エンドポイント
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
         byte[] cached = cachedData.get();
@@ -43,7 +44,8 @@ public class CongestionController {
         ctx.header("Cache-Control", CACHE_CONTROL);
         ctx.jsonBytes(cached);
     }
-
+    
+    // キャッシュ更新
     public static void refreshCache() throws Exception {
         byte[] json = fetchCongestionFromDb();
         cachedData.set(json);

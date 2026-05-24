@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-
+// エラーをdiscordにwebhookで送信
 public class DiscordWebhook {
     private static final Logger logger     = new Logger(DiscordWebhook.class);
     private static final String WEBHOOK    = System.getenv("DISCORD_WEBHOOK_URL");
@@ -19,8 +19,6 @@ public class DiscordWebhook {
             .orElse("local");
     private static final long   DEBOUNCE_MS = 5_000L;
     private static final HttpClient HTTP   = HttpClient.newHttpClient();
-
-    // キー: "METHOD PATH STATUS"  値: 最終送信エポックms（デバウンス用）
     private static final ConcurrentHashMap<String, AtomicLong> lastSent = new ConcurrentHashMap<>();
 
     private DiscordWebhook() {}
@@ -38,7 +36,7 @@ public class DiscordWebhook {
         long prev = ts.getAndSet(now);
         if (now - prev < DEBOUNCE_MS) return;
 
-        int color = status >= 500 ? 15158332 : 16776960; // 赤 : 黄
+        int color = status >= 500 ? 15158332 : 16776960;
         String safeMsg    = escapeJson(message != null ? message : "(no message)");
         String safeMethod = escapeJson(method != null ? method : "");
         String safePath   = escapeJson(path   != null ? path   : "");

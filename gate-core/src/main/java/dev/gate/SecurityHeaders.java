@@ -9,7 +9,6 @@ import java.util.Map;
 /**
  * すべてのレスポンスにセキュリティ関連HTTPヘッダーを付与するアフターフィルタ。
  * {@code gate.after(SecurityHeaders.get()::handle)} で登録する。
- *
  * 値はすべてコンパイル時定数のため、ホットパス（7000 req/s 想定）では
  * 個別の {@code ctx.header()} 呼び出しを避け、検証スキップ版の
  * {@link Context#addTrustedHeaders(Map)} で一括ポットする。

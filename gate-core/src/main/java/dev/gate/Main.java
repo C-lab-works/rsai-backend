@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
-
+    // キャッシュ更新用バックグラウンドジョブ
     private static final ScheduledExecutorService bg =
             Executors.newScheduledThreadPool(3, r -> {
                 Thread t = new Thread(r, "bg-poller");
@@ -66,7 +66,9 @@ public class Main {
         gate.register(new CongestionController());
         gate.register(new AnnouncementsController());
         gate.register(new AdminController());
-        gate.register(new GcpMetricsController());
+        if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
+            gate.register(new GcpMetricsController());
+        }
 
         // --- Startup ---
 
