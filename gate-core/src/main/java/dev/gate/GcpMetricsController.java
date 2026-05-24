@@ -262,7 +262,8 @@ public class GcpMetricsController {
                 alert.put("status",    status);
                 alert.put("url",       httpReq.path("requestUrl").asText());
 
-                String latency = httpReq.path("latency").asText(null);
+                JsonNode latencyNode = httpReq.path("latency");
+                String latency = (!latencyNode.isMissingNode() && !latencyNode.isNull()) ? latencyNode.asText() : null;
                 if (latency != null && latency.endsWith("s")) {
                     try {
                         double secs = Double.parseDouble(latency.substring(0, latency.length() - 1));
