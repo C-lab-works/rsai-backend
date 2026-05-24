@@ -26,8 +26,8 @@ public class AnnouncementsController {
     private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """
             SELECT id, title, content, is_emergency, display_from, display_until
             FROM announcements
-            WHERE (display_from IS NULL OR display_from <= NOW())
-              AND (display_until IS NULL OR display_until >= NOW())
+            WHERE display_from IS NOT NULL AND display_from <= NOW()
+              AND display_until IS NOT NULL AND display_until >= NOW()
             ORDER BY is_emergency DESC, id DESC
             """;
 
