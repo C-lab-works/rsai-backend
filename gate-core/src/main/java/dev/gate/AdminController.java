@@ -11,6 +11,10 @@ import dev.gate.mapping.DeleteMapping;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.sql.*;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -27,8 +31,9 @@ import java.util.stream.Collectors;
 @GateController
 public class AdminController {
 
-    private static final Logger logger = new Logger(AdminController.class);
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final Logger     logger     = new Logger(AdminController.class);
+    private static final ObjectMapper mapper   = new ObjectMapper();
+    private static final HttpClient   http     = HttpClient.newHttpClient();
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
@@ -59,8 +64,11 @@ public class AdminController {
             String clearedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
             logger.info("cache refreshed by=" + clearedBy);
 
+            boolean cfPurged = purgeCfCache();
+
             ObjectNode res = mapper.createObjectNode();
             res.put("ok", true);
+            res.put("cf_cache_purged", cfPurged);
             ArrayNode cleared = res.putArray("refreshed");
             for (String key : new String[]{"events", "food", "map", "announcements", "congestion"}) {
                 cleared.add(key);
@@ -69,6 +77,34 @@ public class AdminController {
         } catch (Exception e) {
             logger.error("clearCache error", e);
             ctx.status(500).json(Map.of("error", "Cache refresh failed: " + e.getMessage()));
+        }
+    }
+
+    private boolean purgeCfCache() {
+        String apiToken = System.getenv("CF_API_TOKEN");
+        String zoneId   = System.getenv("CF_ZONE_ID");
+        if (apiToken == null || apiToken.isBlank() || zoneId == null || zoneId.isBlank()) {
+            logger.warn("purgeCfCache skipped: CF_API_TOKEN or CF_ZONE_ID not configured");
+            return false;
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create("https://api.cloudflare.com/client/v4/zones/" + zoneId + "/purge_cache"))
+                .header("Authorization", "Bearer " + apiToken)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"purge_everything\":true}"))
+                .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() == 200) {
+                logger.info("CF cache purged successfully");
+                return true;
+            }
+            logger.warn("CF cache purge returned HTTP {}: {}", res.statusCode(),
+                res.body().substring(0, Math.min(200, res.body().length())));
+            return false;
+        } catch (Exception e) {
+            logger.warn("CF cache purge failed: {}", e.getMessage());
+            return false;
         }
     }
 
