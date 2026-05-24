@@ -50,11 +50,15 @@ public class GcpMetricsController {
         Instant alignedEnd  = Instant.ofEpochSecond((nowPeriod + 1) * periodSeconds);
         Instant alignedStart = alignedEnd.minusSeconds((long) periodSeconds * numBuckets);
 
+        ArrayNode alerts = buildAlertsFromMemory(alignedStart, alignedEnd);
+
         try {
             String accessToken = fetchAccessToken();
             String projectId   = fetchMetadata("project/project-id").strip();
             String service     = System.getenv().getOrDefault("K_SERVICE", "");
             String periodStr   = periodSeconds + "s";
+
+            alerts = queryAlerts(accessToken, projectId, alignedStart, alignedEnd);
 
             long[]   instanceCount  = queryLongMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/instance_count",
@@ -62,13 +66,12 @@ public class GcpMetricsController {
             double[] cpuUtilization = queryDoubleMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/cpu/utilizations",
                 "ALIGN_PERCENTILE_50", "REDUCE_PERCENTILE_50", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
-            ArrayNode alerts = queryAlerts(accessToken, projectId, service, alignedStart, alignedEnd);
 
             ctx.json(buildResponse(alignedStart, alignedEnd, periodSeconds, numBuckets,
                 instanceCount, cpuUtilization, alerts));
         } catch (Exception e) {
             logger.warn("gcpMetrics unavailable (not on GCP?): {}", e.getMessage());
-            ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets));
+            ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets, alerts));
         }
     }
 
@@ -96,7 +99,8 @@ public class GcpMetricsController {
         return root;
     }
 
-    private ObjectNode buildEmptyResponse(Instant start, Instant end, int periodSeconds, int numBuckets) {
+    private ObjectNode buildEmptyResponse(Instant start, Instant end, int periodSeconds, int numBuckets,
+                                          ArrayNode alerts) {
         ObjectNode root = mapper.createObjectNode();
 
         root.putObject("range")
@@ -112,7 +116,7 @@ public class GcpMetricsController {
             cpuArr.addObject().put("t", tMs).put("v", 0.0);
         }
 
-        root.putArray("alerts");
+        root.set("alerts", alerts);
         return root;
     }
 
@@ -211,18 +215,13 @@ public class GcpMetricsController {
         return mapper.readTree(res.body()).path("timeSeries");
     }
 
-    // Cloud Logging アラートクエリ
+    // Cloud Logging (rsai-alerts バケット) からアラートを取得
+    // 失敗時は in-memory バッファにフォールバック
 
-    private ArrayNode queryAlerts(String token, String projectId, String service,
-                                  Instant start, Instant end) {
-        ArrayNode alerts = mapper.createArrayNode();
+    private ArrayNode queryAlerts(String token, String projectId, Instant start, Instant end) {
         try {
-            String serviceClause = service.isBlank() ? ""
-                : " AND resource.labels.service_name=\"" + service + "\"";
-            String filter = "logName=\"projects/" + projectId + "/logs/run.googleapis.com%2Frequests\""
-                + " AND resource.type=\"cloud_run_revision\""
-                + serviceClause
-                + " AND httpRequest.status>=400"
+            String filter = "resource.type=\"cloud_run_revision\""
+                + " AND (httpRequest.status=503 OR httpRequest.status=429)"
                 + " AND timestamp>=\"" + start + "\""
                 + " AND timestamp<=\"" + end + "\"";
 
@@ -230,7 +229,8 @@ public class GcpMetricsController {
             body.put("filter", filter);
             body.put("orderBy", "timestamp desc");
             body.put("pageSize", 50);
-            body.putArray("resourceNames").add("projects/" + projectId);
+            body.putArray("resourceNames")
+                .add("projects/" + projectId + "/locations/asia-northeast1/buckets/rsai-alerts/views/_AllLogs");
 
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create("https://logging.googleapis.com/v2/entries:list"))
@@ -240,11 +240,12 @@ public class GcpMetricsController {
                 .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() != 200) {
-                logger.warn("Cloud Logging query HTTP {}: {}", res.statusCode(),
+                logger.warn("rsai-alerts query HTTP {}: {}", res.statusCode(),
                     res.body().substring(0, Math.min(200, res.body().length())));
-                return alerts;
+                return buildAlertsFromMemory(start, end);
             }
 
+            ArrayNode alerts = mapper.createArrayNode();
             JsonNode entries = mapper.readTree(res.body()).path("entries");
             if (!entries.isArray()) return alerts;
 
@@ -255,14 +256,11 @@ public class GcpMetricsController {
                 if (status < 400) continue;
 
                 ObjectNode alert = alerts.addObject();
-                alert.put("timestamp",  entry.path("timestamp").asText());
-                alert.put("severity",   status >= 500 ? "error" : "warn");
-                alert.put("method",     httpReq.path("requestMethod").asText());
-                alert.put("status",     status);
-                alert.put("url",        httpReq.path("requestUrl").asText());
-
-                String size = httpReq.path("responseSize").asText(null);
-                if (size != null && !size.isEmpty()) alert.put("size", size);
+                alert.put("timestamp", entry.path("timestamp").asText());
+                alert.put("severity",  status >= 500 ? "error" : "warn");
+                alert.put("method",    httpReq.path("requestMethod").asText());
+                alert.put("status",    status);
+                alert.put("url",       httpReq.path("requestUrl").asText());
 
                 String latency = httpReq.path("latency").asText(null);
                 if (latency != null && latency.endsWith("s")) {
@@ -272,8 +270,23 @@ public class GcpMetricsController {
                     } catch (NumberFormatException ignored) {}
                 }
             }
+            return alerts;
         } catch (Exception e) {
-            logger.warn("queryAlerts failed: {}", e.getMessage());
+            logger.warn("queryAlerts failed, using in-memory: {}", e.getMessage());
+            return buildAlertsFromMemory(start, end);
+        }
+    }
+
+    private ArrayNode buildAlertsFromMemory(Instant start, Instant end) {
+        ArrayNode alerts = mapper.createArrayNode();
+        for (RequestMetrics.ErrorEntry e : RequestMetrics.get().getRecentErrors(start, end)) {
+            ObjectNode alert = alerts.addObject();
+            alert.put("timestamp",  e.timestamp());
+            alert.put("severity",   e.status() >= 500 ? "error" : "warn");
+            alert.put("method",     e.method());
+            alert.put("status",     e.status());
+            alert.put("url",        e.path());
+            if (e.durationMs() >= 0) alert.put("durationMs", e.durationMs());
         }
         return alerts;
     }

@@ -4,8 +4,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,11 +24,14 @@ import dev.gate.core.Database;
 import dev.gate.core.Logger;
 
 public class RequestMetrics {
-    private static final Logger logger      = new Logger(RequestMetrics.class);
-    private static final int    HOURS       = 24;
-    private static final int    MAX_KEYS    = 100;
-    private static final int[]  BUCKETS     = {0, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000};
-    private static final RequestMetrics INSTANCE = new RequestMetrics();
+    private static final Logger logger            = new Logger(RequestMetrics.class);
+    private static final int    HOURS             = 24;
+    private static final int    MAX_KEYS          = 100;
+    private static final int    MAX_RECENT_ERRORS = 200;
+    private static final int[]  BUCKETS           = {0, 10, 25, 50, 100, 200, 500, 1000, 2000, 5000};
+    private static final RequestMetrics INSTANCE  = new RequestMetrics();
+
+    public record ErrorEntry(String timestamp, String method, String path, int status, long durationMs) {}
 
     // 時間別リングバッファ
     private final AtomicLong[]    hourlyCounts   = new AtomicLong[HOURS];
@@ -44,6 +50,10 @@ public class RequestMetrics {
     // レイテンシヒストグラム
     private final AtomicLong[] histogram        = new AtomicLong[BUCKETS.length];
     private final AtomicLong[] lastFlushedHisto = new AtomicLong[BUCKETS.length];
+
+    // 直近エラーバッファ（4xx/5xx、最大200件）
+    private final Deque<ErrorEntry> recentErrors = new ArrayDeque<>(MAX_RECENT_ERRORS);
+    private final Object errorsLock = new Object();
 
     // 読み取り用スナップショット（45秒ごとのflush後に更新、volatile参照スワップでロック不要）
     private record MetricsSnapshot(
@@ -287,10 +297,17 @@ public class RequestMetrics {
         }
 
         Long start = ctx.getAttribute(START_NANOS_ATTR);
-        if (start != null) {
-            long ms  = (System.nanoTime() - start) / 1_000_000L;
-            int idx = upperBucketIndex(ms);
-            histogram[idx].incrementAndGet();
+        long durationMs = start != null ? (System.nanoTime() - start) / 1_000_000L : -1L;
+        if (durationMs >= 0) {
+            histogram[upperBucketIndex(durationMs)].incrementAndGet();
+        }
+
+        if (ctx.statusCode() >= 400 && !"/health".equals(path)) {
+            synchronized (errorsLock) {
+                if (recentErrors.size() >= MAX_RECENT_ERRORS) recentErrors.pollFirst();
+                recentErrors.addLast(new ErrorEntry(
+                    Instant.now().toString(), ctx.method(), path, ctx.statusCode(), durationMs));
+            }
         }
 
         String key = ctx.method() + " " + path;
@@ -299,6 +316,17 @@ public class RequestMetrics {
         } else {
             endpointCounts.computeIfPresent(key, (k, v) -> { v.increment(); return v; });
         }
+    }
+
+    public List<ErrorEntry> getRecentErrors(Instant from, Instant to) {
+        List<ErrorEntry> result = new ArrayList<>();
+        synchronized (errorsLock) {
+            for (ErrorEntry e : recentErrors) {
+                Instant t = Instant.parse(e.timestamp());
+                if (!t.isBefore(from) && !t.isAfter(to)) result.add(e);
+            }
+        }
+        return result;
     }
 
     // 読み取り（snapshotから返す。45秒ごとのflushで更新される）
