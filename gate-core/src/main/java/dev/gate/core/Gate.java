@@ -170,6 +170,13 @@ public class Gate {
                 if (path == null || path.isEmpty()) path = "/";
                 if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
 
+                // Jetty の正規化に依存しない多層防御: デコード後のパスに ".." が残っている場合は拒否。
+                // 正規ルートは ".." を含まないため、誤検知は発生しない。
+                if (path.contains("..")) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                    return;
+                }
+
                 // ホットパスでは request.getMethod() を複数回参照するのでローカルで 1 回だけ取る。
                 // Jetty の HttpServletRequest実装では getMethod() はフィールド読みだが、
                 // ホットパスでは回数 = req の不必要なレピートを避ける。
