@@ -1,14 +1,24 @@
 package dev.gate;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.ReentrantLock;
+
 import dev.gate.core.Context;
 import dev.gate.core.Database;
 import dev.gate.core.Logger;
-
-import java.sql.*;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.*;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class RequestMetrics {
     private static final Logger logger      = new Logger(RequestMetrics.class);
@@ -403,13 +413,17 @@ public class RequestMetrics {
     }
 
     // バケットヘルパー
-
     private long percentileFromHistogram(long[] counts, long total, int pct) {
         long target = (long) Math.ceil(total * pct / 100.0);
         long cumul  = 0;
         for (int i = 0; i < BUCKETS.length; i++) {
             cumul += counts[i];
-            if (cumul >= target) return BUCKETS[i];
+            if (cumul >= target) {
+                // 上限（次バケットの下限）を返す。
+                // 例: 0-9ms バケット → 10ms, 10-24ms バケット → 25ms
+                // 最終バケットはその下限をそのまま返す。
+                return i + 1 < BUCKETS.length ? BUCKETS[i + 1] : BUCKETS[i];
+            }
         }
         return BUCKETS[BUCKETS.length - 1];
     }
