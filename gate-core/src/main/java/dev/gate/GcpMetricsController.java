@@ -62,9 +62,10 @@ public class GcpMetricsController {
             double[] cpuUtilization = queryDoubleMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/cpu/utilizations",
                 "ALIGN_PERCENTILE_50", "REDUCE_PERCENTILE_50", alignedStart, alignedEnd, periodStr, numBuckets, periodSeconds);
+            ArrayNode alerts = queryAlerts(accessToken, projectId, service, alignedStart, alignedEnd);
 
             ctx.json(buildResponse(alignedStart, alignedEnd, periodSeconds, numBuckets,
-                instanceCount, cpuUtilization));
+                instanceCount, cpuUtilization, alerts));
         } catch (Exception e) {
             logger.warn("gcpMetrics unavailable (not on GCP?): {}", e.getMessage());
             ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets));
@@ -74,7 +75,7 @@ public class GcpMetricsController {
     // レスポンス構築
 
     private ObjectNode buildResponse(Instant start, Instant end, int periodSeconds, int numBuckets,
-                                     long[] instanceCount, double[] cpuUtilization) {
+                                     long[] instanceCount, double[] cpuUtilization, ArrayNode alerts) {
         ObjectNode root = mapper.createObjectNode();
 
         root.putObject("range")
@@ -91,7 +92,7 @@ public class GcpMetricsController {
                               .put("v", Math.round(cpuUtilization[i] * 100000.0) / 100000.0);
         }
 
-        root.putArray("alerts");
+        root.set("alerts", alerts);
         return root;
     }
 
@@ -208,6 +209,72 @@ public class GcpMetricsController {
             return null;
         }
         return mapper.readTree(res.body()).path("timeSeries");
+    }
+
+    // Cloud Logging アラートクエリ
+
+    private ArrayNode queryAlerts(String token, String projectId, String service,
+                                  Instant start, Instant end) {
+        ArrayNode alerts = mapper.createArrayNode();
+        try {
+            String serviceClause = service.isBlank() ? ""
+                : "\nresource.labels.service_name=\"" + service + "\"";
+            String filter = "resource.type=\"cloud_run_revision\""
+                + serviceClause
+                + "\nhttpRequest.status>=400"
+                + "\ntimestamp>=\"" + start + "\""
+                + "\ntimestamp<=\"" + end + "\"";
+
+            ObjectNode body = mapper.createObjectNode();
+            body.put("filter", filter);
+            body.put("orderBy", "timestamp desc");
+            body.put("pageSize", 50);
+            body.putArray("resourceNames").add("projects/" + projectId);
+
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create("https://logging.googleapis.com/v2/entries:list"))
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
+                .build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() != 200) {
+                logger.warn("Cloud Logging query HTTP {}: {}", res.statusCode(),
+                    res.body().substring(0, Math.min(200, res.body().length())));
+                return alerts;
+            }
+
+            JsonNode entries = mapper.readTree(res.body()).path("entries");
+            if (!entries.isArray()) return alerts;
+
+            for (JsonNode entry : entries) {
+                JsonNode httpReq = entry.path("httpRequest");
+                if (httpReq.isMissingNode()) continue;
+                int status = httpReq.path("status").asInt(0);
+                if (status < 400) continue;
+
+                ObjectNode alert = alerts.addObject();
+                alert.put("timestamp",  entry.path("timestamp").asText());
+                alert.put("severity",   status >= 500 ? "error" : "warn");
+                alert.put("method",     httpReq.path("requestMethod").asText());
+                alert.put("status",     status);
+                alert.put("url",        httpReq.path("requestUrl").asText());
+
+                String size = httpReq.path("responseSize").asText(null);
+                if (size != null && !size.isEmpty()) alert.put("size", size);
+
+                String latency = httpReq.path("latency").asText(null);
+                if (latency != null && latency.endsWith("s")) {
+                    try {
+                        double secs = Double.parseDouble(latency.substring(0, latency.length() - 1));
+                        alert.put("durationMs", (long)(secs * 1000));
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("queryAlerts failed: {}", e.getMessage());
+        }
+        return alerts;
     }
 
     // メタデータサーバー
