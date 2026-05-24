@@ -37,32 +37,39 @@ public class CfMetricsController {
         }
 
         String rangeParam = ctx.query("range");
-        final int numBuckets = switch (rangeParam != null ? rangeParam : "") {
-            case "1h" -> 2;
-            case "6h" -> 6;
-            default   -> 24;
-        };
+        final String dataset;
+        final int    bucketMinutes;
+        final int    numBuckets;
+        String rp = rangeParam != null ? rangeParam : "";
+        if ("1h".equals(rp)) {
+            dataset = "httpRequests1mGroups"; bucketMinutes = 5;  numBuckets = 12;
+        } else if ("6h".equals(rp)) {
+            dataset = "httpRequests1mGroups"; bucketMinutes = 10; numBuckets = 36;
+        } else {
+            dataset = "httpRequests1hGroups"; bucketMinutes = 60; numBuckets = 24;
+        }
 
-        long    nowHour      = Instant.now().getEpochSecond() / 3600;
-        Instant alignedEnd   = Instant.ofEpochSecond((nowHour + 1) * 3600);
-        Instant alignedStart = alignedEnd.minusSeconds((long) numBuckets * 3600);
+        long    nowUnit      = Instant.now().getEpochSecond() / (bucketMinutes * 60L);
+        Instant alignedEnd   = Instant.ofEpochSecond((nowUnit + 1) * bucketMinutes * 60L);
+        Instant alignedStart = alignedEnd.minusSeconds((long) numBuckets * bucketMinutes * 60);
+        int     queryLimit   = numBuckets * bucketMinutes + 2;
 
         try {
-            String   body   = buildRequestBody(cfZoneId, alignedStart, alignedEnd, numBuckets);
+            String   body   = buildRequestBody(cfZoneId, alignedStart, alignedEnd, queryLimit, dataset);
             JsonNode groups = executeGraphQL(cfApiToken, body);
-            ctx.json(buildResponse(groups, alignedStart, numBuckets));
+            ctx.json(buildResponse(groups, alignedStart, numBuckets, bucketMinutes));
         } catch (Exception e) {
             logger.warn("cfMetrics failed: {}", e.getMessage());
-            ctx.json(buildEmptyResponse(alignedStart, alignedEnd, numBuckets));
+            ctx.json(buildEmptyResponse(alignedStart, alignedEnd, numBuckets, bucketMinutes));
         }
     }
 
-    private String buildRequestBody(String zoneId, Instant start, Instant end, int numBuckets) throws Exception {
+    private String buildRequestBody(String zoneId, Instant start, Instant end, int queryLimit, String dataset) throws Exception {
         String gql = String.format("""
                 {
                   viewer {
                     zones(filter: {zoneTag: "%s"}) {
-                      httpRequests1hGroups(
+                      %s(
                         limit: %d,
                         filter: {datetime_geq: "%s", datetime_lt: "%s"},
                         orderBy: [datetime_ASC]
@@ -73,7 +80,7 @@ public class CfMetricsController {
                     }
                   }
                 }
-                """, zoneId, numBuckets + 1, start, end);
+                """, zoneId, dataset, queryLimit, start, end);
         ObjectNode body = mapper.createObjectNode();
         body.put("query", gql);
         return mapper.writeValueAsString(body);
@@ -101,26 +108,27 @@ public class CfMetricsController {
         return root.path("data").path("viewer").path("zones").path(0).path("httpRequests1hGroups");
     }
 
-    private ObjectNode buildResponse(JsonNode groups, Instant start, int numBuckets) {
+    private ObjectNode buildResponse(JsonNode groups, Instant start, int numBuckets, int bucketMinutes) {
         long[] requests      = new long[numBuckets];
         long[] cached        = new long[numBuckets];
         long[] bytes         = new long[numBuckets];
         long[] cachedBytes   = new long[numBuckets];
         long[] threats       = new long[numBuckets];
-        long startEpoch = start.getEpochSecond();
+        long startEpoch      = start.getEpochSecond();
+        long bucketSecs      = (long) bucketMinutes * 60;
 
         if (groups.isArray()) {
             for (JsonNode g : groups) {
                 String dt = g.path("dimensions").path("datetime").asText();
                 try {
-                    int idx = (int)((Instant.parse(dt).getEpochSecond() - startEpoch) / 3600);
+                    int idx = (int)((Instant.parse(dt).getEpochSecond() - startEpoch) / bucketSecs);
                     if (idx < 0 || idx >= numBuckets) continue;
                     JsonNode sum = g.path("sum");
-                    requests[idx]    = sum.path("requests").asLong();
-                    cached[idx]      = sum.path("cachedRequests").asLong();
-                    bytes[idx]       = sum.path("bytes").asLong();
-                    cachedBytes[idx] = sum.path("cachedBytes").asLong();
-                    threats[idx]     = sum.path("threats").asLong();
+                    requests[idx]    += sum.path("requests").asLong();
+                    cached[idx]      += sum.path("cachedRequests").asLong();
+                    bytes[idx]       += sum.path("bytes").asLong();
+                    cachedBytes[idx] += sum.path("cachedBytes").asLong();
+                    threats[idx]     += sum.path("threats").asLong();
                 } catch (Exception ignored) {}
             }
         }
@@ -128,7 +136,7 @@ public class CfMetricsController {
         ObjectNode root       = mapper.createObjectNode();
         root.putObject("range")
             .put("from", start.toString())
-            .put("to",   Instant.ofEpochSecond(startEpoch + (long) numBuckets * 3600).toString());
+            .put("to",   Instant.ofEpochSecond(startEpoch + (long) numBuckets * bucketSecs).toString());
         ArrayNode reqArr      = root.putArray("request_count");
         ArrayNode cachedArr   = root.putArray("cached_count");
         ArrayNode cacheHitArr = root.putArray("cache_hit_rate");
@@ -137,7 +145,7 @@ public class CfMetricsController {
         ArrayNode thrArr      = root.putArray("threats");
 
         for (int i = 0; i < numBuckets; i++) {
-            long   tMs     = (startEpoch + (long)(i + 1) * 3600) * 1000L;
+            long   tMs     = (startEpoch + (long)(i + 1) * bucketSecs) * 1000L;
             double hitRate = requests[i] > 0
                     ? Math.round(cached[i] * 10000.0 / requests[i]) / 100.0
                     : 0.0;
@@ -151,7 +159,7 @@ public class CfMetricsController {
         return root;
     }
 
-    private ObjectNode buildEmptyResponse(Instant start, Instant end, int numBuckets) {
+    private ObjectNode buildEmptyResponse(Instant start, Instant end, int numBuckets, int bucketMinutes) {
         ObjectNode root     = mapper.createObjectNode();
         root.putObject("range").put("from", start.toString()).put("to", end.toString());
         ArrayNode reqArr      = root.putArray("request_count");
@@ -161,8 +169,9 @@ public class CfMetricsController {
         ArrayNode cachedBwArr = root.putArray("cached_bandwidth");
         ArrayNode thrArr      = root.putArray("threats");
         long startEpoch = start.getEpochSecond();
+        long bucketSecs = (long) bucketMinutes * 60;
         for (int i = 0; i < numBuckets; i++) {
-            long tMs = (startEpoch + (long)(i + 1) * 3600) * 1000L;
+            long tMs = (startEpoch + (long)(i + 1) * bucketSecs) * 1000L;
             reqArr     .addObject().put("t", tMs).put("v", 0);
             cachedArr  .addObject().put("t", tMs).put("v", 0);
             cacheHitArr.addObject().put("t", tMs).put("v", 0.0);
