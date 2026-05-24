@@ -124,10 +124,8 @@ public class Gate {
 
     public GateServer start(int port) throws Exception {
         started = true;
-        // Java 21 Virtual Threads via Jetty's official API
-        // CancelledKeyException はコネクション切断時に Jetty 内部で発生する既知の無害なノイズ。
-        // runJob をオーバーライドして例外がスレッド境界に到達する前に捕捉し、
-        // GraalVM native image が stderr/stdout に直接出力するのを防ぐ。
+        installCancelledKeyExceptionSuppressor();
+
         QueuedThreadPool threadPool = new QueuedThreadPool() {
             @Override
             protected void runJob(Runnable job) {
@@ -138,7 +136,14 @@ public class Gate {
                 }
             }
         };
-        threadPool.setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        // Virtual threads with a custom factory so their uncaught-exception handler
+        // also suppresses CancelledKeyException before it reaches GraalVM stderr.
+        java.util.concurrent.ThreadFactory vtFactory = Thread.ofVirtual()
+                .uncaughtExceptionHandler((t, e) -> {
+                    if (!isCancelledKeyException(e)) e.printStackTrace(System.err);
+                })
+                .factory();
+        threadPool.setVirtualThreadsExecutor(Executors.newThreadPerTaskExecutor(vtFactory));
         Server server = new Server(threadPool);
         ServerConnector connector = new ServerConnector(server);
         connector.setPort(port);
@@ -323,6 +328,22 @@ public class Gate {
                 }
             }
         }
+    }
+
+    private static boolean isCancelledKeyException(Throwable t) {
+        for (Throwable cause = t; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.nio.channels.CancelledKeyException) return true;
+        }
+        return false;
+    }
+
+    private static void installCancelledKeyExceptionSuppressor() {
+        Thread.UncaughtExceptionHandler existing = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            if (isCancelledKeyException(throwable)) return;
+            if (existing != null) existing.uncaughtException(thread, throwable);
+            else throwable.printStackTrace(System.err);
+        });
     }
 
     private void loadAndRegister(String className, ClassLoader classLoader) {
