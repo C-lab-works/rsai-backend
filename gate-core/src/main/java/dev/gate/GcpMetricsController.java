@@ -218,12 +218,13 @@ public class GcpMetricsController {
         ArrayNode alerts = mapper.createArrayNode();
         try {
             String serviceClause = service.isBlank() ? ""
-                : "\nresource.labels.service_name=\"" + service + "\"";
-            String filter = "resource.type=\"cloud_run_revision\""
+                : " AND resource.labels.service_name=\"" + service + "\"";
+            String filter = "logName=\"projects/" + projectId + "/logs/run.googleapis.com%2Frequests\""
+                + " AND resource.type=\"cloud_run_revision\""
                 + serviceClause
-                + "\nhttpRequest.status>=400"
-                + "\ntimestamp>=\"" + start + "\""
-                + "\ntimestamp<=\"" + end + "\"";
+                + " AND httpRequest.status>=400"
+                + " AND timestamp>=\"" + start + "\""
+                + " AND timestamp<=\"" + end + "\"";
 
             ObjectNode body = mapper.createObjectNode();
             body.put("filter", filter);
