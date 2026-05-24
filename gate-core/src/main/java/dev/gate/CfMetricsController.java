@@ -68,7 +68,7 @@ public class CfMetricsController {
                         orderBy: [datetime_ASC]
                       ) {
                         dimensions { datetime }
-                        sum { requests cachedRequests bytes threats }
+                        sum { requests cachedRequests bytes cachedBytes threats }
                       }
                     }
                   }
@@ -102,10 +102,11 @@ public class CfMetricsController {
     }
 
     private ObjectNode buildResponse(JsonNode groups, Instant start, int numBuckets) {
-        long[] requests = new long[numBuckets];
-        long[] cached   = new long[numBuckets];
-        long[] bytes    = new long[numBuckets];
-        long[] threats  = new long[numBuckets];
+        long[] requests      = new long[numBuckets];
+        long[] cached        = new long[numBuckets];
+        long[] bytes         = new long[numBuckets];
+        long[] cachedBytes   = new long[numBuckets];
+        long[] threats       = new long[numBuckets];
         long startEpoch = start.getEpochSecond();
 
         if (groups.isArray()) {
@@ -115,32 +116,37 @@ public class CfMetricsController {
                     int idx = (int)((Instant.parse(dt).getEpochSecond() - startEpoch) / 3600);
                     if (idx < 0 || idx >= numBuckets) continue;
                     JsonNode sum = g.path("sum");
-                    requests[idx] = sum.path("requests").asLong();
-                    cached[idx]   = sum.path("cachedRequests").asLong();
-                    bytes[idx]    = sum.path("bytes").asLong();
-                    threats[idx]  = sum.path("threats").asLong();
+                    requests[idx]    = sum.path("requests").asLong();
+                    cached[idx]      = sum.path("cachedRequests").asLong();
+                    bytes[idx]       = sum.path("bytes").asLong();
+                    cachedBytes[idx] = sum.path("cachedBytes").asLong();
+                    threats[idx]     = sum.path("threats").asLong();
                 } catch (Exception ignored) {}
             }
         }
 
-        ObjectNode root     = mapper.createObjectNode();
+        ObjectNode root       = mapper.createObjectNode();
         root.putObject("range")
             .put("from", start.toString())
-            .put("to",   Instant.ofEpochSecond(start.getEpochSecond() + (long) numBuckets * 3600).toString());
-        ArrayNode  reqArr   = root.putArray("request_count");
-        ArrayNode  cacheArr = root.putArray("cache_hit_rate");
-        ArrayNode  bwArr    = root.putArray("bandwidth");
-        ArrayNode  thrArr   = root.putArray("threats");
+            .put("to",   Instant.ofEpochSecond(startEpoch + (long) numBuckets * 3600).toString());
+        ArrayNode reqArr      = root.putArray("request_count");
+        ArrayNode cachedArr   = root.putArray("cached_count");
+        ArrayNode cacheHitArr = root.putArray("cache_hit_rate");
+        ArrayNode bwArr       = root.putArray("bandwidth");
+        ArrayNode cachedBwArr = root.putArray("cached_bandwidth");
+        ArrayNode thrArr      = root.putArray("threats");
 
         for (int i = 0; i < numBuckets; i++) {
             long   tMs     = (startEpoch + (long)(i + 1) * 3600) * 1000L;
             double hitRate = requests[i] > 0
                     ? Math.round(cached[i] * 10000.0 / requests[i]) / 100.0
                     : 0.0;
-            reqArr  .addObject().put("t", tMs).put("v", requests[i]);
-            cacheArr.addObject().put("t", tMs).put("v", hitRate);
-            bwArr   .addObject().put("t", tMs).put("v", bytes[i]);
-            thrArr  .addObject().put("t", tMs).put("v", threats[i]);
+            reqArr     .addObject().put("t", tMs).put("v", requests[i]);
+            cachedArr  .addObject().put("t", tMs).put("v", cached[i]);
+            cacheHitArr.addObject().put("t", tMs).put("v", hitRate);
+            bwArr      .addObject().put("t", tMs).put("v", bytes[i]);
+            cachedBwArr.addObject().put("t", tMs).put("v", cachedBytes[i]);
+            thrArr     .addObject().put("t", tMs).put("v", threats[i]);
         }
         return root;
     }
@@ -148,17 +154,21 @@ public class CfMetricsController {
     private ObjectNode buildEmptyResponse(Instant start, Instant end, int numBuckets) {
         ObjectNode root     = mapper.createObjectNode();
         root.putObject("range").put("from", start.toString()).put("to", end.toString());
-        ArrayNode  reqArr   = root.putArray("request_count");
-        ArrayNode  cacheArr = root.putArray("cache_hit_rate");
-        ArrayNode  bwArr    = root.putArray("bandwidth");
-        ArrayNode  thrArr   = root.putArray("threats");
+        ArrayNode reqArr      = root.putArray("request_count");
+        ArrayNode cachedArr   = root.putArray("cached_count");
+        ArrayNode cacheHitArr = root.putArray("cache_hit_rate");
+        ArrayNode bwArr       = root.putArray("bandwidth");
+        ArrayNode cachedBwArr = root.putArray("cached_bandwidth");
+        ArrayNode thrArr      = root.putArray("threats");
         long startEpoch = start.getEpochSecond();
         for (int i = 0; i < numBuckets; i++) {
             long tMs = (startEpoch + (long)(i + 1) * 3600) * 1000L;
-            reqArr  .addObject().put("t", tMs).put("v", 0);
-            cacheArr.addObject().put("t", tMs).put("v", 0.0);
-            bwArr   .addObject().put("t", tMs).put("v", 0);
-            thrArr  .addObject().put("t", tMs).put("v", 0);
+            reqArr     .addObject().put("t", tMs).put("v", 0);
+            cachedArr  .addObject().put("t", tMs).put("v", 0);
+            cacheHitArr.addObject().put("t", tMs).put("v", 0.0);
+            bwArr      .addObject().put("t", tMs).put("v", 0);
+            cachedBwArr.addObject().put("t", tMs).put("v", 0);
+            thrArr     .addObject().put("t", tMs).put("v", 0);
         }
         return root;
     }
