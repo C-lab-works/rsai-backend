@@ -1,5 +1,6 @@
 package dev.gate;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -12,9 +13,12 @@ import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 import dev.gate.mapping.PutMapping;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.sql.*;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -31,9 +35,11 @@ import java.util.stream.Collectors;
 @GateController
 public class AdminController {
 
-    private static final Logger     logger     = new Logger(AdminController.class);
-    private static final ObjectMapper mapper   = new ObjectMapper();
-    private static final HttpClient   http     = HttpClient.newHttpClient();
+    private static final Logger       logger              = new Logger(AdminController.class);
+    private static final ObjectMapper mapper              = new ObjectMapper();
+    private static final HttpClient   http                = HttpClient.newHttpClient();
+    private static final String       GCP_METADATA_BASE   = "http://metadata.google.internal/computeMetadata/v1/";
+    private static final String       GCP_MONITORING_BASE = "https://monitoring.googleapis.com/v3/projects/";
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
@@ -577,6 +583,7 @@ public class AdminController {
         root.put("error_rate",     errRate);
         root.put("p50_ms",         perc[0]);
         root.put("p95_ms",         perc[1]);
+        root.put("instances",      fetchCurrentInstanceCount());
         root.put("max_instances",  10);
 
         ArrayNode chart = root.putArray("chart");
@@ -632,6 +639,68 @@ public class AdminController {
             n.put("diff",      entry.getValue()[0] - entry.getValue()[1]);
         }
         ctx.json(root);
+    }
+
+    private int fetchCurrentInstanceCount() {
+        try {
+            HttpRequest tokenReq = HttpRequest.newBuilder()
+                .uri(URI.create(GCP_METADATA_BASE + "instance/service-accounts/default/token"))
+                .header("Metadata-Flavor", "Google")
+                .timeout(Duration.ofSeconds(3))
+                .GET().build();
+            String accessToken = mapper.readTree(
+                http.send(tokenReq, HttpResponse.BodyHandlers.ofString()).body()
+            ).get("access_token").asText();
+
+            HttpRequest projReq = HttpRequest.newBuilder()
+                .uri(URI.create(GCP_METADATA_BASE + "project/project-id"))
+                .header("Metadata-Flavor", "Google")
+                .timeout(Duration.ofSeconds(3))
+                .GET().build();
+            String projectId = http.send(projReq, HttpResponse.BodyHandlers.ofString()).body().strip();
+
+            String service = System.getenv().getOrDefault("K_SERVICE", "");
+            String serviceClause = service.isBlank() ? ""
+                : " AND resource.labels.service_name=\"" + service + "\"";
+            String filter = "metric.type=\"run.googleapis.com/container/instance_count\"" + serviceClause;
+
+            Instant now   = Instant.now();
+            Instant start = now.minusSeconds(300);
+            String url = GCP_MONITORING_BASE + projectId + "/timeSeries"
+                + "?filter="                         + URLEncoder.encode(filter, StandardCharsets.UTF_8)
+                + "&interval.startTime="             + start
+                + "&interval.endTime="               + now
+                + "&aggregation.alignmentPeriod=60s"
+                + "&aggregation.perSeriesAligner=ALIGN_MAX"
+                + "&aggregation.crossSeriesReducer=REDUCE_MAX"
+                + "&aggregation.groupByFields=resource.labels.service_name";
+
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Bearer " + accessToken)
+                .timeout(Duration.ofSeconds(5))
+                .GET().build();
+            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (res.statusCode() != 200) return 0;
+
+            JsonNode timeSeries = mapper.readTree(res.body()).path("timeSeries");
+            if (!timeSeries.isArray() || timeSeries.isEmpty()) return 0;
+
+            long max = 0;
+            for (JsonNode series : timeSeries) {
+                for (JsonNode point : series.path("points")) {
+                    JsonNode val = point.path("value");
+                    long v = val.has("int64Value")  ? val.get("int64Value").asLong()
+                           : val.has("doubleValue") ? (long) val.get("doubleValue").asDouble()
+                           : 0L;
+                    if (v > max) max = v;
+                }
+            }
+            return (int) max;
+        } catch (Exception e) {
+            logger.debug("fetchCurrentInstanceCount unavailable: {}", e.getMessage());
+            return 0;
+        }
     }
 
     private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throws SQLException {
