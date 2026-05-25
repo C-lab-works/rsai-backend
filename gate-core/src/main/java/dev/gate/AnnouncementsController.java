@@ -35,6 +35,11 @@ public class AnnouncementsController {
     private record CacheEntry(byte[] json, String etag) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
+    public static String getCacheEtag() {
+        CacheEntry entry = cache.get(CACHE_KEY);
+        return entry != null ? entry.etag() : null;
+    }
+
     // キャッシュを更新する（管理者更新・定期リフレッシュ共用）
     public static void refreshCache() throws Exception {
         try {

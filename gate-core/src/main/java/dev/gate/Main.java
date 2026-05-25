@@ -17,9 +17,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
-    // キャッシュ更新用バックグラウンドジョブ
-    // データ系3つ(events/food/map, announcements, congestion)が同時刻に発火しても捌けるよう 4。
-    // JWKS(50分間隔) は低頻度なので衝突しない。
     private static final ScheduledExecutorService bg =
             Executors.newScheduledThreadPool(4, r -> {
                 Thread t = new Thread(r, "bg-poller");
@@ -165,6 +162,14 @@ public class Main {
 
         // 50分ごとにJWKS公開鍵を事前更新（TTL=60分の10分前）
         bg.scheduleAtFixedRate(cfAccessAuth::prefetchJwks, 50, 50, TimeUnit.MINUTES);
+
+        // Firestore インスタンス管理（自己登録・コマンドリスナー・ブロードキャスト）
+        InstanceManager.get().init(() -> APP_READY.set(false));
+
+        // 30秒ごとにインスタンスメトリクスを記録
+        bg.scheduleAtFixedRate(
+                () -> InstanceManager.get().recordMetrics(),
+                30, 30, TimeUnit.SECONDS);
     }
 
     private static String loadVersion() {

@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -70,6 +71,102 @@ public class AdminController {
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
     );
 
+    // インスタンス一覧を返す
+    @GetMapping("/admin/instances")
+    public void listInstances(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            ArrayNode arr = mapper.createArrayNode();
+            for (FirestoreRest.Entry entry : FirestoreRest.get().list("instances")) {
+                ObjectNode n = arr.addObject();
+                n.put("instanceId", entry.id());
+                putStringField(n, "revision",  (String) entry.data().get("revision"));
+                putStringField(n, "host",      (String) entry.data().get("host"));
+                putStringField(n, "startedAt", (String) entry.data().get("startedAt"));
+                putStringField(n, "status",    (String) entry.data().get("status"));
+            }
+            ctx.json(arr);
+        } catch (Exception e) {
+            logger.error("listInstances error", e);
+            ctx.status(503).json(Map.of("error", "Firestore unavailable"));
+        }
+    }
+
+    private static void putStringField(ObjectNode n, String key, String value) {
+        if (value != null) n.put(key, value); else n.putNull(key);
+    }
+
+    // インスタンスにコマンドを送信し、最大5秒ポーリングしてレスポンスを返す
+    @PostMapping("/admin/instances/{id}/command")
+    @SuppressWarnings("unchecked")
+    public void sendCommand(Context ctx) {
+        String instanceId = ctx.pathParam("id");
+        try {
+            Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null || !body.containsKey("type")) {
+                ctx.status(400).json(Map.of("error", "type is required"));
+                return;
+            }
+            String type       = (String) body.get("type");
+            Object payloadRaw = body.get("payload");
+
+            String requestId = UUID.randomUUID().toString();
+            FirestoreRest fs = FirestoreRest.get();
+
+            Map<String, Object> cmd = new java.util.HashMap<>();
+            cmd.put("type",      type);
+            cmd.put("requestId", requestId);
+            cmd.put("issuedAt",  Instant.now().toString());
+            if (payloadRaw != null) cmd.put("payload", payloadRaw);
+            fs.update("instances/" + instanceId, Map.of("cmd", cmd));
+
+            // poll for result (500ms × 10 = 5s max)
+            long deadline = System.currentTimeMillis() + 5_000;
+            while (System.currentTimeMillis() < deadline) {
+                Thread.sleep(500);
+                Map<String, Object> doc = fs.get("instances/" + instanceId);
+                if (doc == null) break;
+                Map<String, Object> res = (Map<String, Object>) doc.get("res");
+                if (res != null && requestId.equals(res.get("requestId"))) {
+                    ctx.json(res);
+                    return;
+                }
+            }
+            ctx.status(504).json(Map.of("error", "command timed out", "requestId", requestId));
+        } catch (Exception e) {
+            logger.error("sendCommand error instanceId={}", instanceId, e);
+            ctx.status(503).json(Map.of("error", "Firestore unavailable"));
+        }
+    }
+
+    // インスタンスのメトリクス履歴を返す（降順 → フロントで昇順に並べ直す）
+    @GetMapping("/admin/instances/{id}/metrics")
+    public void getInstanceMetrics(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
+        String instanceId = ctx.pathParam("id");
+        int limit = 40;
+        try { limit = Math.min(200, Integer.parseInt(ctx.query("limit"))); } catch (Exception ignored) {}
+        try {
+            ArrayNode arr = mapper.createArrayNode();
+            for (FirestoreRest.Entry entry :
+                    FirestoreRest.get().query("instances/" + instanceId, "metrics", "t", true, limit)) {
+                Map<String, Object> d = entry.data();
+                ObjectNode n = arr.addObject();
+                n.put("t",            toLong(d.get("t")));
+                n.put("cpu",          toDouble(d.get("cpu")));
+                n.put("heap_used_mb", toLong(d.get("heap_used_mb")));
+                n.put("threads",      (int) toLong(d.get("threads")));
+            }
+            ctx.json(arr);
+        } catch (Exception e) {
+            logger.error("getInstanceMetrics error instanceId={}", instanceId, e);
+            ctx.status(503).json(Map.of("error", "Firestore unavailable"));
+        }
+    }
+
+    private static long   toLong(Object v)   { return v instanceof Long l ? l : v instanceof Number n ? n.longValue() : 0L; }
+    private static double toDouble(Object v) { return v instanceof Double d ? d : v instanceof Number n ? n.doubleValue() : 0.0; }
+
     // 管理パネルからキャッシュを削除するエンドポイント
     // 即時ポーリングさせてキャッシュを更新させる
     @PostMapping("/admin/cache/clear")
@@ -81,6 +178,8 @@ public class AdminController {
 
             String clearedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
             logger.info("cache refreshed by=" + clearedBy);
+
+            InstanceManager.get().broadcastCacheRefresh();
 
             boolean cfPurged = purgeCfCache();
 

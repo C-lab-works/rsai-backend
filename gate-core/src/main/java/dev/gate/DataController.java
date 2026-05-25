@@ -29,6 +29,12 @@ public class DataController {
     private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
+    public static Map<String, String> getCacheEtags() {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        cache.forEach((k, v) -> result.put(k, v.etag()));
+        return result;
+    }
+
     public void refreshAll() throws Exception {
         refreshKey("events", this::buildEvents);
         refreshKey("food",   this::buildFood);
