@@ -86,8 +86,8 @@ public class AdminController {
                     if (age > 60) continue; // クラッシュ／応答なし → 一覧から除外
                     status = age < 30 ? "running" : "degraded";
                 } else {
-                    // lastSeen 未実装インスタンス（旧フォーマット）→ rawStatus をそのまま使う
-                    status = rawStatus != null ? rawStatus : "unknown";
+                    // lastSeen なし → 生死不明（起動直後 or kill された可能性）
+                    status = "unknown";
                 }
 
                 ObjectNode n = arr.addObject();
@@ -707,7 +707,7 @@ public class AdminController {
         root.put("p50_ms",         perc[0]);
         root.put("p95_ms",         perc[1]);
         root.put("instances",      countRunningInstances());
-        root.put("max_instances",  10);
+        root.put("max_instances",  30);
 
         ArrayNode chart = root.putArray("chart");
         for (long v : m.getHourlyCounts()) chart.add(v);
@@ -787,10 +787,8 @@ public class AdminController {
                 String ls = (String) e.data().get("lastSeen");
                 String st = (String) e.data().get("status");
                 if ("stopped".equals(st)) continue;
-                if (ls != null) {
-                    if (Instant.parse(ls).isAfter(cutoff)) count++;
-                } else if ("running".equals(st)) {
-                    count++; // 旧フォーマット: lastSeen なし → status を信頼
+                if (ls != null && Instant.parse(ls).isAfter(cutoff)) {
+                    count++;
                 }
             }
             return count;
