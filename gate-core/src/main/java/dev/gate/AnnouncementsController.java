@@ -25,10 +25,8 @@ public class AnnouncementsController {
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=60, stale-while-revalidate=120";
     private static final String CACHE_KEY = "announcements";
     private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """
-            SELECT id, title, content, is_emergency, display_from, display_until
+            SELECT id, title, content, is_emergency
             FROM announcements
-            WHERE display_from IS NOT NULL AND display_from <= NOW()
-              AND display_until IS NOT NULL AND display_until >= NOW()
             ORDER BY is_emergency DESC, id DESC
             """;
 
@@ -88,14 +86,5 @@ public class AnnouncementsController {
         n.put("title", rs.getString("title"));
         n.put("content", rs.getString("content"));
         n.put("is_emergency", rs.getInt("is_emergency") == 1);
-
-        putIfNotNull(n, "display_from", rs.getString("display_from"));
-        putIfNotNull(n, "display_until", rs.getString("display_until"));
-    }
-
-    private static void putIfNotNull(ObjectNode n, String fieldName, String value) {
-        if (value != null) {
-            n.put(fieldName, value);
-        }
     }
 }
