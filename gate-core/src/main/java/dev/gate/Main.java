@@ -18,7 +18,7 @@ public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
     private static final ScheduledExecutorService bg =
-            Executors.newScheduledThreadPool(4, r -> {
+            Executors.newScheduledThreadPool(6, r -> {
                 Thread t = new Thread(r, "bg-poller");
                 t.setDaemon(true);
                 return t;

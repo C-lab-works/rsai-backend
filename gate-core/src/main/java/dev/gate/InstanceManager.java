@@ -241,7 +241,7 @@ public class InstanceManager {
     public void broadcastCacheRefresh() {
         if (!fs.isAvailable()) return;
         try {
-            fs.set("broadcast/cache", Map.of("refreshAt", Instant.now().toString()));
+            fs.update("broadcast/cache", Map.of("refreshAt", Instant.now().toString()));
         } catch (Exception e) {
             log.warn("broadcastCacheRefresh failed: {}", e.getMessage());
         }

@@ -140,8 +140,8 @@ public class AdminController {
             if (payloadRaw != null) cmd.put("payload", payloadRaw);
             fs.update("instances/" + instanceId, Map.of("cmd", cmd));
 
-            // poll for result (500ms × 10 = 5s max)
-            long deadline = System.currentTimeMillis() + 5_000;
+            // poll for result (500ms × 20 = 10s max)
+            long deadline = System.currentTimeMillis() + 10_000;
             while (System.currentTimeMillis() < deadline) {
                 Thread.sleep(500);
                 Map<String, Object> doc = fs.get("instances/" + instanceId);
@@ -180,6 +180,28 @@ public class AdminController {
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("getInstanceMetrics error instanceId={}", instanceId, e);
+            ctx.status(503).json(Map.of("error", "Firestore unavailable"));
+        }
+    }
+
+    // stopped インスタンスの Firestore ドキュメントを削除する
+    @DeleteMapping("/admin/instances/{id}")
+    public void deleteInstance(Context ctx) {
+        String instanceId = ctx.pathParam("id");
+        try {
+            Map<String, Object> doc = FirestoreRest.get().get("instances/" + instanceId);
+            if (doc == null) {
+                ctx.status(404).json(Map.of("error", "インスタンスが見つかりません"));
+                return;
+            }
+            if (!"stopped".equals(doc.get("status"))) {
+                ctx.status(409).json(Map.of("error", "実行中のインスタンスは削除できません"));
+                return;
+            }
+            FirestoreRest.get().delete("instances/" + instanceId);
+            ctx.json(Map.of("ok", true));
+        } catch (Exception e) {
+            logger.error("deleteInstance error instanceId={}", instanceId, e);
             ctx.status(503).json(Map.of("error", "Firestore unavailable"));
         }
     }
