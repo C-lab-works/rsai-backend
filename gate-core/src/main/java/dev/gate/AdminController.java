@@ -59,6 +59,15 @@ public class AdminController {
         "ALTER"
     );
 
+    // インスタンスコマンドホワイトリスト
+    private static final Set<String> ALLOWED_INSTANCE_COMMANDS = Set.of(
+        "ping", "cpu", "heap", "thread-count", "gc",
+        "cache-stats", "error", "log-level", "stop"
+    );
+
+    // instanceId 検証パターン（Cloud Run の HOSTNAME は英数字とハイフンのみ）
+    private static final Pattern INSTANCE_ID_PATTERN = Pattern.compile("[a-zA-Z0-9_-]{1,256}");
+
     private static final int TOP_ENDPOINTS_COUNT = 10;
 
     private static final Set<String> ALLOWED_COL_TYPES = Set.of(
@@ -116,11 +125,21 @@ public class AdminController {
         if (value != null) n.put(key, value); else n.putNull(key);
     }
 
+    /** instanceId がパストラバーサル不可能な形式か検証。不正なら 400 を返して true を返す。 */
+    private static boolean rejectInvalidInstanceId(Context ctx, String instanceId) {
+        if (instanceId == null || !INSTANCE_ID_PATTERN.matcher(instanceId).matches()) {
+            ctx.status(400).json(Map.of("error", "Invalid instance ID"));
+            return true;
+        }
+        return false;
+    }
+
     // インスタンスにコマンドを送信し、最大5秒ポーリングしてレスポンスを返す
     @PostMapping("/admin/instances/{id}/command")
     @SuppressWarnings("unchecked")
     public void sendCommand(Context ctx) {
         String instanceId = ctx.pathParam("id");
+        if (rejectInvalidInstanceId(ctx, instanceId)) return;
         try {
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null || !body.containsKey("type")) {
@@ -128,6 +147,10 @@ public class AdminController {
                 return;
             }
             String type       = (String) body.get("type");
+            if (!ALLOWED_INSTANCE_COMMANDS.contains(type)) {
+                ctx.status(400).json(Map.of("error", "Unknown command type: " + type));
+                return;
+            }
             Object payloadRaw = body.get("payload");
 
             String requestId = UUID.randomUUID().toString();
@@ -164,6 +187,7 @@ public class AdminController {
     public void getInstanceMetrics(Context ctx) {
         ctx.header("Cache-Control", "no-store");
         String instanceId = ctx.pathParam("id");
+        if (rejectInvalidInstanceId(ctx, instanceId)) return;
         int limit = 40;
         try { limit = Math.min(200, Integer.parseInt(ctx.query("limit"))); } catch (Exception ignored) {}
         try {
@@ -188,6 +212,7 @@ public class AdminController {
     @DeleteMapping("/admin/instances/{id}")
     public void deleteInstance(Context ctx) {
         String instanceId = ctx.pathParam("id");
+        if (rejectInvalidInstanceId(ctx, instanceId)) return;
         try {
             Map<String, Object> doc = FirestoreRest.get().get("instances/" + instanceId);
             if (doc == null) {
