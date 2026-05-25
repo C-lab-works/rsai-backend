@@ -50,8 +50,9 @@ public class InstanceManager {
             });
 
     private InstanceManager() {
-        this.instanceId = Optional.ofNullable(System.getenv("K_REVISION"))
-                .or(() -> Optional.ofNullable(System.getenv("HOSTNAME")))
+        // HOSTNAME is unique per container; K_REVISION is shared across all instances of the same revision
+        this.instanceId = Optional.ofNullable(System.getenv("HOSTNAME"))
+                .or(() -> Optional.ofNullable(System.getenv("K_REVISION")))
                 .orElse("local-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
@@ -109,6 +110,7 @@ public class InstanceManager {
     // ── broadcast polling ────────────────────────────────────────────────────
 
     private void pollBroadcast() {
+        if (stopped.get()) return;
         try {
             Map<String, Object> doc = fs.get("broadcast/cache");
             if (doc == null) return;
@@ -128,6 +130,7 @@ public class InstanceManager {
 
     @SuppressWarnings("unchecked")
     private void pollCommand() {
+        if (stopped.get()) return;
         try {
             Map<String, Object> doc = fs.get("instances/" + instanceId);
             if (doc == null) return;
@@ -154,7 +157,6 @@ public class InstanceManager {
 
     // ── command dispatch ─────────────────────────────────────────────────────
 
-    @SuppressWarnings("unchecked")
     private void dispatch(String type, String requestId, Map<String, Object> payload) {
         CompletableFuture.runAsync(() -> {
             Object data  = null;
@@ -311,14 +313,23 @@ public class InstanceManager {
     }
 
     private void handleStop() {
-        log.warn("stop command received");
+        log.warn("stop command received — will exit in 5s");
         stopped.set(true); // stop heartbeat immediately
         try {
             fs.update("instances/" + instanceId, Map.of("status", "stopped", "lastSeen", Instant.now().toString()));
         } catch (Exception e) {
             log.warn("stop status update failed: {}", e.getMessage());
         }
-        if (stopCallback != null) stopCallback.run();
+        if (stopCallback != null) stopCallback.run(); // APP_READY=false → health 503
+        // Drain in-flight requests briefly, then terminate the process.
+        // Cloud Run will detect the exit and remove the instance.
+        Thread exit = new Thread(() -> {
+            try { Thread.sleep(5_000); } catch (InterruptedException ignored) {}
+            log.info("exiting after stop command");
+            System.exit(0);
+        }, "stop-exit");
+        exit.setDaemon(false); // prevent JVM from exiting before this thread runs
+        exit.start();
     }
 
     private void registerShutdownHook() {

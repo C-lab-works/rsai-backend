@@ -566,13 +566,13 @@ public class AdminController {
                 String[] words = WHITESPACE_PATTERN.split(norm, 3);
                 String first = words.length > 0 ? words[0] : "";
                 if (!ALLOWED_SQL_KEYWORDS.contains(first)) {
-                    ctx.status(403).json(Map.of("error", "この操作は許可されています: " + first));
+                    ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + first));
                     return;
                 }
                 if ("ALTER".equals(first)) {
                     String second = words.length > 1 ? words[1] : "";
                     if (!"TABLE".equals(second)) {
-                        ctx.status(403).json(Map.of("error", "この操作は許可されています: ALTER " + second));
+                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: ALTER " + second));
                         return;
                     }
                 }
