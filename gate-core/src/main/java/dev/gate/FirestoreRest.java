@@ -120,6 +120,13 @@ public class FirestoreRest {
                 MAPPER.writeValueAsString(toDoc(data))));
     }
 
+    /** DELETE document. No-op when 404. */
+    public void delete(String path) throws Exception {
+        HttpResponse<String> res = http("DELETE", docBase + path, null);
+        if (res.statusCode() == 404) return;
+        assertOk("DELETE " + path, res);
+    }
+
     /** GET collection — lists all documents (no ordering, max 200). */
     public List<Entry> list(String collectionPath) throws Exception {
         HttpResponse<String> res = http("GET", docBase + collectionPath + "?pageSize=200", null);

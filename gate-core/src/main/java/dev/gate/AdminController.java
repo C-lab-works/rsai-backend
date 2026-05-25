@@ -1,11 +1,9 @@
 package dev.gate;
 
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
@@ -31,7 +29,6 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -51,8 +48,6 @@ public class AdminController {
     private static final Logger       logger              = new Logger(AdminController.class);
     private static final ObjectMapper mapper              = new ObjectMapper();
     private static final HttpClient   http                = HttpClient.newHttpClient();
-    private static final String       GCP_METADATA_BASE   = "http://metadata.google.internal/computeMetadata/v1/";
-    private static final String       GCP_MONITORING_BASE = "https://monitoring.googleapis.com/v3/projects/";
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
@@ -71,19 +66,36 @@ public class AdminController {
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
     );
 
-    // インスタンス一覧を返す
+    // インスタンス一覧を返す（lastSeen からステータスを派生）
     @GetMapping("/admin/instances")
     public void listInstances(Context ctx) {
         ctx.header("Cache-Control", "no-store");
         try {
+            Instant now   = Instant.now();
             ArrayNode arr = mapper.createArrayNode();
             for (FirestoreRest.Entry entry : FirestoreRest.get().list("instances")) {
+                Map<String, Object> d   = entry.data();
+                String rawStatus        = (String) d.get("status");
+                String lastSeenStr      = (String) d.get("lastSeen");
+
+                String status;
+                if ("stopped".equals(rawStatus)) {
+                    status = "stopped";
+                } else if (lastSeenStr != null) {
+                    long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
+                    if (age > 60) continue; // クラッシュ／応答なし → 一覧から除外
+                    status = age < 30 ? "running" : "degraded";
+                } else {
+                    // lastSeen 未実装インスタンス（旧フォーマット）→ rawStatus をそのまま使う
+                    status = rawStatus != null ? rawStatus : "unknown";
+                }
+
                 ObjectNode n = arr.addObject();
                 n.put("instanceId", entry.id());
-                putStringField(n, "revision",  (String) entry.data().get("revision"));
-                putStringField(n, "host",      (String) entry.data().get("host"));
-                putStringField(n, "startedAt", (String) entry.data().get("startedAt"));
-                putStringField(n, "status",    (String) entry.data().get("status"));
+                putStringField(n, "revision",  (String) d.get("revision"));
+                putStringField(n, "host",      (String) d.get("host"));
+                putStringField(n, "startedAt", (String) d.get("startedAt"));
+                n.put("status", status);
             }
             ctx.json(arr);
         } catch (Exception e) {
@@ -694,7 +706,7 @@ public class AdminController {
         root.put("error_rate",     errRate);
         root.put("p50_ms",         perc[0]);
         root.put("p95_ms",         perc[1]);
-        root.put("instances",      fetchCurrentInstanceCount());
+        root.put("instances",      countRunningInstances());
         root.put("max_instances",  10);
 
         ArrayNode chart = root.putArray("chart");
@@ -709,8 +721,21 @@ public class AdminController {
         }
 
         ArrayNode system = root.putArray("system");
-        addStatus(system, "Database",   "ok", "Connected");
-        addStatus(system, "API Server", "ok", "Running");
+
+        // Database — 実接続テスト
+        String dbStatus = "ok", dbValue = "Connected";
+        try (Connection dbConn = Database.getConnection();
+             Statement dbSt = dbConn.createStatement()) {
+            dbSt.execute("SELECT 1");
+        } catch (Exception e) {
+            dbStatus = "err"; dbValue = "Unreachable";
+        }
+        addStatus(system, "Database", dbStatus, dbValue);
+
+        // Firestore
+        boolean fsOk = FirestoreRest.get().isAvailable();
+        addStatus(system, "Firestore", fsOk ? "ok" : "warn", fsOk ? "Available" : "Unavailable");
+
         ctx.json(root);
     }
 
@@ -752,64 +777,25 @@ public class AdminController {
         ctx.json(root);
     }
 
-    private int fetchCurrentInstanceCount() {
+    // Firestore の lastSeen を見て 30s 以内のインスタンス数を返す
+    private int countRunningInstances() {
+        if (!FirestoreRest.get().isAvailable()) return 0;
         try {
-            HttpRequest tokenReq = HttpRequest.newBuilder()
-                .uri(URI.create(GCP_METADATA_BASE + "instance/service-accounts/default/token"))
-                .header("Metadata-Flavor", "Google")
-                .timeout(Duration.ofSeconds(3))
-                .GET().build();
-            String accessToken = mapper.readTree(
-                http.send(tokenReq, HttpResponse.BodyHandlers.ofString()).body()
-            ).get("access_token").asText();
-
-            HttpRequest projReq = HttpRequest.newBuilder()
-                .uri(URI.create(GCP_METADATA_BASE + "project/project-id"))
-                .header("Metadata-Flavor", "Google")
-                .timeout(Duration.ofSeconds(3))
-                .GET().build();
-            String projectId = http.send(projReq, HttpResponse.BodyHandlers.ofString()).body().strip();
-
-            String service = System.getenv().getOrDefault("K_SERVICE", "");
-            String serviceClause = service.isBlank() ? ""
-                : " AND resource.labels.service_name=\"" + service + "\"";
-            String filter = "metric.type=\"run.googleapis.com/container/instance_count\"" + serviceClause;
-
-            Instant now   = Instant.now();
-            Instant start = now.minusSeconds(300);
-            String url = GCP_MONITORING_BASE + projectId + "/timeSeries"
-                + "?filter="                         + URLEncoder.encode(filter, StandardCharsets.UTF_8)
-                + "&interval.startTime="             + start
-                + "&interval.endTime="               + now
-                + "&aggregation.alignmentPeriod=60s"
-                + "&aggregation.perSeriesAligner=ALIGN_MAX"
-                + "&aggregation.crossSeriesReducer=REDUCE_MAX"
-                + "&aggregation.groupByFields=resource.labels.service_name";
-
-            HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Authorization", "Bearer " + accessToken)
-                .timeout(Duration.ofSeconds(5))
-                .GET().build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (res.statusCode() != 200) return 0;
-
-            JsonNode timeSeries = mapper.readTree(res.body()).path("timeSeries");
-            if (!timeSeries.isArray() || timeSeries.isEmpty()) return 0;
-
-            long max = 0;
-            for (JsonNode series : timeSeries) {
-                for (JsonNode point : series.path("points")) {
-                    JsonNode val = point.path("value");
-                    long v = val.has("int64Value")  ? val.get("int64Value").asLong()
-                           : val.has("doubleValue") ? (long) val.get("doubleValue").asDouble()
-                           : 0L;
-                    if (v > max) max = v;
+            Instant cutoff = Instant.now().minusSeconds(30);
+            int count = 0;
+            for (FirestoreRest.Entry e : FirestoreRest.get().list("instances")) {
+                String ls = (String) e.data().get("lastSeen");
+                String st = (String) e.data().get("status");
+                if ("stopped".equals(st)) continue;
+                if (ls != null) {
+                    if (Instant.parse(ls).isAfter(cutoff)) count++;
+                } else if ("running".equals(st)) {
+                    count++; // 旧フォーマット: lastSeen なし → status を信頼
                 }
             }
-            return (int) max;
+            return count;
         } catch (Exception e) {
-            logger.debug("fetchCurrentInstanceCount unavailable: {}", e.getMessage());
+            logger.debug("countRunningInstances failed: {}", e.getMessage());
             return 0;
         }
     }

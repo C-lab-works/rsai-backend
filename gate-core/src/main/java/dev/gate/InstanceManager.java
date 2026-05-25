@@ -42,7 +42,7 @@ public class InstanceManager {
     private volatile String lastCmdRequestId       = null;
 
     private final ScheduledExecutorService poller =
-            Executors.newScheduledThreadPool(2, r -> {
+            Executors.newScheduledThreadPool(3, r -> {
                 Thread t = new Thread(r, "firestore-poller");
                 t.setDaemon(true);
                 return t;
@@ -72,6 +72,7 @@ public class InstanceManager {
                 if (bDoc != null) lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
             } catch (Exception ignored) {}
 
+            poller.scheduleAtFixedRate(this::heartbeat,      10, 10, TimeUnit.SECONDS);
             poller.scheduleAtFixedRate(this::pollBroadcast, 15, 15, TimeUnit.SECONDS);
             poller.scheduleAtFixedRate(this::pollCommand,    2,  2, TimeUnit.SECONDS);
             registerShutdownHook();
@@ -89,7 +90,18 @@ public class InstanceManager {
         data.put("host",      System.getenv("HOSTNAME"));
         data.put("startedAt", startedAt.toString());
         data.put("status",    "running");
+        data.put("lastSeen",  startedAt.toString());
         fs.set("instances/" + instanceId, data);
+    }
+
+    // ── heartbeat ────────────────────────────────────────────────────────────
+
+    private void heartbeat() {
+        try {
+            fs.update("instances/" + instanceId, Map.of("lastSeen", Instant.now().toString()));
+        } catch (Exception e) {
+            log.warn("heartbeat failed: {}", e.getMessage());
+        }
     }
 
     // ── broadcast polling ────────────────────────────────────────────────────
@@ -200,6 +212,14 @@ public class InstanceManager {
             point.put("threads",      (long) tmx.getThreadCount());
 
             fs.add("instances/" + instanceId + "/metrics", point);
+
+            // 121件目以降（最古）を削除して 120件上限を維持
+            List<FirestoreRest.Entry> all =
+                    fs.query("instances/" + instanceId, "metrics", "t", true, 121);
+            if (all.size() == 121) {
+                try { fs.delete("instances/" + instanceId + "/metrics/" + all.get(120).id()); }
+                catch (Exception ignored) {}
+            }
         } catch (Exception e) {
             log.warn("recordMetrics failed: {}", e.getMessage());
         }
