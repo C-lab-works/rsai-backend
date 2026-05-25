@@ -62,7 +62,7 @@ public class AdminController {
     // インスタンスコマンドホワイトリスト
     private static final Set<String> ALLOWED_INSTANCE_COMMANDS = Set.of(
         "ping", "cpu", "heap", "thread-count", "gc",
-        "cache-stats", "error", "log-level", "stop"
+        "cache-stats", "logs", "log-level", "stop"
     );
 
     // instanceId 検証パターン（Cloud Run の HOSTNAME は英数字とハイフンのみ）
