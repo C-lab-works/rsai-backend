@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import com.sun.management.OperatingSystemMXBean;
 import dev.gate.core.Logger;
+import dev.gate.logging.LogBuffer;
 import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
@@ -176,7 +177,7 @@ public class InstanceManager {
                     case "thread-count" -> buildThreadCount();
                     case "gc"           -> buildGc();
                     case "cache-stats"  -> buildCacheStats();
-                    case "error"        -> buildErrors();
+                    case "logs"         -> buildLogs(payload);
                     case "log-level"    -> applyLogLevel(payload);
                     case "stop"         -> { handleStop(); yield Map.of("stopped", true); }
                     default             -> Map.of("unknown_command", type);
@@ -292,21 +293,19 @@ public class InstanceManager {
         return result;
     }
 
-    private Map<String, Object> buildErrors() {
-        Instant now  = Instant.now();
-        Instant from = now.minusSeconds(3600);
-        List<RequestMetrics.ErrorEntry> errors = RequestMetrics.get().getRecentErrors(from, now);
-        List<Map<String, Object>> errorMaps = new ArrayList<>();
-        for (RequestMetrics.ErrorEntry e : errors) {
-            Map<String, Object> m = new HashMap<>();
-            m.put("timestamp",  e.timestamp());
-            m.put("method",     e.method());
-            m.put("path",       e.path());
-            m.put("status",     (long) e.status());
-            m.put("durationMs", e.durationMs());
-            errorMaps.add(m);
+    private Map<String, Object> buildLogs(Map<String, Object> payload) {
+        int limit = 100;
+        String levelFilter = null;
+        if (payload != null) {
+            Object l = payload.get("limit");
+            if (l instanceof Number n) limit = Math.min(300, Math.max(1, n.intValue()));
+            Object lv = payload.get("level");
+            if (lv instanceof String s && !s.isBlank()) levelFilter = s;
         }
-        return Map.of("errors", errorMaps, "count", (long) errors.size());
+        LogBuffer buf = LogBuffer.get();
+        if (buf == null) return Map.of("logs", List.of(), "count", 0L);
+        List<Map<String, Object>> logs = buf.getRecent(limit, levelFilter);
+        return Map.of("logs", logs, "count", (long) logs.size());
     }
 
     private Map<String, Object> applyLogLevel(Map<String, Object> payload) {
