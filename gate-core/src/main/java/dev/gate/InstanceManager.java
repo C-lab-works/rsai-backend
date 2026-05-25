@@ -40,6 +40,7 @@ public class InstanceManager {
     // Polling state
     private volatile String lastBroadcastRefreshAt = null;
     private volatile String lastCmdRequestId       = null;
+    private final AtomicBoolean stopped = new AtomicBoolean(false);
 
     private final ScheduledExecutorService poller =
             Executors.newScheduledThreadPool(3, r -> {
@@ -97,6 +98,7 @@ public class InstanceManager {
     // ── heartbeat ────────────────────────────────────────────────────────────
 
     private void heartbeat() {
+        if (stopped.get()) return;
         try {
             fs.update("instances/" + instanceId, Map.of("lastSeen", Instant.now().toString()));
         } catch (Exception e) {
@@ -194,7 +196,7 @@ public class InstanceManager {
     // ── periodic metrics recording ───────────────────────────────────────────
 
     public void recordMetrics() {
-        if (!fs.isAvailable()) return;
+        if (!fs.isAvailable() || stopped.get()) return;
         try {
             OperatingSystemMXBean os = (OperatingSystemMXBean)
                     ManagementFactory.getOperatingSystemMXBean();
@@ -310,12 +312,13 @@ public class InstanceManager {
 
     private void handleStop() {
         log.warn("stop command received");
-        if (stopCallback != null) stopCallback.run();
+        stopped.set(true); // stop heartbeat immediately
         try {
-            fs.update("instances/" + instanceId, Map.of("status", "stopped"));
+            fs.update("instances/" + instanceId, Map.of("status", "stopped", "lastSeen", Instant.now().toString()));
         } catch (Exception e) {
             log.warn("stop status update failed: {}", e.getMessage());
         }
+        if (stopCallback != null) stopCallback.run();
     }
 
     private void registerShutdownHook() {
