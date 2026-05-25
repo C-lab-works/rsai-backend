@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -50,10 +49,18 @@ public class InstanceManager {
             });
 
     private InstanceManager() {
-        // HOSTNAME is unique per container; K_REVISION is shared across all instances of the same revision
-        this.instanceId = Optional.ofNullable(System.getenv("HOSTNAME"))
-                .or(() -> Optional.ofNullable(System.getenv("K_REVISION")))
-                .orElse("local-" + UUID.randomUUID().toString().substring(0, 8));
+        // Combine K_REVISION (revision name) and HOSTNAME (unique per container) for a human-readable unique ID
+        String rev  = System.getenv("K_REVISION");
+        String host = System.getenv("HOSTNAME");
+        if (rev != null && host != null) {
+            this.instanceId = rev + "-" + host;
+        } else if (host != null) {
+            this.instanceId = host;
+        } else if (rev != null) {
+            this.instanceId = rev;
+        } else {
+            this.instanceId = "local-" + UUID.randomUUID().toString().substring(0, 8);
+        }
     }
 
     public static InstanceManager get() { return INSTANCE; }
