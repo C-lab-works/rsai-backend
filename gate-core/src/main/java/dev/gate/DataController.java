@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
-import dev.gate.core.Logger;
+import dev.gate.core.HttpCache;
 import dev.gate.mapping.GetMapping;
 
 import java.io.ByteArrayOutputStream;
@@ -24,20 +24,10 @@ import java.util.zip.GZIPOutputStream;
 @GateController
 public class DataController {
 
-    private static final Logger logger = new Logger(DataController.class);
-    private static final ObjectMapper mapper = new ObjectMapper();
-    private record CacheEntry(byte[] json, byte[] jsonGzip, long lastFetchedAt) {}
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=600";
+    private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
-
-    public static void prewarm() {
-        DataController instance = new DataController();
-        try {
-            instance.refreshAll();
-            logger.info("Prewarm completed successfully");
-        } catch (Exception e) {
-            logger.warn("Prewarm failed: {}", e.getMessage());
-        }
-    }
 
     public void refreshAll() throws Exception {
         refreshKey("events", this::buildEvents);
@@ -47,9 +37,9 @@ public class DataController {
 
     private void refreshKey(String key, Builder builder) throws Exception {
         try (Connection conn = Database.getConnection()) {
-            byte[] json = mapper.writeValueAsBytes(builder.build(conn));
+            byte[] json = MAPPER.writeValueAsBytes(builder.build(conn));
             byte[] gzip = gzip(json);
-            cache.put(key, new CacheEntry(json, gzip, System.currentTimeMillis()));
+            cache.put(key, new CacheEntry(json, gzip, HttpCache.etag(json)));
         }
     }
 
@@ -65,8 +55,6 @@ public class DataController {
     @FunctionalInterface
     interface Builder { Object build(Connection conn) throws Exception; }
 
-    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
-
     private void serve(Context ctx, String key) {
         CacheEntry entry = cache.get(key);
         if (entry == null) {
@@ -74,6 +62,13 @@ public class DataController {
             return;
         }
         ctx.header("Cache-Control", CACHE_CONTROL);
+        ctx.header("ETag", entry.etag());
+        // gzip と identity で表現が異なるため CDN/プロキシに区別させる
+        ctx.header("Vary", "Accept-Encoding");
+        if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
+            ctx.status(304);
+            return;
+        }
         String ae = ctx.requestHeader("Accept-Encoding");
         if (ae != null && ae.contains("gzip")) {
             ctx.header("Content-Encoding", "gzip").jsonBytes(entry.jsonGzip());
@@ -93,7 +88,7 @@ public class DataController {
     // /events
 
     private Object buildEvents(Connection conn) throws Exception {
-        ObjectNode root = mapper.createObjectNode();
+        ObjectNode root = MAPPER.createObjectNode();
 
         ArrayNode cats = root.putArray("categories");
         try (Statement s = conn.createStatement();
@@ -173,7 +168,7 @@ public class DataController {
     // /food
 
     private Object buildFood(Connection conn) throws Exception {
-        ObjectNode root = mapper.createObjectNode();
+        ObjectNode root = MAPPER.createObjectNode();
 
         ArrayNode foods = root.putArray("foods");
         try (Statement s = conn.createStatement();
@@ -211,7 +206,7 @@ public class DataController {
 
     // /map
     private Object buildMap(Connection conn) throws Exception {
-        ObjectNode root = mapper.createObjectNode();
+        ObjectNode root = MAPPER.createObjectNode();
 
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();

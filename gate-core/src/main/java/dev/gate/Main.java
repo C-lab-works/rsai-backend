@@ -18,8 +18,10 @@ public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
     // キャッシュ更新用バックグラウンドジョブ
+    // データ系3つ(events/food/map, announcements, congestion)が同時刻に発火しても捌けるよう 4。
+    // JWKS(50分間隔) は低頻度なので衝突しない。
     private static final ScheduledExecutorService bg =
-            Executors.newScheduledThreadPool(3, r -> {
+            Executors.newScheduledThreadPool(4, r -> {
                 Thread t = new Thread(r, "bg-poller");
                 t.setDaemon(true);
                 return t;
@@ -116,6 +118,7 @@ public class Main {
     private static void startBackgroundJobs(CfAccessAuth cfAccessAuth) {
         final DataController dataController = new DataController();
         final AtomicInteger dataFailCount = new AtomicInteger(0);
+        final AtomicInteger announcementsFailCount = new AtomicInteger(0);
         final AtomicInteger congestionFailCount = new AtomicInteger(0);
 
         // 30秒ごとにevents/food/mapを更新
@@ -132,6 +135,18 @@ public class Main {
                 }
             }
         }, 30, 30, TimeUnit.SECONDS);
+
+        // 60秒ごとにお知らせを更新（display_from/until の時刻変化に追従）
+        // お知らせは表示遅延しても致命ではないので Discord 通知はしない
+        bg.scheduleAtFixedRate(() -> {
+            try {
+                AnnouncementsController.refreshCache();
+                announcementsFailCount.set(0);
+            } catch (Exception e) {
+                int fails = announcementsFailCount.incrementAndGet();
+                log.warn("AnnouncementsController poll failed ({}): {}", fails, e.getMessage());
+            }
+        }, 60, 60, TimeUnit.SECONDS);
 
         // 30秒ごとに混雑情報を更新
         bg.scheduleAtFixedRate(() -> {

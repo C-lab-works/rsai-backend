@@ -56,7 +56,7 @@ public class CfMetricsController {
 
         try {
             String   body   = buildRequestBody(cfZoneId, alignedStart, alignedEnd, queryLimit, dataset);
-            JsonNode groups = executeGraphQL(cfApiToken, body);
+            JsonNode groups = executeGraphQL(cfApiToken, body, dataset);
             ctx.json(buildResponse(groups, alignedStart, numBuckets, bucketMinutes));
         } catch (Exception e) {
             logger.warn("cfMetrics failed: {}", e.getMessage());
@@ -86,7 +86,7 @@ public class CfMetricsController {
         return mapper.writeValueAsString(body);
     }
 
-    private JsonNode executeGraphQL(String apiToken, String body) throws Exception {
+    private JsonNode executeGraphQL(String apiToken, String body, String dataset) throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(CF_GRAPHQL_URL))
                 .header("Authorization", "Bearer " + apiToken)
@@ -105,7 +105,7 @@ public class CfMetricsController {
             logger.warn("CF GraphQL errors: {}", errors);
             throw new RuntimeException("CF GraphQL returned errors");
         }
-        return root.path("data").path("viewer").path("zones").path(0).path("httpRequests1hGroups");
+        return root.path("data").path("viewer").path("zones").path(0).path(dataset);
     }
 
     private ObjectNode buildResponse(JsonNode groups, Instant start, int numBuckets, int bucketMinutes) {

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
+import dev.gate.core.HttpCache;
 import dev.gate.core.Logger;
 import dev.gate.mapping.GetMapping;
 
@@ -21,7 +22,7 @@ public class AnnouncementsController {
 
     private static final Logger logger = new Logger(AnnouncementsController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=60, stale-while-revalidate=120";
     private static final String CACHE_KEY = "announcements";
     private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """
             SELECT id, title, content, is_emergency, display_from, display_until
@@ -31,14 +32,14 @@ public class AnnouncementsController {
             ORDER BY is_emergency DESC, id DESC
             """;
 
-    private record CacheEntry(byte[] json) {}
+    private record CacheEntry(byte[] json, String etag) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    // キャッシュを更新するやつ　管理者更新用
+    // キャッシュを更新する（管理者更新・定期リフレッシュ共用）
     public static void refreshCache() throws Exception {
         try {
             byte[] json = fetchAnnouncementsFromDb();
-            cache.put(CACHE_KEY, new CacheEntry(json));
+            cache.put(CACHE_KEY, new CacheEntry(json, HttpCache.etag(json)));
             logger.info("announcements cache refreshed");
         } catch (Exception e) {
             logger.error("announcements refreshCache failed", e);
@@ -55,6 +56,11 @@ public class AnnouncementsController {
             return;
         }
         ctx.header("Cache-Control", CACHE_CONTROL);
+        ctx.header("ETag", entry.etag());
+        if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
+            ctx.status(304);
+            return;
+        }
         ctx.jsonBytes(entry.json());
     }
 
@@ -72,7 +78,6 @@ public class AnnouncementsController {
         }
     }
 
-    // nullチェックとフィールド名変更
     private static void appendAnnouncement(ObjectNode n, ResultSet rs) throws Exception {
         n.put("id", rs.getInt("id"));
         n.put("title", rs.getString("title"));
