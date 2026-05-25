@@ -84,7 +84,7 @@ public class AdminController {
                 } else if (lastSeenStr != null) {
                     long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
                     if (age >= 30) continue; // 3回以上ハートビート欠落 → 除外
-                    status = "running";
+                    status = age < 10 ? "running" : "degraded";
                 } else {
                     // lastSeen なし → 生死不明（起動直後 or kill された可能性）
                     status = "unknown";
