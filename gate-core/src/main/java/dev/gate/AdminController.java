@@ -83,8 +83,8 @@ public class AdminController {
                     status = "stopped";
                 } else if (lastSeenStr != null) {
                     long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
-                    if (age > 60) continue; // クラッシュ／応答なし → 一覧から除外
-                    status = age < 30 ? "running" : "degraded";
+                    if (age >= 30) continue; // 3回以上ハートビート欠落 → 除外
+                    status = "running";
                 } else {
                     // lastSeen なし → 生死不明（起動直後 or kill された可能性）
                     status = "unknown";
