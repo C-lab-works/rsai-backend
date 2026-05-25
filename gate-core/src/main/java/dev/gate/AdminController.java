@@ -86,8 +86,16 @@ public class AdminController {
                     if (age >= 30) continue; // 3回以上ハートビート欠落 → 除外
                     status = age < 10 ? "running" : "degraded";
                 } else {
-                    // lastSeen なし → 生死不明（起動直後 or kill された可能性）
-                    status = "unknown";
+                    // lastSeen なし → startedAt が5分以上前なら Firestore から削除して skip
+                    String startedAt = (String) d.get("startedAt");
+                    if (startedAt != null) {
+                        long sinceStart = Duration.between(Instant.parse(startedAt), now).toSeconds();
+                        if (sinceStart >= 300) {
+                            try { FirestoreRest.get().delete("instances/" + entry.id()); } catch (Exception ignored) {}
+                            continue;
+                        }
+                    }
+                    status = "stopped";
                 }
 
                 ObjectNode n = arr.addObject();
