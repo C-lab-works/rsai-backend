@@ -92,8 +92,7 @@ public class InstanceManager {
         }
     }
 
-    // ── self registration ────────────────────────────────────────────────────
-
+    // インスタンス登録
     private void registerSelf() throws Exception {
         Map<String, Object> data = new HashMap<>();
         data.put("revision",  System.getenv("K_REVISION"));
@@ -104,7 +103,6 @@ public class InstanceManager {
         fs.set("instances/" + instanceId, data);
     }
 
-    // ── heartbeat ────────────────────────────────────────────────────────────
 
     private void heartbeat() {
         if (stopped.get()) return;
@@ -115,8 +113,7 @@ public class InstanceManager {
         }
     }
 
-    // ── broadcast polling ────────────────────────────────────────────────────
-
+    // キャッシュリフレッシュ要求ポーリング
     private void pollBroadcast() {
         if (stopped.get()) return;
         try {
@@ -134,8 +131,7 @@ public class InstanceManager {
         }
     }
 
-    // ── command polling ──────────────────────────────────────────────────────
-
+    // コマンド要求ポーリング
     @SuppressWarnings("unchecked")
     private void pollCommand() {
         if (stopped.get()) return;
