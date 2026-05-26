@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 //   instances/{instanceId}                   { revision, host, startedAt, status, cmd, res }
 //   instances/{instanceId}/metrics/{auto-id} { t, cpu, heap_used_mb, threads }
 //   broadcast/cache                          { refreshAt: ISO string }
+//   broadcast/uptime                         { serviceStartedAt: ISO string, stoppedAt: ISO string | null }
 public class InstanceManager {
 
     private static final Logger log = new Logger(InstanceManager.class);
@@ -76,6 +77,7 @@ public class InstanceManager {
         }
         try {
             registerSelf();
+            initUptimeTracking();
             // Initialize broadcast state without triggering a refresh
             try {
                 Map<String, Object> bDoc = fs.get("broadcast/cache");
@@ -101,6 +103,41 @@ public class InstanceManager {
         data.put("status",    "running");
         data.put("lastSeen",  startedAt.toString());
         fs.set("instances/" + instanceId, data);
+    }
+
+    // サービス全体の uptime を Firestore で管理する
+    // 既に稼働中（stoppedAt なし）なら何もしない。未設定 or 停止済みなら今回の起動を記録する。
+    private void initUptimeTracking() {
+        try {
+            Map<String, Object> doc = fs.get("broadcast/uptime");
+            boolean shouldInit = doc == null || doc.get("stoppedAt") != null;
+            if (shouldInit) {
+                Map<String, Object> uptime = new HashMap<>();
+                uptime.put("serviceStartedAt", startedAt.toString());
+                uptime.put("stoppedAt",        null);
+                fs.set("broadcast/uptime", uptime);
+                log.info("uptime tracking started: serviceStartedAt={}", startedAt);
+            }
+        } catch (Exception e) {
+            log.warn("initUptimeTracking failed: {}", e.getMessage());
+        }
+    }
+
+    // 自インスタンス以外に稼働中インスタンスがなければ stoppedAt を記録する
+    private void finalizeUptimeIfLast() {
+        try {
+            Instant cutoff = Instant.now().minusSeconds(30);
+            for (FirestoreRest.Entry e : fs.list("instances")) {
+                if (e.id().equals(instanceId)) continue;
+                if ("stopped".equals(e.data().get("status"))) continue;
+                String ls = (String) e.data().get("lastSeen");
+                if (ls != null && Instant.parse(ls).isAfter(cutoff)) return; // 他インスタンス稼働中
+            }
+            fs.update("broadcast/uptime", Map.of("stoppedAt", Instant.now().toString()));
+            log.info("last instance stopped, uptime finalized");
+        } catch (Exception e) {
+            log.warn("finalizeUptimeIfLast failed: {}", e.getMessage());
+        }
     }
 
 
@@ -247,8 +284,18 @@ public class InstanceManager {
     // ── command implementations ───────────────────────────────────────────────
 
     private Map<String, Object> buildPing() {
-        long uptimeSec = Instant.now().getEpochSecond() - startedAt.getEpochSecond();
-        return Map.of("startedAt", startedAt.toString(), "uptimeSec", uptimeSec);
+        Instant now = Instant.now();
+        String serviceStartedAt = startedAt.toString();
+        try {
+            Map<String, Object> doc = fs.get("broadcast/uptime");
+            if (doc != null && doc.get("serviceStartedAt") instanceof String s) serviceStartedAt = s;
+        } catch (Exception ignored) {}
+        Map<String, Object> result = new HashMap<>();
+        result.put("serviceStartedAt",  serviceStartedAt);
+        result.put("instanceStartedAt", startedAt.toString());
+        result.put("serviceUptimeSec",  now.getEpochSecond() - Instant.parse(serviceStartedAt).getEpochSecond());
+        result.put("instanceUptimeSec", now.getEpochSecond() - startedAt.getEpochSecond());
+        return result;
     }
 
     private Map<String, Object> buildCpu() {
@@ -322,6 +369,7 @@ public class InstanceManager {
         } catch (Exception e) {
             log.warn("stop status update failed: {}", e.getMessage());
         }
+        finalizeUptimeIfLast();
         if (stopCallback != null) stopCallback.run(); // APP_READY=false → health 503
         // Drain in-flight requests briefly, then terminate the process.
         // Cloud Run will detect the exit and remove the instance.
@@ -342,6 +390,7 @@ public class InstanceManager {
             } catch (Exception e) {
                 log.warn("shutdown hook failed: {}", e.getMessage());
             }
+            finalizeUptimeIfLast();
         }, "instance-shutdown"));
     }
 

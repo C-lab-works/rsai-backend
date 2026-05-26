@@ -764,6 +764,17 @@ public class AdminController {
         root.put("instances",      countRunningInstances());
         root.put("max_instances",  30);
 
+        try {
+            Map<String, Object> uptimeDoc = FirestoreRest.get().get("broadcast/uptime");
+            if (uptimeDoc != null && uptimeDoc.get("serviceStartedAt") instanceof String s) {
+                root.put("service_started_at", s);
+                if (uptimeDoc.get("stoppedAt") == null) {
+                    root.put("service_uptime_sec",
+                        java.time.Instant.now().getEpochSecond() - java.time.Instant.parse(s).getEpochSecond());
+                }
+            }
+        } catch (Exception ignored) {}
+
         ArrayNode chart = root.putArray("chart");
         for (long v : m.getHourlyCounts()) chart.add(v);
 
