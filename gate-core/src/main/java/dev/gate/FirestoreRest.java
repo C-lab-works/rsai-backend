@@ -21,12 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * GraalVM native-image safe Firestore client using the REST API.
- * Authentication via the GCP metadata server (ADC on Cloud Run, no SDK needed).
- *
- * Firestore REST ref: https://firebase.google.com/docs/firestore/reference/rest
- */
+// firestore rest
 public class FirestoreRest {
 
     private static final Logger        log      = new Logger(FirestoreRest.class);
@@ -35,8 +30,8 @@ public class FirestoreRest {
     private static final String        META     = "http://metadata.google.internal/computeMetadata/v1/";
     private static final FirestoreRest INSTANCE = new FirestoreRest();
 
-    private volatile String  docBase;      // ends with "documents/"
-    private volatile String  queryBase;    // ends with "documents"
+    private volatile String  docBase;      
+    private volatile String  queryBase;  
     private volatile boolean available    = false;
 
     private final AtomicReference<String> cachedToken = new AtomicReference<>();
@@ -46,8 +41,7 @@ public class FirestoreRest {
 
     public static FirestoreRest get() { return INSTANCE; }
 
-    // ── init ─────────────────────────────────────────────────────────────────
-
+    // 初期化
     public void init() {
         try {
             String projectId = meta("project/project-id").strip();
@@ -64,8 +58,7 @@ public class FirestoreRest {
 
     public boolean isAvailable() { return available; }
 
-    // ── auth ─────────────────────────────────────────────────────────────────
-
+    // 認証
     private String token() throws Exception {
         if (Instant.now().isBefore(tokenExpiry)) {
             String t = cachedToken.get();
@@ -88,9 +81,6 @@ public class FirestoreRest {
         return HTTP.send(req, HttpResponse.BodyHandlers.ofString()).body();
     }
 
-    // ── CRUD ─────────────────────────────────────────────────────────────────
-
-    /** GET document. Returns null when 404. */
     public Map<String, Object> get(String path) throws Exception {
         HttpResponse<String> res = http("GET", docBase + path, null);
         if (res.statusCode() == 404) return null;
@@ -98,12 +88,10 @@ public class FirestoreRest {
         return toMap(MAPPER.readTree(res.body()));
     }
 
-    /** PATCH without field mask — overwrites the document. */
     public void set(String path, Map<String, Object> data) throws Exception {
         assertOk("SET " + path, http("PATCH", docBase + path, MAPPER.writeValueAsString(toDoc(data))));
     }
 
-    /** PATCH with field mask — updates only the listed top-level fields. */
     public void update(String path, Map<String, Object> fields) throws Exception {
         StringBuilder url = new StringBuilder(docBase + path + "?");
         for (String key : fields.keySet()) {
@@ -114,20 +102,17 @@ public class FirestoreRest {
         assertOk("UPDATE " + path, http("PATCH", url.toString(), MAPPER.writeValueAsString(toDoc(fields))));
     }
 
-    /** POST to collection — creates a document with auto-generated ID. */
     public void add(String collectionPath, Map<String, Object> data) throws Exception {
         assertOk("ADD " + collectionPath, http("POST", docBase + collectionPath,
                 MAPPER.writeValueAsString(toDoc(data))));
     }
 
-    /** DELETE document. No-op when 404. */
     public void delete(String path) throws Exception {
         HttpResponse<String> res = http("DELETE", docBase + path, null);
         if (res.statusCode() == 404) return;
         assertOk("DELETE " + path, res);
     }
 
-    /** GET collection — lists all documents (no ordering, max 200). */
     public List<Entry> list(String collectionPath) throws Exception {
         HttpResponse<String> res = http("GET", docBase + collectionPath + "?pageSize=200", null);
         if (res.statusCode() == 404) return Collections.emptyList();
@@ -142,13 +127,6 @@ public class FirestoreRest {
         return result;
     }
 
-    /**
-     * runQuery on a collection with ordering + limit.
-     *
-     * @param parentPath path to the parent document (e.g. "instances/myId"),
-     *                   or empty string for a top-level collection
-     * @param collectionId simple collection name (e.g. "metrics")
-     */
     public List<Entry> query(String parentPath, String collectionId,
                              String orderField, boolean desc, int limit) throws Exception {
         String url = parentPath.isEmpty()
