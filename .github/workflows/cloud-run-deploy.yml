@@ -169,6 +169,16 @@ jobs:
                         value: "${{ secrets.CF_ZONE_ID }}"
                       - name: RUNMODE
                         value: "cloudrun"
+                      - name: GITHUB_PAT
+                        value: "${{ secrets.GITHUB_PAT }}"
+                      - name: GITHUB_OWNER
+                        value: "${{ vars.GITHUB_OWNER }}"
+                      - name: GITHUB_REPO
+                        value: "${{ vars.GITHUB_REPO }}"
+                      - name: GITHUB_BRANCH
+                        value: "${{ vars.GITHUB_BRANCH }}"
+                      - name: GITHUB_YAML_PATH
+                        value: "${{ vars.GITHUB_YAML_PATH }}"
 
           EOF
 
@@ -330,6 +340,16 @@ jobs:
                         value: "${{ secrets.CF_ZONE_ID }}"
                       - name: RUNMODE
                         value: "cloudrun"
+                      - name: GITHUB_PAT
+                        value: "${{ secrets.GITHUB_PAT }}"
+                      - name: GITHUB_OWNER
+                        value: "${{ vars.GITHUB_OWNER }}"
+                      - name: GITHUB_REPO
+                        value: "${{ vars.GITHUB_REPO }}"
+                      - name: GITHUB_BRANCH
+                        value: "${{ vars.GITHUB_BRANCH }}"
+                      - name: GITHUB_YAML_PATH
+                        value: "${{ vars.GITHUB_YAML_PATH }}"
 
           EOF
 
