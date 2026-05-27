@@ -110,7 +110,7 @@ jobs:
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
                   run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
-                  run.googleapis.com/vpc-access-egress: all-traffic
+                  run.googleapis.com/vpc-access-egress: private-ranges-only
               spec:
                 containerConcurrency: 300
                 timeoutSeconds: 60
@@ -267,7 +267,7 @@ jobs:
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
                   run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
-                  run.googleapis.com/vpc-access-egress: all-traffic
+                  run.googleapis.com/vpc-access-egress: private-ranges-only
               spec:
                 containerConcurrency: 300
                 timeoutSeconds: 60
