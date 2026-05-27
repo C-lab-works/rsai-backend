@@ -9,7 +9,6 @@ env:
   REGION: ${{ vars.GCP_REGION }}
   SERVICE_NAME: rsai-backend
   REPOSITORY: rsai-backend
-  VPC_CONNECTOR: ${{ vars.GCP_VPC_CONNECTOR }}
   MIN_SCALE: ${{ vars.MIN_SCALE }}
   RUNNER_VM: github-runner
   RUNNER_ZONE: asia-northeast1-a
@@ -109,8 +108,6 @@ jobs:
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
-                  run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
-                  run.googleapis.com/vpc-access-egress: private-ranges-only
               spec:
                 containerConcurrency: 300
                 timeoutSeconds: 60
@@ -266,8 +263,6 @@ jobs:
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
-                  run.googleapis.com/vpc-access-connector: ${{ env.VPC_CONNECTOR }}
-                  run.googleapis.com/vpc-access-egress: private-ranges-only
               spec:
                 containerConcurrency: 300
                 timeoutSeconds: 60
