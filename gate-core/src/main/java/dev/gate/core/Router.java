@@ -83,7 +83,9 @@ public class Router {
             patternRoutes.add(new PatternRoute(method, segments, paramNames, handler));
             patternCache.clear(); // Invalidate cache on route mutation
         } else {
-            exactRoutes.put(normalizedKey, handler);
+            if (exactRoutes.putIfAbsent(normalizedKey, handler) != null) {
+                log.warn("Route {} already registered — duplicate skipped", normalizedKey);
+            }
         }
     }
 

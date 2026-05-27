@@ -179,6 +179,8 @@ jobs:
                         value: "${{ vars.GH_BRANCH }}"
                       - name: GITHUB_YAML_PATH
                         value: "${{ vars.GH_YAML_PATH }}"
+                      - name: GITHUB_WORKFLOW_FILE
+                        value: "${{ vars.GH_WORKFLOW_FILE }}"
 
           EOF
 
@@ -350,6 +352,8 @@ jobs:
                         value: "${{ vars.GH_BRANCH }}"
                       - name: GITHUB_YAML_PATH
                         value: "${{ vars.GH_YAML_PATH }}"
+                      - name: GITHUB_WORKFLOW_FILE
+                        value: "${{ vars.GH_WORKFLOW_FILE }}"
 
           EOF
 

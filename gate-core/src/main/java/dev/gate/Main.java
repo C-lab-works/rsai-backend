@@ -178,7 +178,9 @@ public class Main {
     }
 
     private static String loadVersion() {
-        try (InputStream is = Main.class.getClassLoader().getResourceAsStream("version.txt")) {
+        // getClassLoader().getResourceAsStream は GraalVM native image で null を返す場合があるため
+        // Class.getResourceAsStream("/...") (絶対パス) を使用する
+        try (InputStream is = Main.class.getResourceAsStream("/version.txt")) {
             if (is == null) return "unknown";
             Properties props = new Properties();
             props.load(is);

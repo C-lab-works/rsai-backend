@@ -51,6 +51,7 @@ public class AdminController {
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
+    private static final Pattern YAML_IDENT = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
 
     // SQLコマンドホワイトリスト
     private static final Set<String> ALLOWED_SQL_KEYWORDS = Set.of(
@@ -1071,15 +1072,18 @@ public class AdminController {
         );
     }
 
-    /** GitHub Actions API — 最新 workflow run 取得 */
+    /** GitHub Actions API — デプロイ用ワークフローの最新 run 取得 */
     private static Map<String, Object> ghGetLatestRun() throws Exception {
         requireGitHubEnv();
-        String pat    = System.getenv("GITHUB_PAT");
-        String owner  = System.getenv("GITHUB_OWNER");
-        String repo   = System.getenv("GITHUB_REPO");
-        String branch = System.getenv("GITHUB_BRANCH");
-        String url    = "https://api.github.com/repos/" + owner + "/" + repo
-                      + "/actions/runs?branch=" + branch + "&per_page=1";
+        String pat      = System.getenv("GITHUB_PAT");
+        String owner    = System.getenv("GITHUB_OWNER");
+        String repo     = System.getenv("GITHUB_REPO");
+        String branch   = System.getenv("GITHUB_BRANCH");
+        String workflow = System.getenv("GITHUB_WORKFLOW_FILE");
+        if (workflow == null || workflow.isBlank()) workflow = "cloud-run-deploy.yml";
+        // ワークフロー名で絞ることで CodeQL 等の他ワークフローを除外する
+        String url = "https://api.github.com/repos/" + owner + "/" + repo
+                   + "/actions/workflows/" + workflow + "/runs?branch=" + branch + "&per_page=1";
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
             .header("Authorization", "Bearer " + pat)
             .header("Accept", "application/vnd.github.v3+json")
@@ -1104,9 +1108,9 @@ public class AdminController {
         return result;
     }
 
-    /** routes.yaml の最低限の構造チェック。
-     *  SnakeYAML は Map ベースで使用（YamlRouteLoader.java と同パターン）→ reflect-config 追加不要。 */
-    private static void validateRoutesYaml(String yaml) {
+    /** routes.yaml の構造・識別子安全性・重複パスチェック。DB接続不要。 */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String,Object>> parseAndValidateYaml(String yaml) {
         org.yaml.snakeyaml.Yaml parser = new org.yaml.snakeyaml.Yaml();
         Map<?,?> doc;
         try {
@@ -1116,15 +1120,79 @@ public class AdminController {
         }
         if (doc == null || !doc.containsKey("routes"))
             throw new IllegalArgumentException("Missing 'routes' key");
-        @SuppressWarnings("unchecked")
-        java.util.List<?> routes = (java.util.List<?>) doc.get("routes");
-        if (routes == null) throw new IllegalArgumentException("'routes' must be a list");
-        for (Object r : routes) {
+        java.util.List<?> rawRoutes = (java.util.List<?>) doc.get("routes");
+        if (rawRoutes == null) throw new IllegalArgumentException("'routes' must be a list");
+
+        Set<String> seenPaths = new java.util.LinkedHashSet<>();
+        List<Map<String,Object>> routes = new ArrayList<>();
+        for (Object r : rawRoutes) {
             if (!(r instanceof Map<?,?> m))
                 throw new IllegalArgumentException("Route entry must be a map");
-            if (!m.containsKey("path"))    throw new IllegalArgumentException("Route missing 'path'");
-            if (!m.containsKey("table"))   throw new IllegalArgumentException("Route missing 'table'");
-            if (!m.containsKey("columns")) throw new IllegalArgumentException("Route missing 'columns'");
+
+            String path    = (String) m.get("path");
+            String table   = (String) m.get("table");
+            Object colsRaw = m.get("columns");
+
+            if (path == null || path.isBlank())
+                throw new IllegalArgumentException("Route missing 'path'");
+            if (!path.startsWith("/"))
+                throw new IllegalArgumentException("Route path must start with '/': " + path);
+            if (table == null || table.isBlank())
+                throw new IllegalArgumentException("Route '" + path + "' missing 'table'");
+            if (colsRaw == null)
+                throw new IllegalArgumentException("Route '" + path + "' missing 'columns'");
+            if (!(colsRaw instanceof List<?> cols) || cols.isEmpty())
+                throw new IllegalArgumentException("Route '" + path + "' 'columns' must be a non-empty list");
+
+            if (!seenPaths.add(path))
+                throw new IllegalArgumentException("Duplicate path in routes.yaml: " + path);
+
+            if (!YAML_IDENT.matcher(table).matches())
+                throw new IllegalArgumentException("Route '" + path + "' unsafe table name: '" + table + "'");
+
+            List<String> columns = new ArrayList<>();
+            for (Object col : cols) {
+                String c = String.valueOf(col);
+                if (!YAML_IDENT.matcher(c).matches())
+                    throw new IllegalArgumentException("Route '" + path + "' unsafe column name: '" + c + "'");
+                columns.add(c);
+            }
+
+            Map<String,Object> entry = new java.util.LinkedHashMap<>();
+            entry.put("path",    path);
+            entry.put("table",   table);
+            entry.put("columns", columns);
+            routes.add(entry);
+        }
+        return routes;
+    }
+
+    /** テーブル・カラムの DB 存在チェック。保存前に呼び出す。 */
+    private static void validateRoutesYamlDb(List<Map<String,Object>> routes, Connection conn) throws SQLException {
+        DatabaseMetaData meta = conn.getMetaData();
+        for (Map<String,Object> entry : routes) {
+            String path  = (String) entry.get("path");
+            String table = (String) entry.get("table");
+            @SuppressWarnings("unchecked")
+            List<String> columns = (List<String>) entry.get("columns");
+
+            // テーブル存在チェック
+            try (ResultSet rs = meta.getTables(null, null, table, new String[]{"TABLE", "VIEW"})) {
+                if (!rs.next())
+                    throw new IllegalArgumentException(
+                        "Route '" + path + "': table '" + table + "' does not exist in database");
+            }
+
+            // カラム存在チェック
+            Set<String> existingCols = new java.util.LinkedHashSet<>();
+            try (ResultSet rs = meta.getColumns(null, null, table, null)) {
+                while (rs.next()) existingCols.add(rs.getString("COLUMN_NAME").toLowerCase());
+            }
+            for (String col : columns) {
+                if (!existingCols.contains(col.toLowerCase()))
+                    throw new IllegalArgumentException(
+                        "Route '" + path + "': column '" + col + "' does not exist in table '" + table + "'");
+            }
         }
     }
 
@@ -1161,7 +1229,10 @@ public class AdminController {
                 ctx.status(400).json(Map.of("error", "content and sha are required"));
                 return;
             }
-            validateRoutesYaml(content);
+            List<Map<String,Object>> routes = parseAndValidateYaml(content);
+            try (Connection conn = Database.getConnection()) {
+                validateRoutesYamlDb(routes, conn);
+            }
             GitHubPutResult result = ghPutFile(content, sha, email);
             if (result.shaConflict()) {
                 ctx.status(409).json(Map.of("error",
