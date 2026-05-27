@@ -5,6 +5,7 @@ import dev.gate.core.ConfigLoader;
 import dev.gate.core.Database;
 import dev.gate.core.Gate;
 import dev.gate.core.Logger;
+import dev.gate.core.YamlRouteLoader;
 
 import java.io.InputStream;
 import java.util.Properties;
@@ -17,9 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
+    private static final AtomicInteger BG_COUNTER = new AtomicInteger();
     private static final ScheduledExecutorService bg =
             Executors.newScheduledThreadPool(6, r -> {
-                Thread t = new Thread(r, "bg-poller");
+                Thread t = new Thread(r, "bg-poller-" + BG_COUNTER.getAndIncrement());
                 t.setDaemon(true);
                 return t;
             });
@@ -69,6 +71,9 @@ public class Main {
         if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
             gate.register(new GcpMetricsController());
         }
+
+        // routes.yaml から宣言的ルートを登録
+        YamlRouteLoader.load(gate);
 
         // --- Startup ---
 

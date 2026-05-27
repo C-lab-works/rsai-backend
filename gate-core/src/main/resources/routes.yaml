@@ -1,0 +1,32 @@
+# routes.yaml — Gate フレームワークへの宣言的ルート定義
+#
+# 書き方:
+#   - path:    エンドポイントの URL パス
+#     table:   クエリ対象の DB テーブル名
+#     columns: 返すカラムのリスト
+#
+# → GET {path} が自動的に "SELECT {columns} FROM {table}" を実行し JSON 配列で返す
+#
+# WHERE 句・JOIN・ORDER BY・認証など複雑なロジックが必要な場合は
+# Java コントローラー（例: CongestionController.java）で実装すること。
+
+routes:
+  - path: /api/locations
+    table: locations
+    columns: [id, name, floor, location_code, svg_id, x, y]
+
+  - path: /api/categories
+    table: categories
+    columns: [id, name]
+
+  - path: /api/projects
+    table: projects
+    columns: [id, title, organizer, description, image_url, location_id]
+
+  - path: /api/foods
+    table: foods
+    columns: [id, name, description, image_url]
+
+  - path: /api/menus
+    table: menus
+    columns: [id, food_id, name, price, description, is_sold_out]

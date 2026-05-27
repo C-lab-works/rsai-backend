@@ -4,6 +4,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -119,7 +120,7 @@ public class CongestionController {
                 ctx.status(401).json(Map.of("error", "Authentication required"));
                 return;
             }
-            String now = LocalDateTime.now().format(FMT);
+            String now = LocalDateTime.now(ZoneId.of("Asia/Tokyo")).format(FMT);
 
             try (Connection conn = Database.getConnection()) {
                 try (PreparedStatement chk = conn.prepareStatement(

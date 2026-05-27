@@ -30,7 +30,7 @@ public class Database {
 
         boolean ssl = Boolean.parseBoolean(envOrDefault("DB_SSL", String.valueOf(config.isSsl())));
         String sslParams = ssl
-            ? "useSSL=true&requireSSL=true&trustServerCertificate=true"
+            ? "useSSL=true&requireSSL=true&sslMode=VERIFY_CA"
             : "useSSL=false&allowPublicKeyRetrieval=true";
 
         hikari.setJdbcUrl(String.format(
@@ -87,7 +87,7 @@ public class Database {
             String full = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             // Strip -- line comments before splitting on ; to support multi-statement files
             String stripped = Arrays.stream(full.split("\n"))
-                    .map(line -> { int i = line.indexOf("--"); return i >= 0 ? line.substring(0, i) : line; })
+                    .map(Database::stripLineComment)
                     .collect(Collectors.joining("\n"));
             try (Connection conn = getConnection()) {
                 for (String raw : stripped.split(";")) {
@@ -100,6 +100,20 @@ public class Database {
             }
         }
         logger.info("Schema applied");
+    }
+
+    /** -- コメントを除去するが、シングルクォート内のものは除外する。 */
+    static String stripLineComment(String line) {
+        boolean inString = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\'' && (i == 0 || line.charAt(i - 1) != '\\')) {
+                inString = !inString;
+            } else if (!inString && c == '-' && i + 1 < line.length() && line.charAt(i + 1) == '-') {
+                return line.substring(0, i);
+            }
+        }
+        return line;
     }
 
     private static String envOrDefault(String key, String defaultValue) {

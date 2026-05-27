@@ -189,7 +189,7 @@ public class AdminController {
         String instanceId = ctx.pathParam("id");
         if (rejectInvalidInstanceId(ctx, instanceId)) return;
         int limit = 40;
-        try { limit = Math.min(200, Integer.parseInt(ctx.query("limit"))); } catch (Exception ignored) {}
+        try { limit = Math.max(1, Math.min(200, Integer.parseInt(ctx.query("limit")))); } catch (Exception ignored) {}
         try {
             ArrayNode arr = mapper.createArrayNode();
             for (FirestoreRest.Entry entry :

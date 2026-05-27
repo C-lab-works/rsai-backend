@@ -51,10 +51,9 @@ public class ApiKeyAuth implements Handler {
         ctx.status(401).json(Map.of("error", "Unauthorized")).halt();
     }
 
-    // タイミング攻撃対策
     private static boolean constantEquals(String a, byte[] b) {
         if (a == null || b == null) return false;
-        if (a.length() != b.length) return false;
+        // 長さが違っても早期リターンせず isEqual に任せる（タイミングリーク防止）
         return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b);
     }
 }

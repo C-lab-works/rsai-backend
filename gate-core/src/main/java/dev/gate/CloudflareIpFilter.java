@@ -117,7 +117,10 @@ public class CloudflareIpFilter implements Handler {
     }
 
     private void putIpCache(String ipStr, boolean matched) {
-        if (ipMatchCache.size() >= IP_CACHE_MAX) ipMatchCache.clear();
+        if (ipMatchCache.size() >= IP_CACHE_MAX) {
+            int evict = IP_CACHE_MAX / 4;
+            ipMatchCache.keySet().stream().limit(evict).forEach(ipMatchCache::remove);
+        }
         ipMatchCache.put(ipStr, matched);
     }
 
