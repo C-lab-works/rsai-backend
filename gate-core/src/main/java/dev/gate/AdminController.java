@@ -1111,7 +1111,9 @@ public class AdminController {
     /** routes.yaml の構造・識別子安全性・重複パスチェック。DB接続不要。 */
     @SuppressWarnings("unchecked")
     private static List<Map<String,Object>> parseAndValidateYaml(String yaml) {
-        org.yaml.snakeyaml.Yaml parser = new org.yaml.snakeyaml.Yaml();
+        var loaderOptions = new org.yaml.snakeyaml.LoaderOptions();
+        org.yaml.snakeyaml.Yaml parser = new org.yaml.snakeyaml.Yaml(
+                new org.yaml.snakeyaml.constructor.SafeConstructor(loaderOptions));
         Map<?,?> doc;
         try {
             doc = parser.load(yaml);
