@@ -79,6 +79,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Generate version.txt
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "version=${SHORT_SHA}" > gate-core/src/main/resources/version.txt
+
       - name: Build and push to Artifact Registry
         uses: docker/build-push-action@v7
         with:
@@ -235,6 +240,11 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+
+      - name: Generate version.txt
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "version=${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
       - name: Build and push to Artifact Registry
         uses: docker/build-push-action@v7
