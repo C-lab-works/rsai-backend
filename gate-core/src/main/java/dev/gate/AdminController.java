@@ -985,4 +985,213 @@ public class AdminController {
         }
         return cols;
     }
+
+    // -------------------------------------------------------------------------
+    // GitHub YAML management
+    // -------------------------------------------------------------------------
+
+    private record GitHubPutResult(String commitSha, String newFileSha, boolean shaConflict) {}
+
+    /** GitHub 環境変数が設定されているか確認。未設定なら IllegalStateException を投げる。
+     *  purgeCfCache() と同一パターン。 */
+    private static void requireGitHubEnv() {
+        String pat = System.getenv("GITHUB_PAT");
+        if (pat == null || pat.isBlank()) {
+            throw new IllegalStateException("GITHUB_PAT is not configured");
+        }
+    }
+
+    /** GitHub Contents API — ファイル取得
+     *  Base64 は MIME デコーダを使用（GitHub は改行入り Base64 を返すため）。 */
+    private static Map<String, String> ghGetFile() throws Exception {
+        requireGitHubEnv();
+        String pat    = System.getenv("GITHUB_PAT");
+        String owner  = System.getenv("GITHUB_OWNER");
+        String repo   = System.getenv("GITHUB_REPO");
+        String branch = System.getenv("GITHUB_BRANCH");
+        String path   = System.getenv("GITHUB_YAML_PATH");
+        String url    = "https://api.github.com/repos/" + owner + "/" + repo
+                      + "/contents/" + path + "?ref=" + branch;
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            .header("Authorization", "Bearer " + pat)
+            .header("Accept", "application/vnd.github.v3+json")
+            .GET().build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() != 200)
+            throw new RuntimeException("GitHub GET failed: " + res.statusCode());
+        Map<?,?> body   = mapper.readValue(res.body(), Map.class);
+        String encoded  = (String) body.get("content");
+        String sha      = (String) body.get("sha");
+        String content  = new String(java.util.Base64.getMimeDecoder().decode(encoded),
+                                     java.nio.charset.StandardCharsets.UTF_8);
+        return Map.of("content", content, "sha", sha);
+    }
+
+    /** GitHub Contents API — ファイル更新（コミット作成）
+     *  戻り値: commitSha（commit.sha）と newFileSha（content.sha = 次回 PUT 用ファイル blob SHA）
+     *  shaConflict=true の場合は GitHub が 409 を返した（並列編集衝突）。 */
+    private static GitHubPutResult ghPutFile(String content, String sha, String authorEmail)
+            throws Exception {
+        requireGitHubEnv();
+        String pat    = System.getenv("GITHUB_PAT");
+        String owner  = System.getenv("GITHUB_OWNER");
+        String repo   = System.getenv("GITHUB_REPO");
+        String branch = System.getenv("GITHUB_BRANCH");
+        String path   = System.getenv("GITHUB_YAML_PATH");
+        String url    = "https://api.github.com/repos/" + owner + "/" + repo
+                      + "/contents/" + path;
+        String encoded = java.util.Base64.getEncoder()
+            .encodeToString(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String bodyStr = mapper.writeValueAsString(Map.of(
+            "message",   "Update routes.yaml by " + authorEmail,
+            "content",   encoded,
+            "sha",       sha,
+            "branch",    branch,
+            "committer", Map.of(
+                "name",  authorEmail.split("@")[0],
+                "email", authorEmail
+            )
+        ));
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            .header("Authorization", "Bearer " + pat)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("Content-Type", "application/json")
+            .PUT(HttpRequest.BodyPublishers.ofString(bodyStr)).build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() == 409) return new GitHubPutResult(null, null, true);
+        if (res.statusCode() != 200 && res.statusCode() != 201)
+            throw new RuntimeException("GitHub PUT failed: " + res.statusCode());
+        Map<?,?> parsed  = mapper.readValue(res.body(), Map.class);
+        Map<?,?> commit  = (Map<?,?>) parsed.get("commit");
+        Map<?,?> fileObj = (Map<?,?>) parsed.get("content");
+        return new GitHubPutResult(
+            (String) commit.get("sha"),
+            (String) fileObj.get("sha"),  // ファイル blob SHA（次回 PUT で sha フィールドに使う）
+            false
+        );
+    }
+
+    /** GitHub Actions API — 最新 workflow run 取得 */
+    private static Map<String, Object> ghGetLatestRun() throws Exception {
+        requireGitHubEnv();
+        String pat    = System.getenv("GITHUB_PAT");
+        String owner  = System.getenv("GITHUB_OWNER");
+        String repo   = System.getenv("GITHUB_REPO");
+        String branch = System.getenv("GITHUB_BRANCH");
+        String url    = "https://api.github.com/repos/" + owner + "/" + repo
+                      + "/actions/runs?branch=" + branch + "&per_page=1";
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            .header("Authorization", "Bearer " + pat)
+            .header("Accept", "application/vnd.github.v3+json")
+            .GET().build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() != 200)
+            throw new RuntimeException("GitHub Actions GET failed: " + res.statusCode());
+        Map<?,?> parsed = mapper.readValue(res.body(), Map.class);
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<?,?>> runs = (java.util.List<Map<?,?>>) parsed.get("workflow_runs");
+        if (runs == null || runs.isEmpty())
+            return Map.of("status", "none", "conclusion", "", "runUrl", "", "startedAt", "");
+        Map<?,?> run = runs.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> runMap = (Map<String, Object>) run;
+        // GitHub returns null (not absent) for conclusion while in-progress — Map.of rejects null values
+        Map<String, Object> result = new java.util.HashMap<>();
+        result.put("status",     java.util.Objects.toString(runMap.get("status"),     "unknown"));
+        result.put("conclusion", java.util.Objects.toString(runMap.get("conclusion"), ""));
+        result.put("runUrl",     java.util.Objects.toString(runMap.get("html_url"),   ""));
+        result.put("startedAt",  java.util.Objects.toString(runMap.get("created_at"), ""));
+        return result;
+    }
+
+    /** routes.yaml の最低限の構造チェック。
+     *  SnakeYAML は Map ベースで使用（YamlRouteLoader.java と同パターン）→ reflect-config 追加不要。 */
+    private static void validateRoutesYaml(String yaml) {
+        org.yaml.snakeyaml.Yaml parser = new org.yaml.snakeyaml.Yaml();
+        Map<?,?> doc;
+        try {
+            doc = parser.load(yaml);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("YAML parse error: " + e.getMessage());
+        }
+        if (doc == null || !doc.containsKey("routes"))
+            throw new IllegalArgumentException("Missing 'routes' key");
+        @SuppressWarnings("unchecked")
+        java.util.List<?> routes = (java.util.List<?>) doc.get("routes");
+        if (routes == null) throw new IllegalArgumentException("'routes' must be a list");
+        for (Object r : routes) {
+            if (!(r instanceof Map<?,?> m))
+                throw new IllegalArgumentException("Route entry must be a map");
+            if (!m.containsKey("path"))    throw new IllegalArgumentException("Route missing 'path'");
+            if (!m.containsKey("table"))   throw new IllegalArgumentException("Route missing 'table'");
+            if (!m.containsKey("columns")) throw new IllegalArgumentException("Route missing 'columns'");
+        }
+    }
+
+    // GET /admin/yaml/routes — GitHub から routes.yaml を取得
+    @GetMapping("/admin/yaml/routes")
+    public void getYamlRoutes(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            Map<String, String> file = ghGetFile();
+            ctx.json(Map.of("content", file.get("content"), "sha", file.get("sha")));
+        } catch (IllegalStateException e) {
+            logger.warn("getYamlRoutes: GitHub not configured: {}", e.getMessage());
+            ctx.status(503).json(Map.of("error", "GitHub not configured: " + e.getMessage()));
+        } catch (Exception e) {
+            logger.error("getYamlRoutes failed", e);
+            ctx.status(502).json(Map.of("error", "GitHub API error: " + e.getMessage()));
+        }
+    }
+
+    // PUT /admin/yaml/routes — routes.yaml を更新してコミット
+    // リクエスト: { content: string, sha: string }
+    // レスポンス: { commitSha: string, newSha: string }
+    @PutMapping("/admin/yaml/routes")
+    public void putYamlRoutes(Context ctx) {
+        String email = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
+        if (email == null || email.isBlank()) email = "unknown@admin"; // 開発環境（CF_ACCESS_DEV_DISABLE=true）用
+        try {
+            @SuppressWarnings("unchecked")
+            Map<?,?> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "Request body required")); return; }
+            String content = (String) body.get("content");
+            String sha     = (String) body.get("sha");
+            if (content == null || sha == null) {
+                ctx.status(400).json(Map.of("error", "content and sha are required"));
+                return;
+            }
+            validateRoutesYaml(content);
+            GitHubPutResult result = ghPutFile(content, sha, email);
+            if (result.shaConflict()) {
+                ctx.status(409).json(Map.of("error",
+                    "Conflict: routes.yaml was modified by another user. Please reload."));
+                return;
+            }
+            ctx.json(Map.of("commitSha", result.commitSha(), "newSha", result.newFileSha()));
+        } catch (IllegalStateException e) {
+            logger.warn("putYamlRoutes: GitHub not configured: {}", e.getMessage());
+            ctx.status(503).json(Map.of("error", "GitHub not configured: " + e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).json(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("putYamlRoutes failed", e);
+            ctx.status(502).json(Map.of("error", "GitHub API error: " + e.getMessage()));
+        }
+    }
+
+    // GET /admin/yaml/status — 最新 GitHub Actions run ステータス取得
+    @GetMapping("/admin/yaml/status")
+    public void getYamlStatus(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
+        try {
+            ctx.json(ghGetLatestRun());
+        } catch (IllegalStateException e) {
+            logger.warn("getYamlStatus: GitHub not configured: {}", e.getMessage());
+            ctx.status(503).json(Map.of("error", "GitHub not configured: " + e.getMessage()));
+        } catch (Exception e) {
+            logger.error("getYamlStatus failed", e);
+            ctx.status(502).json(Map.of("error", "GitHub API error: " + e.getMessage()));
+        }
+    }
 }
