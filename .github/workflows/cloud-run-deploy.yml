@@ -170,15 +170,15 @@ jobs:
                       - name: RUNMODE
                         value: "cloudrun"
                       - name: GITHUB_PAT
-                        value: "${{ secrets.GITHUB_PAT }}"
+                        value: "${{ secrets.GH_PAT }}"
                       - name: GITHUB_OWNER
-                        value: "${{ vars.GITHUB_OWNER }}"
+                        value: "${{ vars.GH_OWNER }}"
                       - name: GITHUB_REPO
-                        value: "${{ vars.GITHUB_REPO }}"
+                        value: "${{ vars.GH_REPO }}"
                       - name: GITHUB_BRANCH
-                        value: "${{ vars.GITHUB_BRANCH }}"
+                        value: "${{ vars.GH_BRANCH }}"
                       - name: GITHUB_YAML_PATH
-                        value: "${{ vars.GITHUB_YAML_PATH }}"
+                        value: "${{ vars.GH_YAML_PATH }}"
 
           EOF
 
@@ -341,15 +341,15 @@ jobs:
                       - name: RUNMODE
                         value: "cloudrun"
                       - name: GITHUB_PAT
-                        value: "${{ secrets.GITHUB_PAT }}"
+                        value: "${{ secrets.GH_PAT }}"
                       - name: GITHUB_OWNER
-                        value: "${{ vars.GITHUB_OWNER }}"
+                        value: "${{ vars.GH_OWNER }}"
                       - name: GITHUB_REPO
-                        value: "${{ vars.GITHUB_REPO }}"
+                        value: "${{ vars.GH_REPO }}"
                       - name: GITHUB_BRANCH
-                        value: "${{ vars.GITHUB_BRANCH }}"
+                        value: "${{ vars.GH_BRANCH }}"
                       - name: GITHUB_YAML_PATH
-                        value: "${{ vars.GITHUB_YAML_PATH }}"
+                        value: "${{ vars.GH_YAML_PATH }}"
 
           EOF
 
