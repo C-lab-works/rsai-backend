@@ -30,7 +30,7 @@ public class Database {
 
         boolean ssl = Boolean.parseBoolean(envOrDefault("DB_SSL", String.valueOf(config.isSsl())));
         String sslParams = ssl
-            ? "useSSL=true&requireSSL=true&sslMode=VERIFY_CA"
+            ? "useSSL=true&requireSSL=true&trustServerCertificate=true"
             : "useSSL=false&allowPublicKeyRetrieval=true";
 
         hikari.setJdbcUrl(String.format(
