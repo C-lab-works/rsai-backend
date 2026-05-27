@@ -81,8 +81,9 @@ jobs:
 
       - name: Generate version.txt
         run: |
+          BASE=$(cat gate-core/src/main/resources/version.txt | tr -d '[:space:]')
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "version=${SHORT_SHA}" > gate-core/src/main/resources/version.txt
+          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
       - name: Build and push to Artifact Registry
         uses: docker/build-push-action@v7
@@ -243,8 +244,9 @@ jobs:
 
       - name: Generate version.txt
         run: |
+          BASE=$(cat gate-core/src/main/resources/version.txt | tr -d '[:space:]')
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "version=${SHORT_SHA}" > gate-core/src/main/resources/version.txt
+          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
       - name: Build and push to Artifact Registry
         uses: docker/build-push-action@v7
