@@ -4,7 +4,6 @@
 #   - path:    エンドポイントの URL パス
 #     table:   クエリ対象の DB テーブル名
 #     columns: 返すカラムのリスト
-#
 # → GET {path} が自動的に "SELECT {columns} FROM {table}" を実行し JSON 配列で返す
 #
 # WHERE 句・JOIN・ORDER BY・認証など複雑なロジックが必要な場合は
