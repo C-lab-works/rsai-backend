@@ -81,7 +81,7 @@ jobs:
 
       - name: Generate version.txt
         run: |
-          BASE=$(cat gate-core/src/main/resources/version.txt | tr -d '[:space:]')
+          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
@@ -244,7 +244,7 @@ jobs:
 
       - name: Generate version.txt
         run: |
-          BASE=$(cat gate-core/src/main/resources/version.txt | tr -d '[:space:]')
+          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
