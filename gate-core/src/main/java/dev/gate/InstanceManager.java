@@ -21,11 +21,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-// Firestore paths (via FirestoreRest):
-//   instances/{instanceId}                   { revision, host, startedAt, status, cmd, res }
-//   instances/{instanceId}/metrics/{auto-id} { t, cpu, heap_used_mb, threads }
-//   broadcast/cache                          { refreshAt: ISO string }
-//   broadcast/uptime                         { serviceStartedAt: ISO string, stoppedAt: ISO string | null }
 public class InstanceManager {
 
     private static final Logger log = new Logger(InstanceManager.class);
@@ -38,7 +33,6 @@ public class InstanceManager {
     private Runnable stopCallback;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
 
-    // Polling state
     private volatile String lastBroadcastRefreshAt = null;
     private volatile String lastCmdRequestId       = null;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -51,7 +45,7 @@ public class InstanceManager {
             });
 
     private InstanceManager() {
-        // Combine K_REVISION (revision name) and HOSTNAME (unique per container) for a human-readable unique ID
+        // K_REVISIONとHOSTNAMEで識別
         String rev  = System.getenv("K_REVISION");
         String host = System.getenv("HOSTNAME");
         if (rev != null && host != null) {
@@ -78,7 +72,6 @@ public class InstanceManager {
         try {
             registerSelf();
             initUptimeTracking();
-            // Initialize broadcast state without triggering a refresh
             try {
                 Map<String, Object> bDoc = fs.get("broadcast/cache");
                 if (bDoc != null) lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
