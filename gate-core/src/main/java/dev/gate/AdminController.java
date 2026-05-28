@@ -93,10 +93,9 @@ public class AdminController {
                     status = "stopped";
                 } else if (lastSeenStr != null) {
                     long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
-                    if (age >= 30) continue; // 3回以上ハートビート欠落 → 除外
+                    if (age >= 30) continue; 
                     status = age < 10 ? "running" : "degraded";
                 } else {
-                    // lastSeen なし → startedAt が5分以上前なら Firestore から削除して skip
                     String startedAt = (String) d.get("startedAt");
                     if (startedAt != null) {
                         long sinceStart = Duration.between(Instant.parse(startedAt), now).toSeconds();
@@ -126,7 +125,7 @@ public class AdminController {
         if (value != null) n.put(key, value); else n.putNull(key);
     }
 
-    /** instanceId がパストラバーサル不可能な形式か検証。不正なら 400 を返して true を返す。 */
+    // instanceId がパストラバーサル不可能な形式か検証。不正なら 400 を返して true を返す。
     private static boolean rejectInvalidInstanceId(Context ctx, String instanceId) {
         if (instanceId == null || !INSTANCE_ID_PATTERN.matcher(instanceId).matches()) {
             ctx.status(400).json(Map.of("error", "Invalid instance ID"));
@@ -300,7 +299,7 @@ public class AdminController {
         ctx.status(503).json(Map.of("error", "Debug: intentional 503 (instance: " + instanceId + ")"));
     }
 
-    //管理者パネルのdbページでテーブル一覧を取得するエンドポイント
+    // 管理者パネルのdbページでテーブル一覧を取得するエンドポイント
     @GetMapping("/admin/tables")
     public void listTables(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -987,14 +986,9 @@ public class AdminController {
         return cols;
     }
 
-    // -------------------------------------------------------------------------
-    // GitHub YAML management
-    // -------------------------------------------------------------------------
-
     private record GitHubPutResult(String commitSha, String newFileSha, boolean shaConflict) {}
 
-    /** GitHub 環境変数が設定されているか確認。未設定なら IllegalStateException を投げる。
-     *  purgeCfCache() と同一パターン。 */
+    // 環境変数チェック
     private static void requireGitHubEnv() {
         String pat = System.getenv("GITHUB_PAT");
         if (pat == null || pat.isBlank()) {
@@ -1002,8 +996,7 @@ public class AdminController {
         }
     }
 
-    /** GitHub Contents API — ファイル取得
-     *  Base64 は MIME デコーダを使用（GitHub は改行入り Base64 を返すため）。 */
+    // github GET するやつ
     private static Map<String, String> ghGetFile() throws Exception {
         requireGitHubEnv();
         String pat    = System.getenv("GITHUB_PAT");
@@ -1028,9 +1021,7 @@ public class AdminController {
         return Map.of("content", content, "sha", sha);
     }
 
-    /** GitHub Contents API — ファイル更新（コミット作成）
-     *  戻り値: commitSha（commit.sha）と newFileSha（content.sha = 次回 PUT 用ファイル blob SHA）
-     *  shaConflict=true の場合は GitHub が 409 を返した（並列編集衝突）。 */
+    // github PUT するやつ
     private static GitHubPutResult ghPutFile(String content, String sha, String authorEmail)
             throws Exception {
         requireGitHubEnv();
@@ -1067,12 +1058,12 @@ public class AdminController {
         Map<?,?> fileObj = (Map<?,?>) parsed.get("content");
         return new GitHubPutResult(
             (String) commit.get("sha"),
-            (String) fileObj.get("sha"),  // ファイル blob SHA（次回 PUT で sha フィールドに使う）
+            (String) fileObj.get("sha"),  
             false
         );
     }
 
-    /** GitHub Actions API — デプロイ用ワークフローの最新 run 取得 */
+    // github actions取得
     private static Map<String, Object> ghGetLatestRun() throws Exception {
         requireGitHubEnv();
         String pat      = System.getenv("GITHUB_PAT");
@@ -1081,7 +1072,7 @@ public class AdminController {
         String branch   = System.getenv("GITHUB_BRANCH");
         String workflow = System.getenv("GITHUB_WORKFLOW_FILE");
         if (workflow == null || workflow.isBlank()) workflow = "cloud-run-deploy.yml";
-        // ワークフロー名で絞ることで CodeQL 等の他ワークフローを除外する
+        // codeQLとかを除外するためのworkflow指定。
         String url = "https://api.github.com/repos/" + owner + "/" + repo
                    + "/actions/workflows/" + workflow + "/runs?branch=" + branch + "&per_page=1";
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
@@ -1108,7 +1099,7 @@ public class AdminController {
         return result;
     }
 
-    /** routes.yaml の構造・識別子安全性・重複パスチェック。DB接続不要。 */
+    // routes.yaml 読み込みとバリデーション
     @SuppressWarnings("unchecked")
     private static List<Map<String,Object>> parseAndValidateYaml(String yaml) {
         var loaderOptions = new org.yaml.snakeyaml.LoaderOptions();
@@ -1169,7 +1160,7 @@ public class AdminController {
         return routes;
     }
 
-    /** テーブル・カラムの DB 存在チェック。保存前に呼び出す。 */
+    // routes.yaml のテーブルとカラムのチェック
     private static void validateRoutesYamlDb(List<Map<String,Object>> routes, Connection conn) throws SQLException {
         DatabaseMetaData meta = conn.getMetaData();
         for (Map<String,Object> entry : routes) {
@@ -1198,7 +1189,7 @@ public class AdminController {
         }
     }
 
-    // GET /admin/yaml/routes — GitHub から routes.yaml を取得
+    // githubからroutes.yamlをGET
     @GetMapping("/admin/yaml/routes")
     public void getYamlRoutes(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -1214,9 +1205,7 @@ public class AdminController {
         }
     }
 
-    // PUT /admin/yaml/routes — routes.yaml を更新してコミット
-    // リクエスト: { content: string, sha: string }
-    // レスポンス: { commitSha: string, newSha: string }
+    // routes.yamlをgithubにput with 構文チェックなど
     @PutMapping("/admin/yaml/routes")
     public void putYamlRoutes(Context ctx) {
         String email = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
@@ -1253,7 +1242,7 @@ public class AdminController {
         }
     }
 
-    // GET /admin/yaml/status — 最新 GitHub Actions run ステータス取得
+    // github actions取得エンドポイント
     @GetMapping("/admin/yaml/status")
     public void getYamlStatus(Context ctx) {
         ctx.header("Cache-Control", "no-store");
