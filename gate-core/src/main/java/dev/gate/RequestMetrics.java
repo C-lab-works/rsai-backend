@@ -264,11 +264,7 @@ public class RequestMetrics {
     // afterフィルタ
 
     public void record(Context ctx) {
-        // /admin/* はスキップ（/admin/debug/* はカウント）
         String path = ctx.path();
-        if (path.startsWith("/admin") && !path.startsWith("/admin/debug/")) {
-            return;
-        }
 
         boolean isError = ctx.statusCode() >= 500;
 
