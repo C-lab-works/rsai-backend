@@ -1044,7 +1044,7 @@ public class AdminController {
         String encoded = java.util.Base64.getEncoder()
             .encodeToString(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         String bodyStr = mapper.writeValueAsString(Map.of(
-            "message",   "Update routes.yaml by " + authorEmail,
+            "message",   "Update routes.yaml from admin panel",
             "content",   encoded,
             "sha",       sha,
             "branch",    branch,
