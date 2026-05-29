@@ -155,6 +155,7 @@ def format_comment(result: dict, provider_name: str) -> str:
 def send_discord(result: dict, provider_name: str) -> None:
     if not DISCORD_WEBHOOK:
         return
+    webhook_url = DISCORD_WEBHOOK.replace("canary.discord.com", "discord.com").replace("ptb.discord.com", "discord.com")
     findings = result.get("findings", [])
     summary  = result.get("summary", "")
 
@@ -193,7 +194,7 @@ def send_discord(result: dict, provider_name: str) -> None:
 
     payload = json.dumps({"embeds": [embed]}).encode()
     req = urllib.request.Request(
-        DISCORD_WEBHOOK, data=payload,
+        webhook_url, data=payload,
         headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
