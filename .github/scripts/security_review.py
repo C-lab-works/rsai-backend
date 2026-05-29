@@ -16,6 +16,7 @@ BEFORE_SHA = os.environ.get("BEFORE_SHA", "")
 AFTER_SHA = os.environ.get("AFTER_SHA", "")
 GITHUB_STEP_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "30000"))
+DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 
 SECURITY_PROMPT = """You are a security code reviewer. Analyze the following git diff for security vulnerabilities.
 
@@ -151,6 +152,58 @@ def format_comment(result: dict, provider_name: str) -> str:
     return "\n".join(lines)
 
 
+def send_discord(result: dict, provider_name: str) -> None:
+    if not DISCORD_WEBHOOK:
+        return
+    findings = result.get("findings", [])
+    summary  = result.get("summary", "")
+
+    severity_max = "none"
+    for f in findings:
+        s = f.get("severity", "LOW")
+        if s == "HIGH":   severity_max = "HIGH";   break
+        if s == "MEDIUM": severity_max = "MEDIUM"
+        elif severity_max == "none": severity_max = "LOW"
+
+    color = {"HIGH": 0xED4245, "MEDIUM": 0xFEE75C, "LOW": 0x5865F2}.get(severity_max, 0x57F287)
+
+    ref = PR_NUMBER and f"PR #{PR_NUMBER}" or (AFTER_SHA[:7] if AFTER_SHA else "push")
+    repo_url = f"https://github.com/{GITHUB_REPOSITORY}"
+    run_url  = f"{repo_url}/actions"
+
+    fields = []
+    for f in findings[:10]:
+        icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}.get(f.get("severity", "LOW"), "⚪")
+        name  = f"{icon} [{f.get('severity')}] `{f.get('file', '')}`"
+        value = f.get("description", "")
+        rec   = f.get("recommendation", "")
+        if rec:
+            value += f"\n**Fix:** {rec}"
+        fields.append({"name": name, "value": value[:1024], "inline": False})
+
+    title = "✅ Security Review — No issues" if not findings else f"🔒 Security Review — {len(findings)} finding(s)"
+    embed = {
+        "title": title,
+        "description": summary[:2048],
+        "color": color,
+        "fields": fields,
+        "footer": {"text": f"{ref} · {GITHUB_REPOSITORY} · {provider_name}"},
+        "url": run_url,
+    }
+
+    payload = json.dumps({"embeds": [embed]}).encode()
+    req = urllib.request.Request(
+        DISCORD_WEBHOOK, data=payload,
+        headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+        print("Discord notification sent.")
+    except Exception as e:
+        print(f"Discord notification failed: {e}")
+
+
 def main() -> None:
     providers = load_providers()
     if not providers:
@@ -190,6 +243,7 @@ def main() -> None:
     print(f"Found {findings_count} security issue(s).")
 
     output_results(format_comment(result, used_provider))
+    send_discord(result, used_provider)
 
     if any(f.get("severity") == "HIGH" for f in result.get("findings", [])):
         sys.exit(1)

@@ -150,7 +150,7 @@ public class AdminController {
             }
             String type = (String) body.get("type");
             if (!ALLOWED_INSTANCE_COMMANDS.contains(type)) {
-                ctx.status(400).json(Map.of("error", "Unknown command type: " + type));
+                ctx.status(400).json(Map.of("error", "Unknown command type"));
                 return;
             }
             Object payloadRaw = body.get("payload");

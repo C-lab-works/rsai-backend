@@ -41,4 +41,6 @@ jobs:
           PROVIDER_3_KEY: ${{ secrets.SAKURA_API_KEY }}
           PROVIDER_3_MODEL: "Qwen3-Coder-480B-A35B-Instruct-FP8"
 
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
         run: python .github/scripts/security_review.py
