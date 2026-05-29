@@ -19,13 +19,24 @@ GITHUB_STEP_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "30000"))
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 
-SECURITY_PROMPT = """You are a security code reviewer. Analyze the following git diff for security vulnerabilities.
+SECURITY_PROMPT = """You are a senior security engineer reviewing a git diff for a Java 21 backend service (Jetty HTTP server, Firestore REST API, MySQL, deployed on Cloud Run). Apply OWASP Top 10 and CWE taxonomy.
 
-Focus on:
-- SQL injection, XSS, SSRF, path traversal, command injection
-- Hardcoded secrets or credentials
-- Insecure authentication/authorization
-- Unsafe deserialization
+Report only genuine, exploitable vulnerabilities with clear evidence in the diff. Omit theoretical issues that require physical access, internal trust, or non-existing attack paths. If you are not confident a finding is exploitable, omit it or downgrade to LOW with a clear caveat.
+
+Check for:
+- Injection: SQL injection, LDAP injection, log injection (user input in log arguments without sanitization), command injection, JNDI lookup via log4j-style sinks
+- XSS / template injection in rendered HTML or JSON output
+- SSRF: user-controlled values passed to HTTP clients or Firestore document path construction
+- Path traversal: user input used in file paths or Firestore document paths without allowlist validation
+- Broken access control: IDOR (user-supplied IDs used without ownership validation), missing authorization checks, privilege escalation
+- Hardcoded secrets, credentials, API keys, or tokens in source or config files
+- Insecure deserialization: untrusted data in ObjectInputStream, Jackson polymorphic types, or YAML parsers
+- Race conditions / TOCTOU: must involve mutable shared state that can change between check and use; do not flag immutable values (e.g. Java String) or lambdas that capture already-validated variables
+- Sensitive data exposure: PII, tokens, or passwords in logs, error responses, or HTTP response headers
+- Cryptography: weak algorithms (MD5/SHA-1 for security purposes), improper IV/key management, predictable randomness
+- Authentication / JWT: algorithm confusion (none/HS256/RS256 swap), missing signature validation
+- Missing input validation at trust boundaries (HTTP request parameters, path params, headers, body fields)
+- Java-specific: XXE via DocumentBuilder or SAXParser without disabling external entities, ReDoS via user-controlled input matched against backtracking-prone regex, unsafe reflection or class loading from user input
 
 Respond in this exact JSON format:
 {
@@ -33,15 +44,16 @@ Respond in this exact JSON format:
     {
       "severity": "HIGH|MEDIUM|LOW",
       "file": "path/to/file.java",
-      "description": "brief description",
-      "recommendation": "how to fix"
+      "line": "approximate line number or short code snippet for navigation",
+      "description": "concise description of the vulnerability and realistic attack scenario",
+      "recommendation": "specific remediation step"
     }
   ],
   "summary": "overall security assessment in 1-2 sentences"
 }
 
-If no issues found, return {"findings": [], "summary": "No security issues found."}
-ignore .github/scripts/security_review.py
+If no genuine issues found, return {"findings": [], "summary": "No security issues found."}
+Do not analyze .github/scripts/security_review.py itself.
 
 Diff to analyze:
 """
