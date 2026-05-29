@@ -5,11 +5,13 @@ import os
 import sys
 import json
 import urllib.request
-import urllib.error
 
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPOSITORY = os.environ["GITHUB_REPOSITORY"]
-PR_NUMBER = os.environ["PR_NUMBER"]
+PR_NUMBER = os.environ.get("PR_NUMBER", "")
+BEFORE_SHA = os.environ.get("BEFORE_SHA", "")
+AFTER_SHA = os.environ.get("AFTER_SHA", "")
+GITHUB_STEP_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "30000"))
 
 SECURITY_PROMPT = """You are a security code reviewer. Analyze the following git diff for security vulnerabilities.
@@ -40,7 +42,6 @@ Diff to analyze:
 
 
 def load_providers() -> list[dict]:
-    """Load ordered provider list from numbered env vars (PROVIDER_1_*, PROVIDER_2_*, ...)."""
     providers = []
     i = 1
     while True:
@@ -58,19 +59,33 @@ def load_providers() -> list[dict]:
     return providers
 
 
-def gh_api(path: str, method: str = "GET", body: dict | None = None) -> dict:
-    url = f"https://api.github.com{path}"
+def gh_request(url: str, accept: str = "application/vnd.github+json", method: str = "GET", body: dict | None = None):
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
+        "Accept": accept,
         "X-GitHub-Api-Version": "2022-11-28",
     }
     data = json.dumps(body).encode() if body else None
     if body:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())
+    return urllib.request.urlopen(req)
+
+
+def get_diff() -> str:
+    if PR_NUMBER:
+        url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/pulls/{PR_NUMBER}"
+        print(f"Fetching diff for PR #{PR_NUMBER}...")
+    elif BEFORE_SHA and AFTER_SHA:
+        url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/compare/{BEFORE_SHA}...{AFTER_SHA}"
+        print(f"Fetching diff for push {BEFORE_SHA[:7]}...{AFTER_SHA[:7]}...")
+    else:
+        print("No PR number or commit SHAs available.")
+        return ""
+
+    with gh_request(url, accept="application/vnd.github.v3.diff") as resp:
+        diff = resp.read().decode("utf-8", errors="replace")
+    return diff[:MAX_DIFF_CHARS]
 
 
 def ai_chat(provider: dict, prompt: str) -> str:
@@ -85,36 +100,24 @@ def ai_chat(provider: dict, prompt: str) -> str:
         "Authorization": f"Bearer {provider['key']}",
         "Content-Type": "application/json",
     }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers=headers,
-        method="POST",
-    )
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=60) as resp:
         result = json.loads(resp.read())
     return result["choices"][0]["message"]["content"]
 
 
-def get_pr_diff() -> str:
-    url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/pulls/{PR_NUMBER}"
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3.diff",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        diff = resp.read().decode("utf-8", errors="replace")
-    return diff[:MAX_DIFF_CHARS]
-
-
-def post_comment(body: str) -> None:
-    gh_api(
-        f"/repos/{GITHUB_REPOSITORY}/issues/{PR_NUMBER}/comments",
-        method="POST",
-        body={"body": body},
-    )
+def output_results(body: str) -> None:
+    if PR_NUMBER:
+        url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{PR_NUMBER}/comments"
+        with gh_request(url, method="POST", body={"body": body}):
+            pass
+        print("Posted comment to PR.")
+    elif GITHUB_STEP_SUMMARY:
+        with open(GITHUB_STEP_SUMMARY, "a") as f:
+            f.write(body + "\n")
+        print("Written to job summary.")
+    else:
+        print(body)
 
 
 def format_comment(result: dict, provider_name: str) -> str:
@@ -143,20 +146,17 @@ def main() -> None:
         print("No providers configured. Set PROVIDER_1_NAME, PROVIDER_1_KEY, etc.")
         sys.exit(1)
 
-    print(f"Fetching diff for PR #{PR_NUMBER}...")
-    diff = get_pr_diff()
+    diff = get_diff()
     if not diff.strip():
         print("No diff found, skipping.")
         return
 
-    prompt = SECURITY_PROMPT + diff
     raw = None
     used_provider = None
-
     for provider in providers:
         print(f"Trying provider: {provider['name']} ({provider['model']})...")
         try:
-            raw = ai_chat(provider, prompt)
+            raw = ai_chat(provider, SECURITY_PROMPT + diff)
             used_provider = provider["name"]
             print(f"Success with {provider['name']}")
             break
@@ -164,7 +164,7 @@ def main() -> None:
             print(f"[{provider['name']}] failed: {e}, trying next...")
 
     if raw is None:
-        post_comment("## Security Review\n\n⚠️ All AI providers failed. Check workflow logs.")
+        output_results("## Security Review\n\n⚠️ All AI providers failed. Check workflow logs.")
         sys.exit(1)
 
     try:
@@ -177,9 +177,7 @@ def main() -> None:
     findings_count = len(result.get("findings", []))
     print(f"Found {findings_count} security issue(s).")
 
-    comment = format_comment(result, used_provider)
-    post_comment(comment)
-    print("Posted comment to PR.")
+    output_results(format_comment(result, used_provider))
 
     if any(f.get("severity") == "HIGH" for f in result.get("findings", [])):
         sys.exit(1)

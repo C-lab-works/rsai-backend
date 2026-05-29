@@ -1,6 +1,8 @@
 name: Security Review
 
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
 
@@ -19,7 +21,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
           # Provider 1: NVIDIA NIM
           PROVIDER_1_NAME: "NVIDIA NIM (DeepSeek V4 Pro)"
           PROVIDER_1_BASE_URL: "https://integrate.api.nvidia.com/v1"
