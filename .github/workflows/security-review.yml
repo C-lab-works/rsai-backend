@@ -1,0 +1,41 @@
+name: Security Review
+
+on:
+  pull_request:
+    branches: [master]
+
+jobs:
+  security-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run security review with AI fallback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+
+          # Provider 1: NVIDIA NIM
+          PROVIDER_1_NAME: "NVIDIA NIM (DeepSeek V4 Pro)"
+          PROVIDER_1_BASE_URL: "https://integrate.api.nvidia.com/v1"
+          PROVIDER_1_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          PROVIDER_1_MODEL: "deepseek-ai/deepseek-v4-pro"
+
+          # Provider 2: Google Gemini
+          PROVIDER_2_NAME: "Google Gemini"
+          PROVIDER_2_BASE_URL: "https://generativelanguage.googleapis.com/v1beta/openai"
+          PROVIDER_2_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PROVIDER_2_MODEL: "gemini-3.5-flash"
+
+          # Provider 3: Sakura AI
+          PROVIDER_3_NAME: "Sakura AI (Qwen3-Coder)"
+          PROVIDER_3_BASE_URL: "https://api.ai.sakura.ad.jp/v1"
+          PROVIDER_3_KEY: ${{ secrets.SAKURA_API_KEY }}
+          PROVIDER_3_MODEL: "Qwen3-Coder-480B-A35B-Instruct-FP8"
+
+        run: python .github/scripts/security_review.py
