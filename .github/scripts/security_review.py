@@ -157,6 +157,9 @@ def send_discord(result: dict, provider_name: str) -> None:
     if not DISCORD_WEBHOOK:
         return
     webhook_url = DISCORD_WEBHOOK.replace("canary.discord.com", "discord.com").replace("ptb.discord.com", "discord.com")
+    if not webhook_url.startswith("https://discord.com/api/webhooks/"):
+        print("Discord notification skipped: webhook URL must start with https://discord.com/api/webhooks/")
+        return
     findings = result.get("findings", [])
     summary  = result.get("summary", "")
 
@@ -209,8 +212,8 @@ def send_discord(result: dict, provider_name: str) -> None:
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
         print(f"Discord notification failed: HTTP {e.code} {e.reason} — {body}")
-    except Exception as e:
-        print(f"Discord notification failed: {e}")
+    except Exception:
+        print("Discord notification failed: network error")
 
 
 def main() -> None:
