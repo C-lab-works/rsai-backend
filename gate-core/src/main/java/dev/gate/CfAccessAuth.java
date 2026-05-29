@@ -205,8 +205,13 @@ public class CfAccessAuth implements Handler {
             long cacheExp = exp > 0 ? exp : (now + 300);
             verificationCache.put(token, new VerificationResult(email, cacheExp));
             return email;
-        } catch (Exception e) {
+        } catch (SecurityException | IllegalArgumentException e) {
+            // 署名・クレーム検証の確定的な失敗のみネガティブキャッシュする
             verificationCache.put(token, new VerificationResult(null, now + 60));
+            throw e;
+        } catch (Exception e) {
+            // JWKS 取得失敗などの一時的なインフラ障害はキャッシュしない。
+            // 一時障害で正当なトークンを最大60秒間ロックアウトしてしまうのを防ぐ。
             throw e;
         }
     }

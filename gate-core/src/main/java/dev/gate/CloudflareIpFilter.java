@@ -2,6 +2,8 @@ package dev.gate;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,6 +57,8 @@ public class CloudflareIpFilter implements Handler {
 
     private final List<CidrBlock> blocks;
     private final boolean skipCheck;
+    private final byte[] originSecret;
+    private static final String ORIGIN_SECRET_HEADER = "X-Origin-Secret";
     private static final int IP_CACHE_MAX = 50_000;
     private final ConcurrentHashMap<String, Boolean> ipMatchCache = new ConcurrentHashMap<>();
 
@@ -62,6 +66,15 @@ public class CloudflareIpFilter implements Handler {
         this.skipCheck = "true".equalsIgnoreCase(System.getenv("SKIP_CF_IP_CHECK"));
         if (skipCheck) {
             logger.warn("SKIP_CF_IP_CHECK=true — CloudflareIPチェック無効(開発環境専用)");
+        }
+        String secret = System.getenv("ORIGIN_SHARED_SECRET");
+        this.originSecret = (secret != null && !secret.isBlank())
+                ? secret.getBytes(StandardCharsets.UTF_8) : null;
+        if (originSecret != null) {
+            logger.info("Origin shared-secret auth enabled (header={})", ORIGIN_SECRET_HEADER);
+        } else if (!skipCheck) {
+            logger.warn("ORIGIN_SHARED_SECRET 未設定 — オリジン保護は Cloudflare IP レンジのみ。"
+                + " 第三者の Cloudflare ゾーン経由のアクセスを防ぐため、CF 側でのシークレットヘッダ注入を推奨。");
         }
         this.blocks = buildBlocks();
         logger.info("CloudflareIpFilter initialized: cidrBlocks={}", blocks.size());
@@ -71,6 +84,20 @@ public class CloudflareIpFilter implements Handler {
     public void handle(Context ctx) {
         if (skipCheck) return;
         if (EXEMPT_PATHS.contains(ctx.path())) return;
+
+        // 共有シークレットによるオリジン認証（ORIGIN_SHARED_SECRET 設定時のみ）。
+        // Cloudflare の Transform/Origin Rule で全リクエストにこのヘッダを注入する想定。
+        // 第三者が自分の Cloudflare ゾーンを当 origin に向けてもこのシークレットは付かないため、
+        // 「Cloudflare 経由でさえあれば通る」という IP 許可リスト単体の弱点を塞ぐ（XFF 依存も解消）。
+        if (originSecret != null) {
+            String provided = ctx.requestHeader(ORIGIN_SECRET_HEADER);
+            if (provided == null
+                    || !MessageDigest.isEqual(provided.getBytes(StandardCharsets.UTF_8), originSecret)) {
+                logger.warn("Request rejected: missing/invalid origin secret. path={}", ctx.path());
+                ctx.status(403).json(Map.of("error", "Forbidden")).halt();
+            }
+            return; // シークレット一致＝当オリジン経由が証明されたので IP チェックは不要
+        }
 
         String candidateIp = resolveCloudflareIp(ctx);
         if (candidateIp == null || !isCloudflareIp(candidateIp)) {

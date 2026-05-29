@@ -3,7 +3,9 @@ package dev.gate.core;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 import java.io.InputStream;
 import java.sql.Connection;
@@ -45,7 +47,9 @@ public class YamlRouteLoader {
                 return;
             }
 
-            Yaml yaml = new Yaml();
+            // バンドルされた routes.yaml は信頼できるが、任意オブジェクト生成を避けるため
+            // 管理画面側の検証（AdminController#parseAndValidateYaml）と同様に SafeConstructor を使う。
+            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
             Map<String, Object> config = yaml.load(is);
             if (config == null) return;
 

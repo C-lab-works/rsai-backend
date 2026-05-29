@@ -260,7 +260,7 @@ public class AdminController {
             ctx.json(res);
         } catch (Exception e) {
             logger.error("clearCache error", e);
-            ctx.status(500).json(Map.of("error", "Cache refresh failed: " + e.getMessage()));
+            ctx.status(500).json(Map.of("error", "Cache refresh failed"));
         }
     }
 
@@ -1201,7 +1201,7 @@ public class AdminController {
             ctx.status(503).json(Map.of("error", "GitHub not configured: " + e.getMessage()));
         } catch (Exception e) {
             logger.error("getYamlRoutes failed", e);
-            ctx.status(502).json(Map.of("error", "GitHub API error: " + e.getMessage()));
+            ctx.status(502).json(Map.of("error", "GitHub API error"));
         }
     }
 
@@ -1238,7 +1238,7 @@ public class AdminController {
             ctx.status(400).json(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             logger.error("putYamlRoutes failed", e);
-            ctx.status(502).json(Map.of("error", "GitHub API error: " + e.getMessage()));
+            ctx.status(502).json(Map.of("error", "GitHub API error"));
         }
     }
 
@@ -1253,7 +1253,7 @@ public class AdminController {
             ctx.status(503).json(Map.of("error", "GitHub not configured: " + e.getMessage()));
         } catch (Exception e) {
             logger.error("getYamlStatus failed", e);
-            ctx.status(502).json(Map.of("error", "GitHub API error: " + e.getMessage()));
+            ctx.status(502).json(Map.of("error", "GitHub API error"));
         }
     }
 }

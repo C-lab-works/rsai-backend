@@ -42,10 +42,12 @@ public class Main {
 
         // --- Middleware & Auth ---
 
+        // セキュリティヘッダは認証より先に付与する。
+        // 認証フィルタが halt した 401/403 応答にもヘッダが確実に乗るようにするため。
+        gate.before(SecurityHeaders.get());
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
-        gate.before(SecurityHeaders.get());
 
         RequestMetrics metrics = RequestMetrics.get();
         metrics.init();
