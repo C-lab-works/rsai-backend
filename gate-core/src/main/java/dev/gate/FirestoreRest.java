@@ -166,6 +166,7 @@ public class FirestoreRest {
     private HttpResponse<String> http(String method, String url, String jsonBody) throws Exception {
         HttpRequest.Builder b = HttpRequest.newBuilder()
             .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(10))
             .header("Authorization", "Bearer " + token());
         if (jsonBody != null) {
             b.header("Content-Type", "application/json");

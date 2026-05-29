@@ -377,7 +377,7 @@ public class RequestMetrics {
     }
 
     // snapshotをDBから再構築（flushAll・loadFromDb後に呼ぶ）
-    private void refreshSnapshot() {
+    public void refreshSnapshot() {
         try (Connection conn = Database.getConnection()) {
             long currentHour = epochHour();
             long since = currentHour - (HOURS - 1);

@@ -33,6 +33,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.concurrent.CompletableFuture;
+
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
@@ -156,14 +158,23 @@ public class AdminController {
             Object payloadRaw = body.get("payload");
 
             String requestId = UUID.randomUUID().toString();
-            FirestoreRest fs = FirestoreRest.get();
 
             Map<String, Object> cmd = new java.util.HashMap<>();
             cmd.put("type",      type);
             cmd.put("requestId", requestId);
             cmd.put("issuedAt",  Instant.now().toString());
             if (payloadRaw != null) cmd.put("payload", payloadRaw);
-            fs.update("instances/" + instanceId, Map.of("cmd", cmd));
+
+            // Firestore 書き込みを非同期実行してハンドラを即座に返す。
+            // 同期実行では Jetty の IdleTimeout (30s) が発動して 504 になる。
+            final Map<String, Object> cmdAsync = Map.copyOf(cmd);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    FirestoreRest.get().update("instances/" + instanceId, Map.of("cmd", cmdAsync));
+                } catch (Exception e) {
+                    logger.error("sendCommand async write failed instanceId={}", instanceId, e);
+                }
+            });
 
             ctx.status(202).json(Map.of("requestId", requestId));
         } catch (Exception e) {
@@ -770,6 +781,7 @@ public class AdminController {
     public void stats(Context ctx) {
         ctx.header("Cache-Control", "no-store");
         RequestMetrics m = RequestMetrics.get();
+        m.refreshSnapshot();
         long   total    = m.getTotalRequests();
         long   errors   = m.getErrorCount();
         double errRate  = total == 0 ? 0.0 : Math.round((errors * 100.0 / total) * 100.0) / 100.0;

@@ -20,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class InstanceManager {
 
@@ -36,6 +37,8 @@ public class InstanceManager {
     private volatile String lastBroadcastRefreshAt = null;
     private volatile String lastCmdRequestId       = null;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
+    // metrics サブコレクションのドキュメント数をメモリで追跡して 121-doc クエリを廃止
+    private final AtomicInteger metricsCount = new AtomicInteger(-1);
 
     private final ScheduledExecutorService poller =
             Executors.newScheduledThreadPool(3, r -> {
@@ -77,8 +80,16 @@ public class InstanceManager {
                 if (bDoc != null) lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
             } catch (Exception ignored) {}
 
+            // 起動時に既存 metrics ドキュメント数を 1 回だけ取得してカウンターを初期化
+            try {
+                metricsCount.set(
+                    fs.query("instances/" + instanceId, "metrics", "t", false, 130).size());
+            } catch (Exception ignored) {
+                metricsCount.set(0);
+            }
+
             poller.scheduleAtFixedRate(this::heartbeat,      10, 10, TimeUnit.SECONDS);
-            poller.scheduleAtFixedRate(this::pollBroadcast, 15, 15, TimeUnit.SECONDS);
+            poller.scheduleAtFixedRate(this::pollBroadcast,  2,  2, TimeUnit.SECONDS);
             poller.scheduleAtFixedRate(this::pollCommand,    2,  2, TimeUnit.SECONDS);
             registerShutdownHook();
             log.info("InstanceManager initialized: instanceId={}", instanceId);
@@ -251,12 +262,16 @@ public class InstanceManager {
 
             fs.add("instances/" + instanceId + "/metrics", point);
 
-            // 121件目以降（最古）を削除して 120件上限を維持
-            List<FirestoreRest.Entry> all =
-                    fs.query("instances/" + instanceId, "metrics", "t", true, 121);
-            if (all.size() == 121) {
-                try { fs.delete("instances/" + instanceId + "/metrics/" + all.get(120).id()); }
-                catch (Exception ignored) {}
+            // 120点上限管理: 毎回 121 件フェッチするのを廃止し、カウンターが超過したときのみ
+            // 昇順 1 件クエリで最古ドキュメントを取得して削除する
+            if (metricsCount.incrementAndGet() > 120) {
+                List<FirestoreRest.Entry> oldest =
+                        fs.query("instances/" + instanceId, "metrics", "t", false, 1);
+                if (!oldest.isEmpty()) {
+                    try { fs.delete("instances/" + instanceId + "/metrics/" + oldest.get(0).id()); }
+                    catch (Exception ignored) {}
+                }
+                metricsCount.set(120);
             }
         } catch (Exception e) {
             log.warn("recordMetrics failed: {}", e.getMessage());
