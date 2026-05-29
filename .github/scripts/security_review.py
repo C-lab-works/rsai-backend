@@ -107,7 +107,7 @@ def ai_chat(provider: dict, prompt: str) -> str:
         "Content-Type": "application/json",
     }
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=120) as resp:
         result = json.loads(resp.read())
     return result["choices"][0]["message"]["content"]
 

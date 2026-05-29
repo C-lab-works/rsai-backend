@@ -68,6 +68,7 @@ public class AdminController {
 
     // instanceId 検証パターン（Cloud Run の HOSTNAME は英数字とハイフンのみ）
     private static final Pattern INSTANCE_ID_PATTERN = Pattern.compile("[a-zA-Z0-9_-]{1,256}");
+    private static final Pattern UUID_PATTERN = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     private static final int TOP_ENDPOINTS_COUNT = 10;
 
@@ -134,7 +135,8 @@ public class AdminController {
         return false;
     }
 
-    // インスタンスにコマンドを送信し、最大5秒ポーリングしてレスポンスを返す
+    // インスタンスにコマンドを発行し、即座に requestId を返す（非同期）
+    // 結果は GET /admin/instances/{id}/command/{requestId} でポーリングする
     @PostMapping("/admin/instances/{id}/command")
     @SuppressWarnings("unchecked")
     public void sendCommand(Context ctx) {
@@ -146,7 +148,7 @@ public class AdminController {
                 ctx.status(400).json(Map.of("error", "type is required"));
                 return;
             }
-            String type       = (String) body.get("type");
+            String type = (String) body.get("type");
             if (!ALLOWED_INSTANCE_COMMANDS.contains(type)) {
                 ctx.status(400).json(Map.of("error", "Unknown command type: " + type));
                 return;
@@ -163,22 +165,39 @@ public class AdminController {
             if (payloadRaw != null) cmd.put("payload", payloadRaw);
             fs.update("instances/" + instanceId, Map.of("cmd", cmd));
 
-            // ping はコールドスタート直後のコンテナへの到達確認に使われるため長めに待つ
-            long timeoutMs = "ping".equals(type) ? 30_000 : 10_000;
-            long deadline = System.currentTimeMillis() + timeoutMs;
-            while (System.currentTimeMillis() < deadline) {
-                Thread.sleep(500);
-                Map<String, Object> doc = fs.get("instances/" + instanceId);
-                if (doc == null) break;
-                Map<String, Object> res = (Map<String, Object>) doc.get("res");
-                if (res != null && requestId.equals(res.get("requestId"))) {
-                    ctx.json(res);
-                    return;
-                }
-            }
-            ctx.status(504).json(Map.of("error", "command timed out", "requestId", requestId));
+            ctx.status(202).json(Map.of("requestId", requestId));
         } catch (Exception e) {
             logger.error("sendCommand error instanceId={}", instanceId, e);
+            ctx.status(503).json(Map.of("error", "Firestore unavailable"));
+        }
+    }
+
+    // インスタンスコマンドの実行結果を取得する（ポーリング用）
+    @GetMapping("/admin/instances/{id}/command/{requestId}")
+    @SuppressWarnings("unchecked")
+    public void getCommandResult(Context ctx) {
+        String instanceId = ctx.pathParam("id");
+        if (rejectInvalidInstanceId(ctx, instanceId)) return;
+        String requestId = ctx.pathParam("requestId");
+        if (requestId == null || !UUID_PATTERN.matcher(requestId).matches()) {
+            ctx.status(400).json(Map.of("error", "Invalid requestId"));
+            return;
+        }
+        ctx.header("Cache-Control", "no-store");
+        try {
+            Map<String, Object> doc = FirestoreRest.get().get("instances/" + instanceId);
+            if (doc == null) {
+                ctx.status(404).json(Map.of("error", "instance not found"));
+                return;
+            }
+            Map<String, Object> res = (Map<String, Object>) doc.get("res");
+            if (res != null && requestId.equals(res.get("requestId"))) {
+                ctx.json(res);
+                return;
+            }
+            ctx.status(202).json(Map.of("status", "pending", "requestId", requestId));
+        } catch (Exception e) {
+            logger.error("getCommandResult error instanceId={}", instanceId, e);
             ctx.status(503).json(Map.of("error", "Firestore unavailable"));
         }
     }
