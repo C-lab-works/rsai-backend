@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import json
+import urllib.error
 import urllib.request
 
 _SHA_RE = re.compile(r"^[a-f0-9]{40}$")
@@ -201,6 +202,9 @@ def send_discord(result: dict, provider_name: str) -> None:
         with urllib.request.urlopen(req, timeout=10):
             pass
         print("Discord notification sent.")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"Discord notification failed: HTTP {e.code} {e.reason} — {body}")
     except Exception as e:
         print(f"Discord notification failed: {e}")
 
