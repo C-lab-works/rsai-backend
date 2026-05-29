@@ -196,7 +196,11 @@ def send_discord(result: dict, provider_name: str) -> None:
     payload = json.dumps({"embeds": [embed]}).encode()
     req = urllib.request.Request(
         webhook_url, data=payload,
-        headers={"Content-Type": "application/json"}, method="POST"
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "DiscordBot (https://github.com/C-lab-works/rsai-backend, 1.0)",
+        },
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=10):
