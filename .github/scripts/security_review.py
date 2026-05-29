@@ -2,9 +2,12 @@
 """PR security review with ordered AI provider fallback."""
 
 import os
+import re
 import sys
 import json
 import urllib.request
+
+_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 GITHUB_REPOSITORY = os.environ["GITHUB_REPOSITORY"]
@@ -77,6 +80,9 @@ def get_diff() -> str:
         url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/pulls/{PR_NUMBER}"
         print(f"Fetching diff for PR #{PR_NUMBER}...")
     elif BEFORE_SHA and AFTER_SHA:
+        if not (_SHA_RE.match(BEFORE_SHA) and _SHA_RE.match(AFTER_SHA)):
+            print("Invalid commit SHA format, skipping.")
+            return ""
         url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/compare/{BEFORE_SHA}...{AFTER_SHA}"
         print(f"Fetching diff for push {BEFORE_SHA[:7]}...{AFTER_SHA[:7]}...")
     else:
@@ -113,7 +119,12 @@ def output_results(body: str) -> None:
             pass
         print("Posted comment to PR.")
     elif GITHUB_STEP_SUMMARY:
-        with open(GITHUB_STEP_SUMMARY, "a") as f:
+        summary_path = os.path.realpath(GITHUB_STEP_SUMMARY)
+        if ".." in GITHUB_STEP_SUMMARY or not os.path.isabs(summary_path):
+            print("Invalid GITHUB_STEP_SUMMARY path, skipping write.")
+            print(body)
+            return
+        with open(summary_path, "a") as f:
             f.write(body + "\n")
         print("Written to job summary.")
     else:
@@ -161,7 +172,8 @@ def main() -> None:
             print(f"Success with {provider['name']}")
             break
         except Exception as e:
-            print(f"[{provider['name']}] failed: {e}, trying next...")
+            safe_msg = str(e).replace(provider["key"], "***") if provider["key"] in str(e) else str(e)
+            print(f"[{provider['name']}] failed: {safe_msg}, trying next...")
 
     if raw is None:
         output_results("## Security Review\n\n⚠️ All AI providers failed. Check workflow logs.")
