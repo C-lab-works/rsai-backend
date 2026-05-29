@@ -163,8 +163,9 @@ public class AdminController {
             if (payloadRaw != null) cmd.put("payload", payloadRaw);
             fs.update("instances/" + instanceId, Map.of("cmd", cmd));
 
-            // poll for result (500ms × 20 = 10s max)
-            long deadline = System.currentTimeMillis() + 10_000;
+            // ping はコールドスタート直後のコンテナへの到達確認に使われるため長めに待つ
+            long timeoutMs = "ping".equals(type) ? 30_000 : 10_000;
+            long deadline = System.currentTimeMillis() + timeoutMs;
             while (System.currentTimeMillis() < deadline) {
                 Thread.sleep(500);
                 Map<String, Object> doc = fs.get("instances/" + instanceId);
