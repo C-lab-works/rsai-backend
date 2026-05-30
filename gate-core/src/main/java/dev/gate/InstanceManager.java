@@ -9,6 +9,11 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,18 +53,46 @@ public class InstanceManager {
             });
 
     private InstanceManager() {
-        // K_REVISIONとHOSTNAMEで識別
-        String rev  = System.getenv("K_REVISION");
-        String host = System.getenv("HOSTNAME");
-        if (rev != null && host != null) {
-            this.instanceId = rev + "-" + host;
-        } else if (host != null) {
-            this.instanceId = host;
+        String rev    = System.getenv("K_REVISION");
+        String host   = System.getenv("HOSTNAME");
+        // "localhost" は複数インスタンスで共通になるため識別子として使わない
+        String safeHost = (host != null && !host.equals("localhost") && !host.isBlank()) ? host : null;
+
+        // Cloud Run メタデータサーバーからコンテナ固有の数値 ID を取得。
+        // Gen1/Gen2 ともに一意なので HOSTNAME の衝突問題を回避できる。
+        String metaSuffix = fetchCloudRunInstanceSuffix();
+
+        if (rev != null && metaSuffix != null) {
+            this.instanceId = rev + "-" + metaSuffix;
+        } else if (rev != null && safeHost != null) {
+            this.instanceId = rev + "-" + safeHost;
+        } else if (safeHost != null) {
+            this.instanceId = safeHost;
         } else if (rev != null) {
-            this.instanceId = rev;
+            // revision だけでは複数インスタンスが衝突するため UUID サフィックスを付加
+            this.instanceId = rev + "-" + UUID.randomUUID().toString().substring(0, 8);
         } else {
             this.instanceId = "local-" + UUID.randomUUID().toString().substring(0, 8);
         }
+    }
+
+    // Cloud Run メタデータサーバーからインスタンス固有 ID の末尾 12 桁を返す。
+    // ローカル環境や取得失敗時は null を返す。
+    private static String fetchCloudRunInstanceSuffix() {
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create("http://metadata.google.internal/computeMetadata/v1/instance/id"))
+                .timeout(Duration.ofSeconds(1))
+                .header("Metadata-Flavor", "Google")
+                .build();
+            HttpResponse<String> resp = HttpClient.newHttpClient()
+                .send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() == 200) {
+                String id = resp.body().trim();
+                return id.length() > 12 ? id.substring(id.length() - 12) : id;
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     public static InstanceManager get() { return INSTANCE; }
