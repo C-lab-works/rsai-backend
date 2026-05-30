@@ -29,46 +29,57 @@ public class DataSeeder {
                 seedFoods(conn);
                 seedMenus(conn);
                 seedProjectCategories(conn);
+                setSeedVersion(conn, 2);
             }
             if (v == 2) {
                 logger.info("Migrating schema v2 -> v3");
                 migrateV2(conn);
+                setSeedVersion(conn, 3);
             }
             if (v <= 3) {
                 logger.info("Migrating schema v3 -> v4");
                 migrateV3(conn);
+                setSeedVersion(conn, 4);
             }
             if (v <= 4) {
                 logger.info("Migrating schema v4 -> v5");
                 migrateV4(conn);
+                setSeedVersion(conn, 5);
             }
             if (v <= 5) {
                 logger.info("Migrating schema v5 -> v6");
                 migrateV5(conn);
+                setSeedVersion(conn, 6);
             }
             if (v <= 6) {
                 logger.info("Migrating schema v6 -> v7");
                 migrateV6(conn);
+                setSeedVersion(conn, 7);
             }
             if (v <= 7) {
                 logger.info("Migrating schema v7 -> v8");
                 migrateV7(conn);
+                setSeedVersion(conn, 8);
             }
             if (v <= 8) {
                 logger.info("Migrating schema v8 -> v9");
                 migrateV8(conn);
+                setSeedVersion(conn, 9);
             }
             if (v <= 9) {
                 logger.info("Migrating schema v9 -> v10");
                 migrateV9(conn);
+                setSeedVersion(conn, 10);
             }
             if (v <= 10) {
                 logger.info("Migrating schema v10 -> v11");
                 migrateV10(conn);
+                setSeedVersion(conn, 11);
             }
             if (v <= 11) {
                 logger.info("Migrating schema v11 -> v12");
                 migrateV11(conn);
+                setSeedVersion(conn, 12);
             }
             logger.info("Migrating schema v12 -> v13");
             migrateV12(conn);

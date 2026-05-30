@@ -307,6 +307,7 @@ public class AdminController {
                 .uri(URI.create("https://api.cloudflare.com/client/v4/zones/" + zoneId + "/purge_cache"))
                 .header("Authorization", "Bearer " + apiToken)
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(10))
                 .POST(HttpRequest.BodyPublishers.ofString("{\"purge_everything\":true}"))
                 .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
@@ -636,7 +637,9 @@ public class AdminController {
             String sql = (String) body.get("sql");
             if (sql == null || sql.isBlank()) { ctx.status(400).json(Map.of("error", "sqlが必要です")); return; }
 
-            ObjectNode lastResult = null;
+            // 事前検証: ホワイトリストチェックと DDL 検出を一括で行う
+            List<String> stmts = new ArrayList<>();
+            boolean hasDdl = false;
             for (String raw : splitStatements(sql)) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
@@ -653,36 +656,55 @@ public class AdminController {
                         ctx.status(403).json(Map.of("error", "この操作は許可されていません: ALTER " + second));
                         return;
                     }
+                    hasDdl = true;
                 }
-                logger.info("execSql by={} len={}", executor, stmt.length());
-                try (Statement s = conn.createStatement()) {
-                    s.setQueryTimeout(30);
-                    boolean hasRs = s.execute(stmt);
-                    lastResult = mapper.createObjectNode();
-                    ArrayNode colsNode = lastResult.putArray("cols");
-                    ArrayNode rowsNode = lastResult.putArray("rows");
-                    if (hasRs) {
-                        try (ResultSet rs = s.getResultSet()) {
-                            ResultSetMetaData meta = rs.getMetaData();
-                            int colCount = meta.getColumnCount();
-                            for (int i = 1; i <= colCount; i++) {
-                                ObjectNode col = colsNode.addObject();
-                                col.put("name", meta.getColumnName(i));
-                                col.put("type", meta.getColumnTypeName(i).toLowerCase());
-                            }
-                            while (rs.next()) {
-                                ObjectNode row = rowsNode.addObject();
+                stmts.add(stmt);
+            }
+
+            // DDL (ALTER TABLE) がない場合のみトランザクションで包む。
+            // MySQL の DDL は暗黙コミットされるためロールバック不可。
+            if (!hasDdl) conn.setAutoCommit(false);
+            try {
+                ObjectNode lastResult = null;
+                for (String stmt : stmts) {
+                    logger.info("execSql by={} len={}", executor, stmt.length());
+                    try (Statement s = conn.createStatement()) {
+                        s.setQueryTimeout(30);
+                        boolean hasRs = s.execute(stmt);
+                        lastResult = mapper.createObjectNode();
+                        ArrayNode colsNode = lastResult.putArray("cols");
+                        ArrayNode rowsNode = lastResult.putArray("rows");
+                        if (hasRs) {
+                            try (ResultSet rs = s.getResultSet()) {
+                                ResultSetMetaData meta = rs.getMetaData();
+                                int colCount = meta.getColumnCount();
                                 for (int i = 1; i <= colCount; i++) {
-                                    putValue(row, meta.getColumnName(i), getColumnValue(rs, meta, i));
+                                    ObjectNode col = colsNode.addObject();
+                                    col.put("name", meta.getColumnName(i));
+                                    col.put("type", meta.getColumnTypeName(i).toLowerCase());
+                                }
+                                while (rs.next()) {
+                                    ObjectNode row = rowsNode.addObject();
+                                    for (int i = 1; i <= colCount; i++) {
+                                        putValue(row, meta.getColumnName(i), getColumnValue(rs, meta, i));
+                                    }
                                 }
                             }
+                        } else {
+                            lastResult.put("affected", s.getUpdateCount());
                         }
-                    } else {
-                        lastResult.put("affected", s.getUpdateCount());
                     }
                 }
+                if (!hasDdl) conn.commit();
+                ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
+            } catch (Exception e) {
+                if (!hasDdl) {
+                    try { conn.rollback(); } catch (Exception re) { logger.warn("execSql rollback failed", re); }
+                }
+                throw e;
+            } finally {
+                if (!hasDdl) conn.setAutoCommit(true);
             }
-            ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
         } catch (Exception e) {
             logger.error("execSql error by={}", executor, e);
             ctx.status(400).json(Map.of("error", sanitizeSqlError(e)));

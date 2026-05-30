@@ -280,17 +280,24 @@ public class CfAccessAuth implements Handler {
 
     private PublicKey getPublicKey(String kid) throws Exception {
         ConcurrentHashMap<String, PublicKey> current = keyCacheRef.get();
-        if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
+        boolean cacheValid = !current.isEmpty() &&
+                Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL));
+        if (cacheValid) {
             PublicKey cached = current.get(kid);
             if (cached != null) return cached;
+            // TTL 内の最新キャッシュに kid が存在しない — 再取得しても同じ結果になる
+            throw new SecurityException("No JWK found for kid=" + kid);
         }
 
         jwksLock.lock();
         try {
             current = keyCacheRef.get();
-            if (!current.isEmpty() && Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL))) {
+            cacheValid = !current.isEmpty() &&
+                    Instant.now().isBefore(keysCachedAt.plus(JWKS_CACHE_TTL));
+            if (cacheValid) {
                 PublicKey cached = current.get(kid);
                 if (cached != null) return cached;
+                throw new SecurityException("No JWK found for kid=" + kid);
             }
 
             refreshKeysLocked();

@@ -102,13 +102,19 @@ public class Database {
         logger.info("Schema applied");
     }
 
-    /** -- コメントを除去するが、シングルクォート内のものは除外する。 */
+    /** -- コメントを除去するが、シングルクォート内のものは除外する（SQL標準の '' エスケープに対応）。 */
     static String stripLineComment(String line) {
         boolean inString = false;
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
-            if (c == '\'' && (i == 0 || line.charAt(i - 1) != '\\')) {
-                inString = !inString;
+            if (c == '\'') {
+                if (!inString) {
+                    inString = true;
+                } else if (i + 1 < line.length() && line.charAt(i + 1) == '\'') {
+                    i++; // SQL標準の '' エスケープをスキップ
+                } else {
+                    inString = false;
+                }
             } else if (!inString && c == '-' && i + 1 < line.length() && line.charAt(i + 1) == '-') {
                 return line.substring(0, i);
             }

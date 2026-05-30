@@ -185,7 +185,19 @@ public class Gate {
                 Context ctx = new Context(path, request);
 
                 try {
-                    if (finalCorsOrigins != null && !finalCorsOrigins.isEmpty()) {
+                    // Run ALL before-filters first (CloudflareIpFilter, ApiKeyAuth, CfAccessAuth).
+                    // This ensures OPTIONS preflights are also subject to IP and auth checks.
+                    // Individual filters that require credentials (ApiKeyAuth, CfAccessAuth) must
+                    // skip OPTIONS themselves since browsers do not send credentials in preflights.
+                    for (Handler filter : beforeFilters) {
+                        filter.handle(ctx);
+                        if (ctx.isHalted()) break;
+                    }
+
+                    // CORS ヘッダーはフィルターを通過したリクエストにのみ付与する。
+                    // IP フィルターで弾かれたリクエストに Access-Control-Allow-Credentials を
+                    // 付けないようにするため、before-filter の後に移動。
+                    if (!ctx.isHalted() && finalCorsOrigins != null && !finalCorsOrigins.isEmpty()) {
                         String requestOrigin = request.getHeader("Origin");
                         String matchedOrigin = null;
                         if (finalCorsOrigins.contains("*")) {
@@ -214,15 +226,6 @@ public class Gate {
                                 response.setHeader("Access-Control-Allow-Credentials", "true");
                             }
                         }
-                    }
-
-                    // Run ALL before-filters first (CloudflareIpFilter, ApiKeyAuth, CfAccessAuth).
-                    // This ensures OPTIONS preflights are also subject to IP and auth checks.
-                    // Individual filters that require credentials (ApiKeyAuth, CfAccessAuth) must
-                    // skip OPTIONS themselves since browsers do not send credentials in preflights.
-                    for (Handler filter : beforeFilters) {
-                        filter.handle(ctx);
-                        if (ctx.isHalted()) break;
                     }
 
                     if (!ctx.isHalted()) {

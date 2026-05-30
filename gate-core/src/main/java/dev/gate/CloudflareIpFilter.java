@@ -4,9 +4,10 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import dev.gate.core.Context;
 import dev.gate.core.Handler;
@@ -60,7 +61,14 @@ public class CloudflareIpFilter implements Handler {
     private final byte[] originSecret;
     private static final String ORIGIN_SECRET_HEADER = "X-Origin-Secret";
     private static final int IP_CACHE_MAX = 50_000;
-    private final ConcurrentHashMap<String, Boolean> ipMatchCache = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> ipMatchCache = Collections.synchronizedMap(
+        new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                return size() > IP_CACHE_MAX;
+            }
+        }
+    );
 
     public CloudflareIpFilter() {
         this.skipCheck = "true".equalsIgnoreCase(System.getenv("SKIP_CF_IP_CHECK"));
@@ -122,33 +130,22 @@ public class CloudflareIpFilter implements Handler {
         }
         return null;
     }
-    // CIDRマッチング
+    // CIDRマッチング（LinkedHashMap LRU により自動退避）
     private boolean isCloudflareIp(String ipStr) {
-        Boolean cached = ipMatchCache.get(ipStr);
-        if (cached != null) return cached;
+        return ipMatchCache.computeIfAbsent(ipStr, this::computeCloudflareMatch);
+    }
 
+    private boolean computeCloudflareMatch(String ipStr) {
         InetAddress addr;
         try {
             addr = InetAddress.getByName(ipStr);
         } catch (UnknownHostException e) {
-            putIpCache(ipStr, false);
             return false;
         }
-        boolean matched = false;
         for (CidrBlock block : blocks) {
-            if (addr.getClass() != block.network().getClass()) continue;
-            if (matches(addr, block)) { matched = true; break; }
+            if (addr.getClass() == block.network().getClass() && matches(addr, block)) return true;
         }
-        putIpCache(ipStr, matched);
-        return matched;
-    }
-
-    private void putIpCache(String ipStr, boolean matched) {
-        if (ipMatchCache.size() >= IP_CACHE_MAX) {
-            int evict = IP_CACHE_MAX / 4;
-            ipMatchCache.keySet().stream().limit(evict).forEach(ipMatchCache::remove);
-        }
-        ipMatchCache.put(ipStr, matched);
+        return false;
     }
 
     private boolean matches(InetAddress addr, CidrBlock block) {

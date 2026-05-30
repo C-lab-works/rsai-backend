@@ -36,6 +36,7 @@ public class FirestoreRest {
 
     private final AtomicReference<String> cachedToken = new AtomicReference<>();
     private volatile Instant tokenExpiry = Instant.EPOCH;
+    private final Object tokenLock = new Object();
 
     private FirestoreRest() {}
 
@@ -60,16 +61,24 @@ public class FirestoreRest {
 
     // 認証
     private String token() throws Exception {
+        // 高速パス: ロックなしで有効なキャッシュを確認
         if (Instant.now().isBefore(tokenExpiry)) {
             String t = cachedToken.get();
             if (t != null) return t;
         }
-        JsonNode node = MAPPER.readTree(meta("instance/service-accounts/default/token"));
-        String token = node.get("access_token").asText();
-        int exp = node.path("expires_in").asInt(3600);
-        cachedToken.set(token);
-        tokenExpiry = Instant.now().plusSeconds(exp - 60);
-        return token;
+        synchronized (tokenLock) {
+            // ダブルチェック: 待機中に別スレッドがリフレッシュ済みかもしれない
+            if (Instant.now().isBefore(tokenExpiry)) {
+                String t = cachedToken.get();
+                if (t != null) return t;
+            }
+            JsonNode node = MAPPER.readTree(meta("instance/service-accounts/default/token"));
+            String token = node.get("access_token").asText();
+            int exp = node.path("expires_in").asInt(3600);
+            cachedToken.set(token);
+            tokenExpiry = Instant.now().plusSeconds(exp - 60);
+            return token;
+        }
     }
 
     private String meta(String path) throws Exception {
