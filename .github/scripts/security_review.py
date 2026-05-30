@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """PR security review with ordered AI provider fallback."""
 
+import fnmatch
 import os
 import re
 import sys
@@ -53,8 +54,6 @@ Respond in this exact JSON format:
 }
 
 If no genuine issues found, return {"findings": [], "summary": "No security issues found."}
-Do not analyze .github/scripts/security_review.py itself.
-
 Diff to analyze:
 """
 
@@ -107,6 +106,31 @@ def get_diff() -> str:
     with gh_request(url, accept="application/vnd.github.v3.diff") as resp:
         diff = resp.read().decode("utf-8", errors="replace")
     return diff[:MAX_DIFF_CHARS]
+
+
+def load_ignore_patterns() -> list[str]:
+    try:
+        with open(".github/security_review_ignore.txt") as f:
+            return [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    except FileNotFoundError:
+        return []
+
+
+def filter_diff(diff: str, patterns: list[str]) -> str:
+    if not patterns:
+        return diff
+    # diff を各ファイルセクション（"diff --git ..." で始まる）に分割してフィルタ
+    sections = re.split(r"(?=^diff --git )", diff, flags=re.MULTILINE)
+    kept = []
+    for section in sections:
+        if not section.startswith("diff --git "):
+            kept.append(section)
+            continue
+        m = re.match(r"^diff --git a/(.*?) b/", section)
+        if m and any(fnmatch.fnmatch(m.group(1), p) for p in patterns):
+            continue
+        kept.append(section)
+    return "".join(kept)
 
 
 def ai_chat(provider: dict, prompt: str) -> str:
@@ -238,6 +262,14 @@ def main() -> None:
     diff = get_diff()
     if not diff.strip():
         print("No diff found, skipping.")
+        return
+
+    ignore_patterns = load_ignore_patterns()
+    if ignore_patterns:
+        diff = filter_diff(diff, ignore_patterns)
+        print(f"Ignore patterns applied ({len(ignore_patterns)}). Remaining diff: {len(diff)} chars.")
+    if not diff.strip():
+        print("All changes matched ignore patterns, skipping.")
         return
 
     raw = None

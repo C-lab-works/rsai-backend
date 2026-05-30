@@ -1,0 +1,16 @@
+# Security review ignore patterns (fnmatch glob syntax)
+# ファイルパスがいずれかのパターンにマッチした場合、diff から除外される
+
+# このスクリプト自体
+.github/scripts/security_review.py
+
+# テスト・モック
+**/test/**
+**/tests/**
+**/*Test.java
+**/*Tests.java
+**/*Spec.java
+
+# 生成コード・ビルド成果物
+**/generated/**
+build/**
