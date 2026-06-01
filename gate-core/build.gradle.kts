@@ -40,6 +40,9 @@ dependencies {
 }
 
 graalvmNative {
+    metadataRepository {
+        enabled.set(true)
+    }
     binaries {
         named("main") {
             imageName.set("app")
