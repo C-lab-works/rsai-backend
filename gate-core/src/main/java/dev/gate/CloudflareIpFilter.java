@@ -64,6 +64,7 @@ public class CloudflareIpFilter implements Handler {
     private static final int IP_CACHE_MAX = 50_000;
     private final Cache<String, Boolean> ipMatchCache = Caffeine.newBuilder()
         .maximumSize(IP_CACHE_MAX)
+        .executor(Runnable::run)
         .build();
 
     public CloudflareIpFilter() {
