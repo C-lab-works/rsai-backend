@@ -20,7 +20,7 @@ GITHUB_STEP_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "30000"))
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 
-SECURITY_PROMPT = """You are a senior security engineer reviewing a git diff for a Java 21 backend service (Jetty HTTP server, Firestore REST API, MySQL, deployed on Cloud Run). Apply OWASP Top 10 and CWE taxonomy.
+SECURITY_PROMPT = """あなたはJava 21バックエンドサービス（Jetty HTTPサーバー、Firestore REST API、MySQL、Cloud Run上でデプロイ）のgit diffをレビューするシニアセキュリティエンジニアです。OWASP Top 10およびCWEタクソノミーを適用してください。
 
 Report only genuine, exploitable vulnerabilities with clear evidence in the diff. Omit theoretical issues that require physical access, internal trust, or non-existing attack paths. If you are not confident a finding is exploitable, omit it or downgrade to LOW with a clear caveat.
 
@@ -50,7 +50,7 @@ Respond in this exact JSON format:
       "recommendation": "具体的な修復手順(日本語)"
     }
   ],
-  "summary": "overall security assessment in 1-2 sentences"
+  "summary": "全体的なセキュリティ評価を1〜2文の日本語で記述"
 }
 
 If no genuine issues found, return {"findings": [], "summary": "No security issues found."}
@@ -176,17 +176,17 @@ def format_comment(result: dict, provider_name: str) -> str:
     severity_icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}
 
     if not findings:
-        return f"## Security Review\n\n✅ {summary}\n\n*Analyzed by {provider_name}*"
+        return f"## セキュリティレビュー\n\n✅ {summary}\n\n*レビュー実施: {provider_name}*"
 
-    lines = ["## Security Review\n"]
+    lines = ["## セキュリティレビュー\n"]
     for f in findings:
         icon = severity_icon.get(f.get("severity", "LOW"), "⚪")
         lines.append(f"### {icon} [{f.get('severity')}] `{f.get('file', '')}`")
         lines.append(f"{f.get('description', '')}")
         lines.append(f"**Fix:** {f.get('recommendation', '')}\n")
 
-    lines.append(f"**Summary:** {summary}")
-    lines.append(f"\n*Analyzed by {provider_name}*")
+    lines.append(f"**サマリー:** {summary}")
+    lines.append(f"\n*レビュー実施: {provider_name}*")
     return "\n".join(lines)
 
 

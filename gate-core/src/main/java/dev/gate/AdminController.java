@@ -73,6 +73,7 @@ public class AdminController {
     private static final Pattern UUID_PATTERN = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
 
     private static final int TOP_ENDPOINTS_COUNT = 10;
+    private static final int MAX_RESULT_ROWS = 1000;
 
     private static final Set<String> ALLOWED_COL_TYPES = Set.of(
         "INT", "BIGINT", "VARCHAR(255)", "VARCHAR(100)", "TEXT",
@@ -683,12 +684,20 @@ public class AdminController {
                                     col.put("name", meta.getColumnName(i));
                                     col.put("type", meta.getColumnTypeName(i).toLowerCase());
                                 }
+                                int rowCount = 0;
+                                boolean truncated = false;
                                 while (rs.next()) {
+                                    if (rowCount >= MAX_RESULT_ROWS) {
+                                        truncated = true;
+                                        break;
+                                    }
                                     ObjectNode row = rowsNode.addObject();
                                     for (int i = 1; i <= colCount; i++) {
                                         putValue(row, meta.getColumnName(i), getColumnValue(rs, meta, i));
                                     }
+                                    rowCount++;
                                 }
+                                if (truncated) lastResult.put("truncated", true);
                             }
                         } else {
                             lastResult.put("affected", s.getUpdateCount());
