@@ -29,8 +29,6 @@ dependencies {
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.5.13")
 
-    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
-
     // データベース（gate-core のコンパイルに必要）
     implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("com.mysql:mysql-connector-j:8.3.0")

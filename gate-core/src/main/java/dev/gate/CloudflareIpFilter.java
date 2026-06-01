@@ -4,11 +4,10 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 
 import dev.gate.core.Context;
 import dev.gate.core.Handler;
@@ -62,9 +61,14 @@ public class CloudflareIpFilter implements Handler {
     private final byte[] originSecret;
     private static final String ORIGIN_SECRET_HEADER = "X-Origin-Secret";
     private static final int IP_CACHE_MAX = 50_000;
-    private final Cache<String, Boolean> ipMatchCache = Caffeine.newBuilder()
-        .maximumSize(IP_CACHE_MAX)
-        .build();
+    private final Map<String, Boolean> ipMatchCache = Collections.synchronizedMap(
+        new LinkedHashMap<String, Boolean>(256, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                return size() > IP_CACHE_MAX;
+            }
+        }
+    );
 
     public CloudflareIpFilter() {
         this.skipCheck = "true".equalsIgnoreCase(System.getenv("SKIP_CF_IP_CHECK"));
@@ -128,7 +132,7 @@ public class CloudflareIpFilter implements Handler {
     }
     // CIDRマッチング（LinkedHashMap LRU により自動退避）
     private boolean isCloudflareIp(String ipStr) {
-        return ipMatchCache.get(ipStr, this::computeCloudflareMatch);
+        return ipMatchCache.computeIfAbsent(ipStr, this::computeCloudflareMatch);
     }
 
     private boolean computeCloudflareMatch(String ipStr) {
