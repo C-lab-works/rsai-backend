@@ -46,8 +46,8 @@ Respond in this exact JSON format:
       "severity": "HIGH|MEDIUM|LOW",
       "file": "path/to/file.java",
       "line": "approximate line number or short code snippet for navigation",
-      "description": "concise description of the vulnerability and realistic attack scenario",
-      "recommendation": "specific remediation step"
+      "description": "脆弱性の簡潔な説明と現実的な攻撃シナリオ(日本語で)",
+      "recommendation": "具体的な修復手順(日本語)"
     }
   ],
   "summary": "overall security assessment in 1-2 sentences"
