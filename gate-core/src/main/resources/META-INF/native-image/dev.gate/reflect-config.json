@@ -64,5 +64,10 @@
   { "name": "dev.gate.mapping.PutMapping",    "allPublicMethods": true },
   { "name": "dev.gate.mapping.DeleteMapping", "allPublicMethods": true },
   { "name": "dev.gate.mapping.PatchMapping",  "allPublicMethods": true },
-  { "name": "dev.gate.mapping.WsMapping",     "allPublicMethods": true }
+  { "name": "dev.gate.mapping.WsMapping",     "allPublicMethods": true },
+
+  { "name": "com.github.benmanes.caffeine.cache.SSMS",
+    "allDeclaredConstructors": true },
+  { "name": "com.github.benmanes.caffeine.cache.BoundedLocalCache$BoundedLocalManualCache",
+    "allDeclaredConstructors": true }
 ]
