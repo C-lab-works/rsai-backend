@@ -133,22 +133,39 @@ def filter_diff(diff: str, patterns: list[str]) -> str:
     return "".join(kept)
 
 
-def ai_chat(provider: dict, prompt: str) -> str:
+def ai_chat(provider: dict, prompt: str, max_continuation: int = 3) -> str:
     url = f"{provider['base_url']}/chat/completions"
-    payload = {
-        "model": provider["model"],
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1,
-        "max_tokens": 2048,
-    }
     headers = {
         "Authorization": f"Bearer {provider['key']}",
         "Content-Type": "application/json",
     }
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        result = json.loads(resp.read())
-    return result["choices"][0]["message"]["content"]
+    messages = [{"role": "user", "content": prompt}]
+    accumulated = ""
+
+    for attempt in range(max_continuation):
+        payload = {
+            "model": provider["model"],
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 4096,
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            result = json.loads(resp.read())
+
+        choice = result["choices"][0]
+        content = choice["message"]["content"]
+        finish_reason = choice.get("finish_reason", "stop")
+        accumulated += content
+
+        if finish_reason != "length":
+            break
+
+        print(f"[{provider['name']}] truncated at attempt {attempt + 1}/{max_continuation}, continuing...")
+        messages.append({"role": "assistant", "content": content})
+        messages.append({"role": "user", "content": "途中から続けてください。JSON の残りをそのまま完成させてください。"})
+
+    return accumulated
 
 
 def output_results(body: str) -> None:
