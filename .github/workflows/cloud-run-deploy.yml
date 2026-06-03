@@ -193,6 +193,11 @@ jobs:
           gcloud run services replace service.yaml \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --member=allUsers \
+            --role=roles/run.invoker
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
             --to-latest \
             --region="${{ env.REGION }}" \
@@ -365,6 +370,11 @@ jobs:
           gcloud run services replace service.yaml \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --member=allUsers \
+            --role=roles/run.invoker
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
             --to-latest \
             --region="${{ env.REGION }}" \
