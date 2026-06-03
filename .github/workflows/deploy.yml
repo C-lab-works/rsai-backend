@@ -257,20 +257,23 @@ jobs:
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@v2
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
           tags: tag:ci
+
+      - name: Setup SSH key (debug only)
+        if: github.ref_name == 'debug'
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
       - name: Write env file to tatsunote2 (debug only)
         if: github.ref_name == 'debug'
         env:
-          DB_HOST:              ${{ secrets.DB_HOST }}
-          DB_PORT:              ${{ secrets.DB_PORT }}
-          DB_NAME:              ${{ secrets.DB_NAME }}
-          DB_USER:              ${{ secrets.DB_USER }}
-          DB_PASSWORD:          ${{ secrets.DB_PASSWORD }}
-          DB_SSL:               ${{ secrets.DB_SSL }}
+          DEBUG_DB_PASSWORD:    ${{ secrets.DEBUG_DB_PASSWORD }}
           API_KEY:              ${{ secrets.API_KEY }}
           READ_ONLY_KEY:        ${{ secrets.READ_ONLY_KEY }}
           CF_ACCESS_AUD:        ${{ secrets.CF_ACCESS_AUD }}
@@ -283,12 +286,12 @@ jobs:
           GH_PAT:               ${{ secrets.GH_PAT }}
         run: |
           {
-            printf 'DB_HOST=%s\n'               "${DB_HOST}"
-            printf 'DB_PORT=%s\n'               "${DB_PORT}"
-            printf 'DB_NAME=%s\n'               "${DB_NAME}"
-            printf 'DB_USER=%s\n'               "${DB_USER}"
-            printf 'DB_PASSWORD=%s\n'           "${DB_PASSWORD}"
-            printf 'DB_SSL=%s\n'                "${DB_SSL}"
+            printf 'DB_HOST=%s\n'               'rsai-mysql-debug'
+            printf 'DB_PORT=%s\n'               '3306'
+            printf 'DB_NAME=%s\n'               'rsai_debug'
+            printf 'DB_USER=%s\n'               'root'
+            printf 'DB_PASSWORD=%s\n'           "${DEBUG_DB_PASSWORD}"
+            printf 'DB_SSL=%s\n'                'false'
             printf 'API_KEY=%s\n'               "${API_KEY}"
             printf 'READ_ONLY_KEY=%s\n'         "${READ_ONLY_KEY}"
             printf 'CF_ACCESS_AUD=%s\n'         "${CF_ACCESS_AUD}"
@@ -304,15 +307,41 @@ jobs:
             printf 'GITHUB_BRANCH=debug\n'
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
-          } | ssh -o StrictHostKeyChecking=no root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
+          } | ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
 
       - name: Deploy to tatsunote2 (debug only)
         if: github.ref_name == 'debug'
         env:
           DEPLOY_IMAGE: ${{ env.GHCR_BASE }}:debug
+          DEBUG_DB_PASSWORD: ${{ secrets.DEBUG_DB_PASSWORD }}
         run: |
-          ssh -o StrictHostKeyChecking=no root@tatsunote2 "
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@tatsunote2 "
             set -e
+            DEBUG_DB_PASSWORD='${DEBUG_DB_PASSWORD}'
+
+            echo '=== Ensuring Docker network ==='
+            docker network create rsai-debug-net 2>/dev/null || true
+
+            echo '=== Ensuring MySQL container ==='
+            if ! docker ps --format '{{.Names}}' | grep -q '^rsai-mysql-debug\$'; then
+              docker rm -f rsai-mysql-debug 2>/dev/null || true
+              docker run -d \
+                --name rsai-mysql-debug \
+                --network rsai-debug-net \
+                --restart unless-stopped \
+                -e MYSQL_ROOT_PASSWORD=\"\${DEBUG_DB_PASSWORD}\" \
+                -e MYSQL_DATABASE=rsai_debug \
+                -v rsai-mysql-debug-data:/var/lib/mysql \
+                mysql:8.0
+              echo 'Waiting for MySQL to be ready...'
+              for i in \$(seq 1 30); do
+                docker exec rsai-mysql-debug mysqladmin ping -uroot -p\"\${DEBUG_DB_PASSWORD}\" --silent 2>/dev/null && echo 'MySQL ready' && break || true
+                sleep 3
+              done
+            else
+              echo 'MySQL already running, skipping init'
+            fi
+
             echo '=== Pulling image ==='
             docker pull \"${DEPLOY_IMAGE}\"
 
@@ -323,6 +352,7 @@ jobs:
             echo '=== Starting container ==='
             docker run -d \
               --name rsai-debug \
+              --network rsai-debug-net \
               --restart unless-stopped \
               --env-file /opt/rsai-debug.env \
               -p 8082:8080 \
@@ -517,20 +547,23 @@ jobs:
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
-        uses: tailscale/github-action@v4
+        uses: tailscale/github-action@v2
         with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
           tags: tag:ci
+
+      - name: Setup SSH key (debug only)
+        if: github.ref_name == 'debug'
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
       - name: Write env file to tatsunote2 (debug only)
         if: github.ref_name == 'debug'
         env:
-          DB_HOST:              ${{ secrets.DB_HOST }}
-          DB_PORT:              ${{ secrets.DB_PORT }}
-          DB_NAME:              ${{ secrets.DB_NAME }}
-          DB_USER:              ${{ secrets.DB_USER }}
-          DB_PASSWORD:          ${{ secrets.DB_PASSWORD }}
-          DB_SSL:               ${{ secrets.DB_SSL }}
+          DEBUG_DB_PASSWORD:    ${{ secrets.DEBUG_DB_PASSWORD }}
           API_KEY:              ${{ secrets.API_KEY }}
           READ_ONLY_KEY:        ${{ secrets.READ_ONLY_KEY }}
           CF_ACCESS_AUD:        ${{ secrets.CF_ACCESS_AUD }}
@@ -543,12 +576,12 @@ jobs:
           GH_PAT:               ${{ secrets.GH_PAT }}
         run: |
           {
-            printf 'DB_HOST=%s\n'               "${DB_HOST}"
-            printf 'DB_PORT=%s\n'               "${DB_PORT}"
-            printf 'DB_NAME=%s\n'               "${DB_NAME}"
-            printf 'DB_USER=%s\n'               "${DB_USER}"
-            printf 'DB_PASSWORD=%s\n'           "${DB_PASSWORD}"
-            printf 'DB_SSL=%s\n'                "${DB_SSL}"
+            printf 'DB_HOST=%s\n'               'rsai-mysql-debug'
+            printf 'DB_PORT=%s\n'               '3306'
+            printf 'DB_NAME=%s\n'               'rsai_debug'
+            printf 'DB_USER=%s\n'               'root'
+            printf 'DB_PASSWORD=%s\n'           "${DEBUG_DB_PASSWORD}"
+            printf 'DB_SSL=%s\n'                'false'
             printf 'API_KEY=%s\n'               "${API_KEY}"
             printf 'READ_ONLY_KEY=%s\n'         "${READ_ONLY_KEY}"
             printf 'CF_ACCESS_AUD=%s\n'         "${CF_ACCESS_AUD}"
@@ -564,15 +597,41 @@ jobs:
             printf 'GITHUB_BRANCH=debug\n'
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
-          } | ssh -o StrictHostKeyChecking=no root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
+          } | ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
 
       - name: Deploy to tatsunote2 (debug only)
         if: github.ref_name == 'debug'
         env:
           DEPLOY_IMAGE: ${{ env.GHCR_BASE }}:debug
+          DEBUG_DB_PASSWORD: ${{ secrets.DEBUG_DB_PASSWORD }}
         run: |
-          ssh -o StrictHostKeyChecking=no root@tatsunote2 "
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa root@tatsunote2 "
             set -e
+            DEBUG_DB_PASSWORD='${DEBUG_DB_PASSWORD}'
+
+            echo '=== Ensuring Docker network ==='
+            docker network create rsai-debug-net 2>/dev/null || true
+
+            echo '=== Ensuring MySQL container ==='
+            if ! docker ps --format '{{.Names}}' | grep -q '^rsai-mysql-debug\$'; then
+              docker rm -f rsai-mysql-debug 2>/dev/null || true
+              docker run -d \
+                --name rsai-mysql-debug \
+                --network rsai-debug-net \
+                --restart unless-stopped \
+                -e MYSQL_ROOT_PASSWORD=\"\${DEBUG_DB_PASSWORD}\" \
+                -e MYSQL_DATABASE=rsai_debug \
+                -v rsai-mysql-debug-data:/var/lib/mysql \
+                mysql:8.0
+              echo 'Waiting for MySQL to be ready...'
+              for i in \$(seq 1 30); do
+                docker exec rsai-mysql-debug mysqladmin ping -uroot -p\"\${DEBUG_DB_PASSWORD}\" --silent 2>/dev/null && echo 'MySQL ready' && break || true
+                sleep 3
+              done
+            else
+              echo 'MySQL already running, skipping init'
+            fi
+
             echo '=== Pulling image ==='
             docker pull \"${DEPLOY_IMAGE}\"
 
@@ -583,6 +642,7 @@ jobs:
             echo '=== Starting container ==='
             docker run -d \
               --name rsai-debug \
+              --network rsai-debug-net \
               --restart unless-stopped \
               --env-file /opt/rsai-debug.env \
               -p 8082:8080 \
