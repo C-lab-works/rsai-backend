@@ -276,6 +276,8 @@ jobs:
             labels:
               cloud.googleapis.com/location: ${{ env.REGION }}
             annotations:
+              run.googleapis.com/ingress: all
+              run.googleapis.com/ingress-status: all
               run.googleapis.com/default-url-disabled: "false"
           spec:
             template:
