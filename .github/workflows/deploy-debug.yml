@@ -83,9 +83,9 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}
-            ghcr.io/${{ github.repository }}:debug-${{ github.sha }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:debug-buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:debug-buildcache,mode=max
+            ghcr.io/c-lab-works/rsai-backend:debug-${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/c-lab-works/rsai-backend:debug-buildcache
+          cache-to: type=registry,ref=ghcr.io/c-lab-works/rsai-backend:debug-buildcache,mode=max
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v2
@@ -208,7 +208,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}
-            ghcr.io/${{ github.repository }}:debug-${{ github.sha }}
+            ghcr.io/c-lab-works/rsai-backend:debug-${{ github.sha }}
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v2
