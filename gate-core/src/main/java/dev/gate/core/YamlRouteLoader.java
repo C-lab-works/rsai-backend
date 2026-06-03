@@ -40,8 +40,7 @@ public class YamlRouteLoader {
 
     @SuppressWarnings("unchecked")
     public static void load(Gate gate) {
-        try (InputStream is = YamlRouteLoader.class.getClassLoader()
-                .getResourceAsStream("routes.yaml")) {
+        try (InputStream is = YamlRouteLoader.class.getResourceAsStream("/routes.yaml")) {
             if (is == null) {
                 log.info("routes.yaml not found — YAML routes skipped");
                 return;
