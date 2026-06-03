@@ -25,3 +25,7 @@ routes:
   - path: /api/menus
     table: menus
     columns: [id, food_id, name, price, description, is_sold_out]
+
+  - path: /api/credit
+    table: credit
+    columns: [id, name]
