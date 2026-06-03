@@ -509,7 +509,9 @@ jobs:
               sleep 3
             done
           else
-            echo 'MySQL already running, skipping init'
+            echo 'MySQL already running, ensuring network membership...'
+            docker network connect rsai-debug-net rsai-mysql-debug 2>/dev/null || true
+            docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>/dev/null && echo 'MySQL ping OK' || echo 'WARNING: MySQL ping failed'
           fi
 
           echo '=== Pulling image ==='
@@ -536,12 +538,24 @@ jobs:
             "${DEPLOY_IMAGE}"
 
           echo '=== Health check ==='
-          for i in $(seq 1 10); do
-            curl -sf http://localhost:8082/health >/dev/null 2>&1 && echo 'Health check passed' && docker ps --filter name=rsai-debug && exit 0
-            echo "Attempt $i/10: waiting..."
-            sleep 3
+          for i in $(seq 1 20); do
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8082/health 2>/dev/null || echo '000')
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed (attempt $i)"
+              docker ps --filter name=rsai-debug
+              exit 0
+            fi
+            echo "Attempt $i/20: HTTP $STATUS, waiting..."
+            sleep 5
           done
-          echo '=== Health check failed. Logs: ==='
-          docker logs --tail 50 rsai-debug
+          echo '=== Health check failed. Diagnostics: ==='
+          echo '--- Container status ---'
+          docker ps -a --filter name=rsai-debug
+          echo '--- Network membership ---'
+          docker network inspect rsai-debug-net --format '{{range .Containers}}{{.Name}} {{end}}'
+          echo '--- MySQL ping ---'
+          docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>&1 || true
+          echo '--- App logs (last 80 lines) ---'
+          docker logs --tail 80 rsai-debug
           exit 1
 
