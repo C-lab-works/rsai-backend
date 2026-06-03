@@ -18,6 +18,7 @@ env:
   RUNNER_VM:    github-runner
   RUNNER_ZONE:  asia-northeast1-a
   GHCR_BASE:    ghcr.io/c-lab-works/rsai-backend
+  AR_BASE:      ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rsai-backend/rsai-backend
 
 jobs:
   # ── Spot VMを起動してrunnerがオンラインになるまで待機
@@ -59,7 +60,7 @@ jobs:
           echo "Runner did not come online within 5 minutes"
           exit 1
 
-  # ── Spot VMでのビルド & デプロイ (ビルドは1回だけ)
+  # ── Spot VMでのビルド & デプロイ
   build-and-deploy:
     needs: start-runner
     if: needs.start-runner.result == 'success'
@@ -84,6 +85,7 @@ jobs:
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Log in to GitHub Container Registry
+        if: github.ref_name == 'debug'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -99,27 +101,19 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
-      - name: Build and push to ghcr.io
+      # ── master: AR に直接ビルド → Cloud Run デプロイ ──
+
+      - name: Build and push to Artifact Registry (master only)
+        if: github.ref_name == 'master'
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: |
-            ${{ env.GHCR_BASE }}:${{ github.ref_name }}
-            ${{ env.GHCR_BASE }}:${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-${{ github.ref_name }}
-          cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-${{ github.ref_name }},mode=max
-
-      # ── master: Artifact Registry へ転送 → Cloud Run デプロイ ──
-
-      - name: Tag and push to Artifact Registry (master only)
-        if: github.ref_name == 'master'
-        run: |
-          AR="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}"
-          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:latest"
-          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:${{ github.sha }}"
-          docker push "${AR}:latest"
-          docker push "${AR}:${{ github.sha }}"
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
+          cache-to:   type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache,mode=max
 
       - name: Generate Cloud Run service YAML (master only)
         if: github.ref_name == 'master'
@@ -247,7 +241,19 @@ jobs:
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
 
-      # ── debug: tatsunote2 デプロイ ──
+      # ── debug: GHCR にビルド → tatsunote2 デプロイ ──
+
+      - name: Build and push to GHCR (debug only)
+        if: github.ref_name == 'debug'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE }}:debug
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
+          cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
@@ -365,6 +371,7 @@ jobs:
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Log in to GitHub Container Registry
+        if: github.ref_name == 'debug'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -380,23 +387,15 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
-      - name: Build and push to ghcr.io
+      - name: Build and push to Artifact Registry (master only)
+        if: github.ref_name == 'master'
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: |
-            ${{ env.GHCR_BASE }}:${{ github.ref_name }}
-            ${{ env.GHCR_BASE }}:${{ github.sha }}
-
-      - name: Tag and push to Artifact Registry (master only)
-        if: github.ref_name == 'master'
-        run: |
-          AR="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}"
-          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:latest"
-          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:${{ github.sha }}"
-          docker push "${AR}:latest"
-          docker push "${AR}:${{ github.sha }}"
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
 
       - name: Generate Cloud Run service YAML (master only)
         if: github.ref_name == 'master'
@@ -505,6 +504,16 @@ jobs:
             --to-latest \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
+
+      - name: Build and push to GHCR (debug only)
+        if: github.ref_name == 'debug'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE }}:debug
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
