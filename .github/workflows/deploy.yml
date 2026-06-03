@@ -308,7 +308,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@tatsunote2 "
             set -e
             echo '=== Pulling image ==='
-            docker pull '${DEPLOY_IMAGE}'
+            docker pull \"${DEPLOY_IMAGE}\"
 
             echo '=== Stopping existing container ==='
             docker stop rsai-debug 2>/dev/null || true
@@ -327,7 +327,7 @@ jobs:
               --health-timeout=5s \
               --health-retries=12 \
               --health-start-period=10s \
-              '${DEPLOY_IMAGE}'
+              \"${DEPLOY_IMAGE}\"
 
             echo '=== Health check ==='
             for i in \$(seq 1 10); do
@@ -512,6 +512,7 @@ jobs:
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
           tags: tag:ci
+
       - name: Write env file to tatsunote2 (debug only)
         if: github.ref_name == 'debug'
         env:
@@ -564,7 +565,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no root@tatsunote2 "
             set -e
             echo '=== Pulling image ==='
-            docker pull '${DEPLOY_IMAGE}'
+            docker pull \"${DEPLOY_IMAGE}\"
 
             echo '=== Stopping existing container ==='
             docker stop rsai-debug 2>/dev/null || true
@@ -583,7 +584,7 @@ jobs:
               --health-timeout=5s \
               --health-retries=12 \
               --health-start-period=10s \
-              '${DEPLOY_IMAGE}'
+              \"${DEPLOY_IMAGE}\"
 
             echo '=== Health check ==='
             for i in \$(seq 1 10); do
