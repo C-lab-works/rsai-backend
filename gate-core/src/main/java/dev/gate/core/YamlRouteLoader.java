@@ -100,6 +100,9 @@ public class YamlRouteLoader {
                             }
                         }
                         ctx.jsonBytes(MAPPER.writeValueAsBytes(arr));
+                    } catch (java.sql.SQLSyntaxErrorException e) {
+                        log.warn("YAML route table not found GET {}: {}", path, e.getMessage());
+                        ctx.status(503).json(Map.of("error", "table not found: " + table));
                     } catch (Exception e) {
                         log.error("YAML route error GET {}: {}", path, e.getMessage(), e);
                         ctx.status(503).json(Map.of("error", "database error"));
