@@ -1,0 +1,597 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master, debug]
+  workflow_dispatch:
+
+concurrency:
+  group: spot-vm-runner
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID:   ${{ secrets.GCP_PROJECT_ID }}
+  REGION:       ${{ vars.GCP_REGION }}
+  SERVICE_NAME: rsai-backend
+  REPOSITORY:   rsai-backend
+  MIN_SCALE:    ${{ vars.MIN_SCALE }}
+  RUNNER_VM:    github-runner
+  RUNNER_ZONE:  asia-northeast1-a
+  GHCR_BASE:    ghcr.io/c-lab-works/rsai-backend
+
+jobs:
+  # ── Spot VMを起動してrunnerがオンラインになるまで待機
+  start-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Start VM
+        run: |
+          gcloud compute instances start ${{ env.RUNNER_VM }} \
+            --zone=${{ env.RUNNER_ZONE }} \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Wait for runner to be online
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_RUNNERS }}
+        run: |
+          echo "Waiting for self-hosted runner to come online..."
+          for i in $(seq 1 30); do
+            STATUS=$(gh api "repos/${{ github.repository }}/actions/runners" \
+              --jq '.runners[] | select(.name == "${{ env.RUNNER_VM }}") | .status' 2>/dev/null || echo "")
+            if [ "$STATUS" = "online" ]; then
+              echo "Runner is online (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/30: status='$STATUS', retrying in 10s..."
+            sleep 10
+          done
+          echo "Runner did not come online within 5 minutes"
+          exit 1
+
+  # ── Spot VMでのビルド & デプロイ (ビルドは1回だけ)
+  build-and-deploy:
+    needs: start-runner
+    if: needs.start-runner.result == 'success'
+    runs-on: [self-hosted, spot]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Generate version.txt
+        run: |
+          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
+
+      - name: Build and push to ghcr.io
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE }}:${{ github.ref_name }}
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-${{ github.ref_name }}
+          cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-${{ github.ref_name }},mode=max
+
+      # ── master: Artifact Registry へ転送 → Cloud Run デプロイ ──
+
+      - name: Tag and push to Artifact Registry (master only)
+        if: github.ref_name == 'master'
+        run: |
+          AR="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}"
+          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:latest"
+          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:${{ github.sha }}"
+          docker push "${AR}:latest"
+          docker push "${AR}:${{ github.sha }}"
+
+      - name: Generate Cloud Run service YAML (master only)
+        if: github.ref_name == 'master'
+        run: |
+          AR_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          cat > service.yaml <<EOF
+          apiVersion: serving.knative.dev/v1
+          kind: Service
+          metadata:
+            name: ${{ env.SERVICE_NAME }}
+            labels:
+              cloud.googleapis.com/location: ${{ env.REGION }}
+            annotations:
+              run.googleapis.com/ingress: all
+              run.googleapis.com/default-url-disabled: "true"
+          spec:
+            template:
+              metadata:
+                annotations:
+                  autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
+                  autoscaling.knative.dev/maxScale: "30"
+                  run.googleapis.com/cpu-throttling: "false"
+                  run.googleapis.com/startup-cpu-boost: "true"
+                  run.googleapis.com/execution-environment: gen2
+              spec:
+                containerConcurrency: 300
+                timeoutSeconds: 60
+                containers:
+                  - name: app
+                    image: ${AR_IMAGE}
+                    ports:
+                      - name: http1
+                        containerPort: 8080
+                    resources:
+                      limits:
+                        cpu: "2"
+                        memory: 2Gi
+                    startupProbe:
+                      httpGet:
+                        path: /health
+                      initialDelaySeconds: 3
+                      periodSeconds: 5
+                      failureThreshold: 60
+                      timeoutSeconds: 5
+                    env:
+                      - name: DB_HOST
+                        value: "${{ secrets.DB_HOST }}"
+                      - name: DB_PORT
+                        value: "${{ secrets.DB_PORT }}"
+                      - name: DB_NAME
+                        value: "${{ secrets.DB_NAME }}"
+                      - name: DB_USER
+                        value: "${{ secrets.DB_USER }}"
+                      - name: DB_PASSWORD
+                        value: "${{ secrets.DB_PASSWORD }}"
+                      - name: DB_SSL
+                        value: "${{ secrets.DB_SSL }}"
+                      - name: API_KEY
+                        value: "${{ secrets.API_KEY }}"
+                      - name: READ_ONLY_KEY
+                        value: "${{ secrets.READ_ONLY_KEY }}"
+                      - name: CF_ACCESS_AUD
+                        value: "${{ secrets.CF_ACCESS_AUD }}"
+                      - name: CF_ACCESS_TEAM_DOMAIN
+                        value: "${{ secrets.CF_ACCESS_TEAM_DOMAIN }}"
+                      - name: DISCORD_WEBHOOK_URL
+                        value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
+                      - name: ADMIN_EMAILS
+                        value: "${{ secrets.ADMIN_EMAILS }}"
+                      - name: LOG_LEVEL
+                        value: "${{ vars.LOG_LEVEL || 'INFO' }}"
+                      - name: CF_API_TOKEN
+                        value: "${{ secrets.CF_API_TOKEN }}"
+                      - name: CF_ZONE_ID
+                        value: "${{ secrets.CF_ZONE_ID }}"
+                      - name: RUNMODE
+                        value: "cloudrun"
+                      - name: GITHUB_PAT
+                        value: "${{ secrets.GH_PAT }}"
+                      - name: GITHUB_OWNER
+                        value: "${{ vars.GH_OWNER }}"
+                      - name: GITHUB_REPO
+                        value: "${{ vars.GH_REPO }}"
+                      - name: GITHUB_BRANCH
+                        value: "${{ vars.GH_BRANCH }}"
+                      - name: GITHUB_YAML_PATH
+                        value: "${{ vars.GH_YAML_PATH }}"
+                      - name: GITHUB_WORKFLOW_FILE
+                        value: "${{ vars.GH_WORKFLOW_FILE }}"
+                      - name: ORIGIN_SHARED_SECRET
+                        value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
+          EOF
+
+      - name: Deploy to Cloud Run (master only)
+        if: github.ref_name == 'master'
+        run: |
+          gcloud run services replace service.yaml \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --member=allUsers \
+            --role=roles/run.invoker
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-latest \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Fetch Cloud Run logs on failure (master only)
+        if: failure() && github.ref_name == 'master'
+        continue-on-error: true
+        run: |
+          REVISION=$(gcloud run revisions list \
+            --service="${{ env.SERVICE_NAME }}" \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --format="value(metadata.name)" \
+            --limit=1)
+          echo "=== Logs for revision: $REVISION ==="
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"${{ env.SERVICE_NAME }}\" AND resource.labels.revision_name=\"$REVISION\"" \
+            --project="${{ env.PROJECT_ID }}" \
+            --limit=100 \
+            --order=asc \
+            --format="table(timestamp,textPayload)" 2>&1 || true
+
+      # ── debug: tatsunote2 デプロイ ──
+
+      - name: Connect to Tailscale (debug only)
+        if: github.ref_name == 'debug'
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:ci
+
+      - name: Write env file to tatsunote2 (debug only)
+        if: github.ref_name == 'debug'
+        env:
+          DB_HOST:              ${{ secrets.DB_HOST }}
+          DB_PORT:              ${{ secrets.DB_PORT }}
+          DB_NAME:              ${{ secrets.DB_NAME }}
+          DB_USER:              ${{ secrets.DB_USER }}
+          DB_PASSWORD:          ${{ secrets.DB_PASSWORD }}
+          DB_SSL:               ${{ secrets.DB_SSL }}
+          API_KEY:              ${{ secrets.API_KEY }}
+          READ_ONLY_KEY:        ${{ secrets.READ_ONLY_KEY }}
+          CF_ACCESS_AUD:        ${{ secrets.CF_ACCESS_AUD }}
+          CF_ACCESS_TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ADMIN_EMAILS:         ${{ secrets.ADMIN_EMAILS }}
+          CF_API_TOKEN:         ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID:           ${{ secrets.CF_ZONE_ID }}
+          ORIGIN_SHARED_SECRET: ${{ secrets.ORIGIN_SHARED_SECRET }}
+          GH_PAT:               ${{ secrets.GH_PAT }}
+        run: |
+          {
+            printf 'DB_HOST=%s\n'               "${DB_HOST}"
+            printf 'DB_PORT=%s\n'               "${DB_PORT}"
+            printf 'DB_NAME=%s\n'               "${DB_NAME}"
+            printf 'DB_USER=%s\n'               "${DB_USER}"
+            printf 'DB_PASSWORD=%s\n'           "${DB_PASSWORD}"
+            printf 'DB_SSL=%s\n'                "${DB_SSL}"
+            printf 'API_KEY=%s\n'               "${API_KEY}"
+            printf 'READ_ONLY_KEY=%s\n'         "${READ_ONLY_KEY}"
+            printf 'CF_ACCESS_AUD=%s\n'         "${CF_ACCESS_AUD}"
+            printf 'CF_ACCESS_TEAM_DOMAIN=%s\n' "${CF_ACCESS_TEAM_DOMAIN}"
+            printf 'DISCORD_WEBHOOK_URL=%s\n'   "${DISCORD_WEBHOOK_URL}"
+            printf 'ADMIN_EMAILS=%s\n'          "${ADMIN_EMAILS}"
+            printf 'CF_API_TOKEN=%s\n'          "${CF_API_TOKEN}"
+            printf 'CF_ZONE_ID=%s\n'            "${CF_ZONE_ID}"
+            printf 'ORIGIN_SHARED_SECRET=%s\n'  "${ORIGIN_SHARED_SECRET}"
+            printf 'GITHUB_PAT=%s\n'            "${GH_PAT}"
+            printf 'GITHUB_OWNER=C-lab-works\n'
+            printf 'GITHUB_REPO=rsai-backend\n'
+            printf 'GITHUB_BRANCH=debug\n'
+            printf 'LOG_LEVEL=DEBUG\n'
+            printf 'RUNMODE=debug\n'
+          } | ssh -o StrictHostKeyChecking=no root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
+
+      - name: Deploy to tatsunote2 (debug only)
+        if: github.ref_name == 'debug'
+        env:
+          DEPLOY_IMAGE: ${{ env.GHCR_BASE }}:debug
+        run: |
+          ssh -o StrictHostKeyChecking=no root@tatsunote2 "
+            set -e
+            echo '=== Pulling image ==='
+            docker pull '${DEPLOY_IMAGE}'
+
+            echo '=== Stopping existing container ==='
+            docker stop rsai-debug 2>/dev/null || true
+            docker rm   rsai-debug 2>/dev/null || true
+
+            echo '=== Starting container ==='
+            docker run -d \
+              --name rsai-debug \
+              --restart unless-stopped \
+              --env-file /opt/rsai-debug.env \
+              -p 8082:8080 \
+              --cpus=2 \
+              --memory=2g \
+              --health-cmd='curl -sf http://localhost:8080/health || exit 1' \
+              --health-interval=5s \
+              --health-timeout=5s \
+              --health-retries=12 \
+              --health-start-period=10s \
+              '${DEPLOY_IMAGE}'
+
+            echo '=== Health check ==='
+            for i in \$(seq 1 10); do
+              curl -sf http://localhost:8082/health >/dev/null 2>&1 && echo 'Health check passed' && docker ps --filter name=rsai-debug && exit 0
+              echo \"Attempt \$i/10: waiting...\"
+              sleep 3
+            done
+            echo '=== Health check failed. Logs: ==='
+            docker logs --tail 50 rsai-debug
+            exit 1
+          "
+
+  # ── Spot VM失敗時のGitHub-hostedフォールバック
+  build-and-deploy-fallback:
+    needs: [start-runner, build-and-deploy]
+    if: always() && (needs.start-runner.result == 'failure' || contains(fromJSON('["failure","cancelled"]'), needs.build-and-deploy.result))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Generate version.txt
+        run: |
+          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
+
+      - name: Build and push to ghcr.io
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE }}:${{ github.ref_name }}
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
+
+      - name: Tag and push to Artifact Registry (master only)
+        if: github.ref_name == 'master'
+        run: |
+          AR="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}"
+          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:latest"
+          docker tag "${{ env.GHCR_BASE }}:${{ github.sha }}" "${AR}:${{ github.sha }}"
+          docker push "${AR}:latest"
+          docker push "${AR}:${{ github.sha }}"
+
+      - name: Generate Cloud Run service YAML (master only)
+        if: github.ref_name == 'master'
+        run: |
+          AR_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          cat > service.yaml <<EOF
+          apiVersion: serving.knative.dev/v1
+          kind: Service
+          metadata:
+            name: ${{ env.SERVICE_NAME }}
+            labels:
+              cloud.googleapis.com/location: ${{ env.REGION }}
+            annotations:
+              run.googleapis.com/ingress: all
+              run.googleapis.com/default-url-disabled: "true"
+          spec:
+            template:
+              metadata:
+                annotations:
+                  autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
+                  autoscaling.knative.dev/maxScale: "30"
+                  run.googleapis.com/cpu-throttling: "false"
+                  run.googleapis.com/startup-cpu-boost: "true"
+                  run.googleapis.com/execution-environment: gen2
+              spec:
+                containerConcurrency: 300
+                timeoutSeconds: 60
+                containers:
+                  - name: app
+                    image: ${AR_IMAGE}
+                    ports:
+                      - name: http1
+                        containerPort: 8080
+                    resources:
+                      limits:
+                        cpu: "2"
+                        memory: 2Gi
+                    startupProbe:
+                      httpGet:
+                        path: /health
+                      initialDelaySeconds: 3
+                      periodSeconds: 5
+                      failureThreshold: 60
+                      timeoutSeconds: 5
+                    env:
+                      - name: DB_HOST
+                        value: "${{ secrets.DB_HOST }}"
+                      - name: DB_PORT
+                        value: "${{ secrets.DB_PORT }}"
+                      - name: DB_NAME
+                        value: "${{ secrets.DB_NAME }}"
+                      - name: DB_USER
+                        value: "${{ secrets.DB_USER }}"
+                      - name: DB_PASSWORD
+                        value: "${{ secrets.DB_PASSWORD }}"
+                      - name: DB_SSL
+                        value: "${{ secrets.DB_SSL }}"
+                      - name: API_KEY
+                        value: "${{ secrets.API_KEY }}"
+                      - name: READ_ONLY_KEY
+                        value: "${{ secrets.READ_ONLY_KEY }}"
+                      - name: CF_ACCESS_AUD
+                        value: "${{ secrets.CF_ACCESS_AUD }}"
+                      - name: CF_ACCESS_TEAM_DOMAIN
+                        value: "${{ secrets.CF_ACCESS_TEAM_DOMAIN }}"
+                      - name: DISCORD_WEBHOOK_URL
+                        value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
+                      - name: ADMIN_EMAILS
+                        value: "${{ secrets.ADMIN_EMAILS }}"
+                      - name: LOG_LEVEL
+                        value: "${{ vars.LOG_LEVEL || 'INFO' }}"
+                      - name: CF_API_TOKEN
+                        value: "${{ secrets.CF_API_TOKEN }}"
+                      - name: CF_ZONE_ID
+                        value: "${{ secrets.CF_ZONE_ID }}"
+                      - name: RUNMODE
+                        value: "cloudrun"
+                      - name: GITHUB_PAT
+                        value: "${{ secrets.GH_PAT }}"
+                      - name: GITHUB_OWNER
+                        value: "${{ vars.GH_OWNER }}"
+                      - name: GITHUB_REPO
+                        value: "${{ vars.GH_REPO }}"
+                      - name: GITHUB_BRANCH
+                        value: "${{ vars.GH_BRANCH }}"
+                      - name: GITHUB_YAML_PATH
+                        value: "${{ vars.GH_YAML_PATH }}"
+                      - name: GITHUB_WORKFLOW_FILE
+                        value: "${{ vars.GH_WORKFLOW_FILE }}"
+                      - name: ORIGIN_SHARED_SECRET
+                        value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
+          EOF
+
+      - name: Deploy to Cloud Run (master only)
+        if: github.ref_name == 'master'
+        run: |
+          gcloud run services replace service.yaml \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}" \
+            --member=allUsers \
+            --role=roles/run.invoker
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --to-latest \
+            --region="${{ env.REGION }}" \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Connect to Tailscale (debug only)
+        if: github.ref_name == 'debug'
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:ci
+      - name: Write env file to tatsunote2 (debug only)
+        if: github.ref_name == 'debug'
+        env:
+          DB_HOST:              ${{ secrets.DB_HOST }}
+          DB_PORT:              ${{ secrets.DB_PORT }}
+          DB_NAME:              ${{ secrets.DB_NAME }}
+          DB_USER:              ${{ secrets.DB_USER }}
+          DB_PASSWORD:          ${{ secrets.DB_PASSWORD }}
+          DB_SSL:               ${{ secrets.DB_SSL }}
+          API_KEY:              ${{ secrets.API_KEY }}
+          READ_ONLY_KEY:        ${{ secrets.READ_ONLY_KEY }}
+          CF_ACCESS_AUD:        ${{ secrets.CF_ACCESS_AUD }}
+          CF_ACCESS_TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ADMIN_EMAILS:         ${{ secrets.ADMIN_EMAILS }}
+          CF_API_TOKEN:         ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID:           ${{ secrets.CF_ZONE_ID }}
+          ORIGIN_SHARED_SECRET: ${{ secrets.ORIGIN_SHARED_SECRET }}
+          GH_PAT:               ${{ secrets.GH_PAT }}
+        run: |
+          {
+            printf 'DB_HOST=%s\n'               "${DB_HOST}"
+            printf 'DB_PORT=%s\n'               "${DB_PORT}"
+            printf 'DB_NAME=%s\n'               "${DB_NAME}"
+            printf 'DB_USER=%s\n'               "${DB_USER}"
+            printf 'DB_PASSWORD=%s\n'           "${DB_PASSWORD}"
+            printf 'DB_SSL=%s\n'                "${DB_SSL}"
+            printf 'API_KEY=%s\n'               "${API_KEY}"
+            printf 'READ_ONLY_KEY=%s\n'         "${READ_ONLY_KEY}"
+            printf 'CF_ACCESS_AUD=%s\n'         "${CF_ACCESS_AUD}"
+            printf 'CF_ACCESS_TEAM_DOMAIN=%s\n' "${CF_ACCESS_TEAM_DOMAIN}"
+            printf 'DISCORD_WEBHOOK_URL=%s\n'   "${DISCORD_WEBHOOK_URL}"
+            printf 'ADMIN_EMAILS=%s\n'          "${ADMIN_EMAILS}"
+            printf 'CF_API_TOKEN=%s\n'          "${CF_API_TOKEN}"
+            printf 'CF_ZONE_ID=%s\n'            "${CF_ZONE_ID}"
+            printf 'ORIGIN_SHARED_SECRET=%s\n'  "${ORIGIN_SHARED_SECRET}"
+            printf 'GITHUB_PAT=%s\n'            "${GH_PAT}"
+            printf 'GITHUB_OWNER=C-lab-works\n'
+            printf 'GITHUB_REPO=rsai-backend\n'
+            printf 'GITHUB_BRANCH=debug\n'
+            printf 'LOG_LEVEL=DEBUG\n'
+            printf 'RUNMODE=debug\n'
+          } | ssh -o StrictHostKeyChecking=no root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
+
+      - name: Deploy to tatsunote2 (debug only)
+        if: github.ref_name == 'debug'
+        env:
+          DEPLOY_IMAGE: ${{ env.GHCR_BASE }}:debug
+        run: |
+          ssh -o StrictHostKeyChecking=no root@tatsunote2 "
+            set -e
+            echo '=== Pulling image ==='
+            docker pull '${DEPLOY_IMAGE}'
+
+            echo '=== Stopping existing container ==='
+            docker stop rsai-debug 2>/dev/null || true
+            docker rm   rsai-debug 2>/dev/null || true
+
+            echo '=== Starting container ==='
+            docker run -d \
+              --name rsai-debug \
+              --restart unless-stopped \
+              --env-file /opt/rsai-debug.env \
+              -p 8082:8080 \
+              --cpus=2 \
+              --memory=2g \
+              --health-cmd='curl -sf http://localhost:8080/health || exit 1' \
+              --health-interval=5s \
+              --health-timeout=5s \
+              --health-retries=12 \
+              --health-start-period=10s \
+              '${DEPLOY_IMAGE}'
+
+            echo '=== Health check ==='
+            for i in \$(seq 1 10); do
+              curl -sf http://localhost:8082/health >/dev/null 2>&1 && echo 'Health check passed' && docker ps --filter name=rsai-debug && exit 0
+              echo \"Attempt \$i/10: waiting...\"
+              sleep 3
+            done
+            echo '=== Health check failed. Logs: ==='
+            docker logs --tail 50 rsai-debug
+            exit 1
+          "
