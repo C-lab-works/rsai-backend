@@ -1,0 +1,222 @@
+name: Deploy to tatsunote2 (debug)
+
+on:
+  push:
+    branches: [debug]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  RUNNER_VM: github-runner
+  RUNNER_ZONE: asia-northeast1-a
+  IMAGE: ghcr.io/c-lab-works/rsai-backend:debug
+
+jobs:
+  # ── Spot VMを起動してrunnerがオンラインになるまで待機
+  start-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Start VM
+        run: |
+          gcloud compute instances start ${{ env.RUNNER_VM }} \
+            --zone=${{ env.RUNNER_ZONE }} \
+            --project="${{ env.PROJECT_ID }}"
+
+      - name: Wait for runner to be online
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_RUNNERS }}
+        run: |
+          echo "Waiting for self-hosted runner to come online..."
+          for i in $(seq 1 30); do
+            STATUS=$(gh api "repos/${{ github.repository }}/actions/runners" \
+              --jq '.runners[] | select(.name == "${{ env.RUNNER_VM }}") | .status' 2>/dev/null || echo "")
+            if [ "$STATUS" = "online" ]; then
+              echo "Runner is online (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i/30: status='$STATUS', retrying in 10s..."
+            sleep 10
+          done
+          echo "Runner did not come online within 5 minutes"
+          exit 1
+
+  # ── Spot VMでのビルド & tatsunote2へdeploy
+  build-and-deploy-fast:
+    needs: start-runner
+    if: needs.start-runner.result == 'success'
+    runs-on: [self-hosted, spot]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: debug
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push debug image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ghcr.io/${{ github.repository }}:debug-${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:debug-buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:debug-buildcache,mode=max
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:ci
+          args: --ephemeral
+
+      - name: Deploy to tatsunote2 via Tailscale SSH
+        env:
+          TARGET_HOST: ${{ secrets.TATSUNOTE2_TAILSCALE_HOST }}
+          DEPLOY_IMAGE: ${{ env.IMAGE }}
+        run: |
+          ssh -o StrictHostKeyChecking=no "root@${TARGET_HOST}" "
+            set -e
+            echo '=== Pulling image ==='
+            docker pull '${DEPLOY_IMAGE}'
+
+            echo '=== Stopping existing container ==='
+            docker stop rsai-debug 2>/dev/null || true
+            docker rm   rsai-debug 2>/dev/null || true
+
+            echo '=== Checking env file ==='
+            [ -f /opt/rsai-debug.env ] || { echo 'ERROR: /opt/rsai-debug.env not found on tatsunote2'; exit 1; }
+
+            echo '=== Starting container ==='
+            docker run -d \
+              --name rsai-debug \
+              --restart unless-stopped \
+              --env-file /opt/rsai-debug.env \
+              -p 8082:8080 \
+              --cpus=2 \
+              --memory=2g \
+              --health-cmd='curl -sf http://localhost:8080/health || exit 1' \
+              --health-interval=5s \
+              --health-timeout=5s \
+              --health-retries=12 \
+              --health-start-period=10s \
+              '${DEPLOY_IMAGE}'
+
+            echo '=== Health check ==='
+            for i in \$(seq 1 10); do
+              curl -sf http://localhost:8082/health >/dev/null 2>&1 && echo 'Health check passed' && docker ps --filter name=rsai-debug && exit 0
+              echo \"Attempt \$i/10: waiting...\"
+              sleep 3
+            done
+            echo '=== Health check failed. Logs: ==='
+            docker logs --tail 50 rsai-debug
+            exit 1
+          "
+
+  # ── Spot VM失敗時のGitHub-hostedフォールバック
+  build-and-deploy-fallback:
+    needs: [start-runner, build-and-deploy-fast]
+    if: always() && (needs.start-runner.result == 'failure' || contains(fromJSON('["failure","cancelled"]'), needs.build-and-deploy-fast.result))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: debug
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push debug image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ghcr.io/${{ github.repository }}:debug-${{ github.sha }}
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:ci
+          args: --ephemeral
+
+      - name: Deploy to tatsunote2 via Tailscale SSH
+        env:
+          TARGET_HOST: ${{ secrets.TATSUNOTE2_TAILSCALE_HOST }}
+          DEPLOY_IMAGE: ${{ env.IMAGE }}
+        run: |
+          ssh -o StrictHostKeyChecking=no "root@${TARGET_HOST}" "
+            set -e
+            echo '=== Pulling image ==='
+            docker pull '${DEPLOY_IMAGE}'
+
+            echo '=== Stopping existing container ==='
+            docker stop rsai-debug 2>/dev/null || true
+            docker rm   rsai-debug 2>/dev/null || true
+
+            echo '=== Checking env file ==='
+            [ -f /opt/rsai-debug.env ] || { echo 'ERROR: /opt/rsai-debug.env not found on tatsunote2'; exit 1; }
+
+            echo '=== Starting container ==='
+            docker run -d \
+              --name rsai-debug \
+              --restart unless-stopped \
+              --env-file /opt/rsai-debug.env \
+              -p 8082:8080 \
+              --cpus=2 \
+              --memory=2g \
+              --health-cmd='curl -sf http://localhost:8080/health || exit 1' \
+              --health-interval=5s \
+              --health-timeout=5s \
+              --health-retries=12 \
+              --health-start-period=10s \
+              '${DEPLOY_IMAGE}'
+
+            echo '=== Health check ==='
+            for i in \$(seq 1 10); do
+              curl -sf http://localhost:8082/health >/dev/null 2>&1 && echo 'Health check passed' && docker ps --filter name=rsai-debug && exit 0
+              echo \"Attempt \$i/10: waiting...\"
+              sleep 3
+            done
+            echo '=== Health check failed. Logs: ==='
+            docker logs --tail 50 rsai-debug
+            exit 1
+          "

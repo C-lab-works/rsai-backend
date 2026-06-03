@@ -1,0 +1,40 @@
+# upstream block: スケーリング時はここにサーバーを追加する
+upstream rsai_debug_backend {
+    server ${TATSUNOTE2_TS_HOST}:8082;
+    keepalive 32;
+}
+
+# HTTP → HTTPS リダイレクト
+server {
+    listen 80;
+    server_name debugv2.tatsut.jp;
+    return 301 https://$host$request_uri;
+}
+
+# HTTPS + Cloud Run互換プロキシ
+server {
+    listen 443 ssl http2;
+    server_name debugv2.tatsut.jp;
+
+    ssl_certificate     /etc/letsencrypt/live/debugv2.tatsut.jp/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/debugv2.tatsut.jp/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Cloud Run と同等のタイムアウト
+    proxy_read_timeout    60s;
+    proxy_connect_timeout 10s;
+    proxy_send_timeout    60s;
+
+    location / {
+        proxy_pass         http://rsai_debug_backend;
+        proxy_http_version 1.1;
+
+        # Cloud Run が付与するヘッダーを再現
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection        "";
+    }
+}
