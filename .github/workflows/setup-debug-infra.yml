@@ -23,25 +23,19 @@ jobs:
           tags: tag:ci
           args: --ephemeral
 
-      - name: Render nginx config (substitute Tailscale IP)
-        env:
-          TATSUNOTE2_TS_HOST: ${{ secrets.TATSUNOTE2_TAILSCALE_HOST }}
+      - name: Prepare nginx config
         run: |
-          envsubst '${TATSUNOTE2_TS_HOST}' \
-            < deploy/nginx/debugv2.tatsut.jp.conf.tmpl \
-            > /tmp/debugv2.tatsut.jp.conf
-          echo "=== Rendered config ===" && cat /tmp/debugv2.tatsut.jp.conf
+          cp deploy/nginx/debugv2.tatsut.jp.conf.tmpl /tmp/debugv2.tatsut.jp.conf
+          echo "=== Config ===" && cat /tmp/debugv2.tatsut.jp.conf
 
       - name: Upload nginx config & setup SSL on conoha
-        env:
-          CONOHA_HOST: ${{ secrets.CONOHA_TAILSCALE_HOST }}
         run: |
           # nginx config をアップロード (ssh経由でcat)
-          ssh -o StrictHostKeyChecking=no "root@${CONOHA_HOST}" \
+          ssh -o StrictHostKeyChecking=no root@conoha \
             "cat > /etc/nginx/sites-available/debugv2.tatsut.jp" \
             < /tmp/debugv2.tatsut.jp.conf
 
-          ssh -o StrictHostKeyChecking=no "root@${CONOHA_HOST}" "
+          ssh -o StrictHostKeyChecking=no root@conoha "
             set -e
 
             # ── nginx インストール (未インストールの場合) ──

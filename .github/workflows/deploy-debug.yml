@@ -96,10 +96,9 @@ jobs:
 
       - name: Deploy to tatsunote2 via Tailscale SSH
         env:
-          TARGET_HOST: ${{ secrets.TATSUNOTE2_TAILSCALE_HOST }}
           DEPLOY_IMAGE: ${{ env.IMAGE }}
         run: |
-          ssh -o StrictHostKeyChecking=no "root@${TARGET_HOST}" "
+          ssh -o StrictHostKeyChecking=no root@tatsunote2 "
             set -e
             echo '=== Pulling image ==='
             docker pull '${DEPLOY_IMAGE}'
@@ -180,10 +179,9 @@ jobs:
 
       - name: Deploy to tatsunote2 via Tailscale SSH
         env:
-          TARGET_HOST: ${{ secrets.TATSUNOTE2_TAILSCALE_HOST }}
           DEPLOY_IMAGE: ${{ env.IMAGE }}
         run: |
-          ssh -o StrictHostKeyChecking=no "root@${TARGET_HOST}" "
+          ssh -o StrictHostKeyChecking=no root@tatsunote2 "
             set -e
             echo '=== Pulling image ==='
             docker pull '${DEPLOY_IMAGE}'
