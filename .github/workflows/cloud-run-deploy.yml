@@ -106,7 +106,7 @@ jobs:
             labels:
               cloud.googleapis.com/location: ${{ env.REGION }}
             annotations:
-              run.googleapis.com/default-url-disabled: "true"
+              run.googleapis.com/default-url-disabled: "false"
           spec:
             template:
               metadata:
@@ -276,7 +276,7 @@ jobs:
             labels:
               cloud.googleapis.com/location: ${{ env.REGION }}
             annotations:
-              run.googleapis.com/default-url-disabled: "true"
+              run.googleapis.com/default-url-disabled: "false"
           spec:
             template:
               metadata:
