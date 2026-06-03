@@ -257,7 +257,7 @@ jobs:
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
-        uses: tailscale/github-action@v2
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
@@ -563,7 +563,7 @@ jobs:
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
-        uses: tailscale/github-action@v2
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
