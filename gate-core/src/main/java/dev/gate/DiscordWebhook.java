@@ -10,21 +10,22 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-// エラーをdiscordにwebhookで送信
+
+// エラー・管理操作をdiscordにwebhookで送信
 public class DiscordWebhook {
-    private static final Logger logger     = new Logger(DiscordWebhook.class);
-    private static final String WEBHOOK    = System.getenv("DISCORD_WEBHOOK_URL");
-    private static final String INSTANCE   = Optional.ofNullable(System.getenv("K_REVISION"))
+    private static final Logger     logger      = new Logger(DiscordWebhook.class);
+    private static final String     WEBHOOK     = System.getenv("DISCORD_WEBHOOK_URL");
+    private static final String     INSTANCE    = Optional.ofNullable(System.getenv("K_REVISION"))
             .or(() -> Optional.ofNullable(System.getenv("K_SERVICE")))
             .orElse("local");
-    private static final long   DEBOUNCE_MS = 5_000L;
-    private static final HttpClient HTTP   = HttpClient.newHttpClient();
+    private static final long       DEBOUNCE_MS = 5_000L;
+    private static final HttpClient HTTP        = HttpClient.newHttpClient();
     private static final ConcurrentHashMap<String, AtomicLong> lastSent = new ConcurrentHashMap<>();
 
     private DiscordWebhook() {}
 
-    private static String escapeJson(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+    private static String esc(String s) {
+        return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
     }
 
     public static void sendError(String method, String path, int status, String message) {
@@ -33,13 +34,9 @@ public class DiscordWebhook {
         String key = method + " " + path + " " + status;
         long now   = System.currentTimeMillis();
         AtomicLong ts = lastSent.computeIfAbsent(key, k -> new AtomicLong(0L));
-        long prev = ts.getAndSet(now);
-        if (now - prev < DEBOUNCE_MS) return;
+        if (now - ts.getAndSet(now) < DEBOUNCE_MS) return;
 
         int color = status >= 500 ? 15158332 : 16776960;
-        String safeMsg    = escapeJson(message != null ? message : "(no message)");
-        String safeMethod = escapeJson(method != null ? method : "");
-        String safePath   = escapeJson(path   != null ? path   : "");
         String body = """
                 {
                   "content": "<@1086598323642830849>",
@@ -51,8 +48,30 @@ public class DiscordWebhook {
                     "timestamp": "%s"
                   }]
                 }
-                """.formatted(status, safeMethod, safePath, safeMsg, color, INSTANCE, Instant.now());
+                """.formatted(status, esc(method), esc(path), esc(message != null ? message : "(no message)"),
+                              color, esc(INSTANCE), Instant.now());
+        post(body);
+    }
 
+    public static void sendAdminOp(String user, String action, String target, String detail) {
+        if (WEBHOOK == null || WEBHOOK.isBlank()) return;
+        String desc = detail != null && !detail.isBlank() ? ", \"description\": \"" + esc(detail) + "\"" : "";
+        String body = """
+                {
+                  "embeds": [{
+                    "title": "[ADMIN] %s  %s"%s,
+                    "color": 3447003,
+                    "footer": { "text": "by: %s  |  instance: %s" },
+                    "timestamp": "%s"
+                  }]
+                }
+                """.formatted(esc(action), esc(target), desc, esc(user != null ? user : "unknown"),
+                              esc(INSTANCE), Instant.now());
+        post(body);
+    }
+
+    private static void post(String body) {
+        if (WEBHOOK == null || WEBHOOK.isBlank()) return;
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(WEBHOOK))
                 .header("Content-Type", "application/json")
