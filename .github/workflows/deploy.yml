@@ -261,7 +261,7 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          tags: tag:ci
+          tags: tag:r-sai2026
 
       - name: Setup SSH key (debug only)
         if: github.ref_name == 'debug'
@@ -567,7 +567,7 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          tags: tag:ci
+          tags: tag:r-sai2026
 
       - name: Setup SSH key (debug only)
         if: github.ref_name == 'debug'
