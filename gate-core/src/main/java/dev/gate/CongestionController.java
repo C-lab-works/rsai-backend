@@ -143,8 +143,6 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
-            AuditLog.write(updatedBy, "UPDATE_CONGESTION", locationCode, "level=" + level, "ok", null);
-            DiscordWebhook.sendAdminOp(updatedBy, "UPDATE_CONGESTION", locationCode, "level=" + level);
             ctx.json(Map.of("ok", true, "location_code", locationCode, "level", level));
         } catch (Exception e) {
             logger.error("updateCongestion error", e);

@@ -62,11 +62,6 @@ public class AdminController {
         "ALTER"
     );
 
-    // ファイルシステムアクセス系キーワード（正規化済み文字列への部分一致で拒否）
-    private static final List<String> BLOCKED_SQL_FRAGMENTS = List.of(
-        "INTO OUTFILE", "INTO DUMPFILE", "LOAD_FILE", "LOAD DATA"
-    );
-
     // インスタンスコマンドホワイトリスト
     private static final Set<String> ALLOWED_INSTANCE_COMMANDS = Set.of(
         "ping", "cpu", "heap", "thread-count", "gc",
@@ -149,7 +144,6 @@ public class AdminController {
     @SuppressWarnings("unchecked")
     public void sendCommand(Context ctx) {
         String instanceId = ctx.pathParam("id");
-        String user = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         if (rejectInvalidInstanceId(ctx, instanceId)) return;
         try {
             Map<String, Object> body = ctx.bodyAs(Map.class);
@@ -183,10 +177,6 @@ public class AdminController {
                 }
             });
 
-            if ("stop".equals(type)) {
-                AuditLog.write(user, "INSTANCE_STOP", instanceId, null, "ok", null);
-                DiscordWebhook.sendAdminOp(user, "INSTANCE_STOP", instanceId, null);
-            }
             ctx.status(202).json(Map.of("requestId", requestId));
         } catch (Exception e) {
             logger.error("sendCommand error instanceId={}", instanceId, e);
@@ -291,7 +281,6 @@ public class AdminController {
             InstanceManager.get().broadcastCacheRefresh();
 
             boolean cfPurged = purgeCfCache();
-            AuditLog.write(clearedBy, "CACHE_CLEAR", "all", null, "ok", null);
 
             ObjectNode res = mapper.createObjectNode();
             res.put("ok", true);
@@ -425,7 +414,6 @@ public class AdminController {
     public void updateRow(Context ctx) {
         String table = ctx.pathParam("table");
         String pkVal = ctx.pathParam("pk");
-        String user = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
@@ -448,9 +436,7 @@ public class AdminController {
                 int i = 1;
                 for (String col : updateCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 ps.setString(i, pkVal);
-                int updated = ps.executeUpdate();
-                AuditLog.write(user, "UPDATE_ROW", table + "/" + pkVal, null, "ok", null);
-                ctx.json(Map.of("updated", updated));
+                ctx.json(Map.of("updated", ps.executeUpdate()));
             }
         } catch (SQLIntegrityConstraintViolationException e) {
             logger.warn("updateRow constraint violation: {}", e.getMessage());
@@ -477,7 +463,6 @@ public class AdminController {
     public void deleteRow(Context ctx) {
         String table = ctx.pathParam("table");
         String pkVal = ctx.pathParam("pk");
-        String user = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
@@ -488,9 +473,7 @@ public class AdminController {
             try (PreparedStatement ps = conn.prepareStatement(
                     "DELETE FROM `" + resolvedTable + "` WHERE `" + pkCol + "` = ?")) {
                 ps.setString(1, pkVal);
-                int deleted = ps.executeUpdate();
-                AuditLog.write(user, "DELETE_ROW", table + "/" + pkVal, null, "ok", null);
-                ctx.json(Map.of("deleted", deleted));
+                ctx.json(Map.of("deleted", ps.executeUpdate()));
             }
         } catch (SQLIntegrityConstraintViolationException e) {
             logger.warn("deleteRow constraint violation: {}", e.getMessage());
@@ -504,7 +487,6 @@ public class AdminController {
     @PostMapping("/admin/tables/{table}")
     public void insertRow(Context ctx) {
         String table = ctx.pathParam("table");
-        String user = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
@@ -527,7 +509,6 @@ public class AdminController {
                 int i = 1;
                 for (String col : insertCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 ps.executeUpdate();
-                AuditLog.write(user, "INSERT_ROW", table, null, "ok", null);
                 try (ResultSet gen = ps.getGeneratedKeys()) {
                     if (gen.next()) ctx.json(Map.of("id", gen.getLong(1)));
                     else ctx.json(Map.of("ok", true));
@@ -556,7 +537,6 @@ public class AdminController {
     // 管理者パネルのdbページでテーブルを作成するエンドポイント
     @PostMapping("/admin/ddl/tables")
     public void createTable(Context ctx) {
-        String user = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         try (Connection conn = Database.getConnection()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
@@ -592,8 +572,6 @@ public class AdminController {
             sb.append(String.join(", ", colDefs)).append(")");
 
             try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
-            AuditLog.write(user, "CREATE_TABLE", tableName, columns.size() + " columns", "ok", null);
-            DiscordWebhook.sendAdminOp(user, "CREATE_TABLE", tableName, columns.size() + " columns");
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("createTable syntax error: {}", e.getMessage());
@@ -608,7 +586,6 @@ public class AdminController {
     @PostMapping("/admin/ddl/tables/{table}/columns")
     public void addColumn(Context ctx) {
         String table = ctx.pathParam("table");
-        String user = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         if (!isValidTableName(table, ctx)) return;
         try (Connection conn = Database.getConnection()) {
             String resolvedTable = resolveTableName(conn, table);
@@ -640,8 +617,6 @@ public class AdminController {
                 sb.append(" DEFAULT '").append(defaultVal).append("'");
             }
             try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
-            AuditLog.write(user, "ADD_COLUMN", resolvedTable + "/" + colName, colType, "ok", null);
-            DiscordWebhook.sendAdminOp(user, "ADD_COLUMN", resolvedTable + "/" + colName, colType);
             ctx.json(Map.of("ok", true));
         } catch (SQLSyntaxErrorException e) {
             logger.warn("addColumn syntax error: {}", e.getMessage());
@@ -666,7 +641,6 @@ public class AdminController {
             // 事前検証: ホワイトリストチェックと DDL 検出を一括で行う
             List<String> stmts = new ArrayList<>();
             boolean hasDdl = false;
-            boolean hasWrite = false;
             for (String raw : splitStatements(sql)) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
@@ -677,13 +651,6 @@ public class AdminController {
                     ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + first));
                     return;
                 }
-                for (String blocked : BLOCKED_SQL_FRAGMENTS) {
-                    if (norm.contains(blocked)) {
-                        ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + blocked));
-                        return;
-                    }
-                }
-                if (!Set.of("SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "ANALYZE").contains(first)) hasWrite = true;
                 if ("ALTER".equals(first)) {
                     String second = words.length > 1 ? words[1] : "";
                     if (!"TABLE".equals(second)) {
@@ -738,10 +705,6 @@ public class AdminController {
                     }
                 }
                 if (!hasDdl) conn.commit();
-                String sqlTarget = sql.trim().substring(0, Math.min(50, sql.trim().length()));
-                String sqlDetail = sql.length() > 200 ? sql.substring(0, 200) + "..." : sql;
-                AuditLog.write(executor, "EXECUTE_SQL", sqlTarget, sqlDetail, "ok", null);
-                if (hasWrite) DiscordWebhook.sendAdminOp(executor, "EXECUTE_SQL", sqlTarget, sqlDetail);
                 ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
             } catch (Exception e) {
                 if (!hasDdl) {
@@ -1330,8 +1293,6 @@ public class AdminController {
                     "Conflict: routes.yaml was modified by another user. Please reload."));
                 return;
             }
-            AuditLog.write(email, "UPDATE_YAML", "routes.yaml", result.commitSha(), "ok", null);
-            DiscordWebhook.sendAdminOp(email, "UPDATE_YAML", "routes.yaml", "commit: " + result.commitSha());
             ctx.json(Map.of("commitSha", result.commitSha(), "newSha", result.newFileSha()));
         } catch (IllegalStateException e) {
             logger.warn("putYamlRoutes: GitHub not configured: {}", e.getMessage());
