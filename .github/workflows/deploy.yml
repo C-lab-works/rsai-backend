@@ -255,6 +255,10 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
           cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
 
+      - name: Stop existing tailscaled (debug only)
+        if: github.ref_name == 'debug'
+        run: sudo pkill tailscaled 2>/dev/null || true
+
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
         uses: tailscale/github-action@v4
@@ -560,6 +564,10 @@ jobs:
           tags: |
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
+
+      - name: Stop existing tailscaled (debug only)
+        if: github.ref_name == 'debug'
+        run: sudo pkill tailscaled 2>/dev/null || true
 
       - name: Connect to Tailscale (debug only)
         if: github.ref_name == 'debug'
