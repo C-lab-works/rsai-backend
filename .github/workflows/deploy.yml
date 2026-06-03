@@ -339,6 +339,8 @@ jobs:
             echo '=== Ensuring MySQL container ==='
             if ! docker ps --format '{{.Names}}' | grep -q '^rsai-mysql-debug\$'; then
               docker rm -f rsai-mysql-debug 2>/dev/null || true
+              docker pull mirror.gcr.io/library/mysql:8.0
+              docker tag mirror.gcr.io/library/mysql:8.0 mysql:8.0
               docker run -d \
                 --name rsai-mysql-debug \
                 --network rsai-debug-net \
@@ -643,6 +645,8 @@ jobs:
             echo '=== Ensuring MySQL container ==='
             if ! docker ps --format '{{.Names}}' | grep -q '^rsai-mysql-debug\$'; then
               docker rm -f rsai-mysql-debug 2>/dev/null || true
+              docker pull mirror.gcr.io/library/mysql:8.0
+              docker tag mirror.gcr.io/library/mysql:8.0 mysql:8.0
               docker run -d \
                 --name rsai-mysql-debug \
                 --network rsai-debug-net \
