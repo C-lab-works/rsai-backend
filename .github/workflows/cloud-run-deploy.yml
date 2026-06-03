@@ -153,8 +153,6 @@ jobs:
                         value: "${{ secrets.API_KEY }}"
                       - name: READ_ONLY_KEY
                         value: "${{ secrets.READ_ONLY_KEY }}"
-                      - name: CORS_ALLOWED_ORIGIN
-                        value: "${{ secrets.CORS_ALLOWED_ORIGIN }}"
                       - name: CF_ACCESS_AUD
                         value: "${{ secrets.CF_ACCESS_AUD }}"
                       - name: CF_ACCESS_TEAM_DOMAIN
@@ -325,8 +323,6 @@ jobs:
                         value: "${{ secrets.API_KEY }}"
                       - name: READ_ONLY_KEY
                         value: "${{ secrets.READ_ONLY_KEY }}"
-                      - name: CORS_ALLOWED_ORIGIN
-                        value: "${{ secrets.CORS_ALLOWED_ORIGIN }}"
                       - name: CF_ACCESS_AUD
                         value: "${{ secrets.CF_ACCESS_AUD }}"
                       - name: CF_ACCESS_TEAM_DOMAIN

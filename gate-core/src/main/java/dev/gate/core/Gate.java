@@ -32,7 +32,6 @@ public class Gate {
     private final Logger logger = new Logger(Gate.class);
     private final List<Handler> beforeFilters = new CopyOnWriteArrayList<>();
     private final List<Handler> afterFilters = new CopyOnWriteArrayList<>();
-    private java.util.Set<String> corsOrigins = null;
     private int wsMaxMessageSize = 64 * 1024;
     private int idleTimeoutMs = 30_000;
     private volatile boolean started = false;
@@ -85,21 +84,6 @@ public class Gate {
 
     public void register(Object controller) {
         scanner.scan(controller);
-    }
-
-    public Gate cors(String allowedOrigins) {
-        if (allowedOrigins == null || allowedOrigins.isBlank()) return this;
-        java.util.Set<String> parsed = new java.util.LinkedHashSet<>();
-        for (String o : allowedOrigins.split(",")) {
-            String trimmed = o.strip();
-            if (!trimmed.isEmpty()) parsed.add(trimmed);
-        }
-        if (parsed.contains("*")) {
-            logger.warn("CORS configured with wildcard '*' — credentials cannot be used with this origin");
-        }
-        this.corsOrigins = java.util.Collections.unmodifiableSet(parsed);
-        logger.info("CORS allowed origins: {}", this.corsOrigins);
-        return this;
     }
 
     public Gate wsMaxMessageSize(int bytes) {
@@ -161,7 +145,6 @@ public class Gate {
             });
         });
 
-        final java.util.Set<String> finalCorsOrigins = this.corsOrigins;
         context.addServlet(new ServletHolder(new HttpServlet() {
             @Override
             protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -192,40 +175,6 @@ public class Gate {
                     for (Handler filter : beforeFilters) {
                         filter.handle(ctx);
                         if (ctx.isHalted()) break;
-                    }
-
-                    // CORS ヘッダーはフィルターを通過したリクエストにのみ付与する。
-                    // IP フィルターで弾かれたリクエストに Access-Control-Allow-Credentials を
-                    // 付けないようにするため、before-filter の後に移動。
-                    if (!ctx.isHalted() && finalCorsOrigins != null && !finalCorsOrigins.isEmpty()) {
-                        String requestOrigin = request.getHeader("Origin");
-                        String matchedOrigin = null;
-                        if (finalCorsOrigins.contains("*")) {
-                            matchedOrigin = "*";
-                        } else if (requestOrigin != null && finalCorsOrigins.contains(requestOrigin)) {
-                            matchedOrigin = requestOrigin;
-                        } else if (requestOrigin != null) {
-                            // Support "http://localhost:*" / "https://localhost:*" wildcard patterns
-                            // for local development (any port on localhost).
-                            // The browser sees its own origin echoed back, not the pattern itself.
-                            if (finalCorsOrigins.contains("http://localhost:*")
-                                    && requestOrigin.startsWith("http://localhost:")) {
-                                matchedOrigin = requestOrigin;
-                            } else if (finalCorsOrigins.contains("https://localhost:*")
-                                    && requestOrigin.startsWith("https://localhost:")) {
-                                matchedOrigin = requestOrigin;
-                            }
-                        }
-                        if (matchedOrigin != null) {
-                            response.setHeader("Access-Control-Allow-Origin", matchedOrigin);
-                            response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-                            response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
-                            response.setHeader("Access-Control-Max-Age", "86400");
-                            response.setHeader("Vary", "Origin");
-                            if (!"*".equals(matchedOrigin)) {
-                                response.setHeader("Access-Control-Allow-Credentials", "true");
-                            }
-                        }
                     }
 
                     if (!ctx.isHalted()) {
