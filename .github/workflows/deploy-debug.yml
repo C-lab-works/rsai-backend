@@ -94,6 +94,49 @@ jobs:
           tags: tag:ci
           args: --ephemeral
 
+      - name: Write env file to tatsunote2
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_SSL: ${{ secrets.DB_SSL }}
+          API_KEY: ${{ secrets.API_KEY }}
+          READ_ONLY_KEY: ${{ secrets.READ_ONLY_KEY }}
+          CF_ACCESS_AUD: ${{ secrets.CF_ACCESS_AUD }}
+          CF_ACCESS_TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          ORIGIN_SHARED_SECRET: ${{ secrets.ORIGIN_SHARED_SECRET }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          {
+            printf 'DB_HOST=%s\n'              "${DB_HOST}"
+            printf 'DB_PORT=%s\n'              "${DB_PORT}"
+            printf 'DB_NAME=%s\n'              "${DB_NAME}"
+            printf 'DB_USER=%s\n'              "${DB_USER}"
+            printf 'DB_PASSWORD=%s\n'          "${DB_PASSWORD}"
+            printf 'DB_SSL=%s\n'               "${DB_SSL}"
+            printf 'API_KEY=%s\n'              "${API_KEY}"
+            printf 'READ_ONLY_KEY=%s\n'        "${READ_ONLY_KEY}"
+            printf 'CF_ACCESS_AUD=%s\n'        "${CF_ACCESS_AUD}"
+            printf 'CF_ACCESS_TEAM_DOMAIN=%s\n' "${CF_ACCESS_TEAM_DOMAIN}"
+            printf 'DISCORD_WEBHOOK_URL=%s\n'  "${DISCORD_WEBHOOK_URL}"
+            printf 'ADMIN_EMAILS=%s\n'         "${ADMIN_EMAILS}"
+            printf 'CF_API_TOKEN=%s\n'         "${CF_API_TOKEN}"
+            printf 'CF_ZONE_ID=%s\n'           "${CF_ZONE_ID}"
+            printf 'ORIGIN_SHARED_SECRET=%s\n' "${ORIGIN_SHARED_SECRET}"
+            printf 'GITHUB_PAT=%s\n'           "${GH_PAT}"
+            printf 'GITHUB_OWNER=C-lab-works\n'
+            printf 'GITHUB_REPO=rsai-backend\n'
+            printf 'GITHUB_BRANCH=debug\n'
+            printf 'LOG_LEVEL=DEBUG\n'
+            printf 'RUNMODE=debug\n'
+          } | ssh -o StrictHostKeyChecking=no root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
+
       - name: Deploy to tatsunote2 via Tailscale SSH
         env:
           DEPLOY_IMAGE: ${{ env.IMAGE }}
@@ -106,9 +149,6 @@ jobs:
             echo '=== Stopping existing container ==='
             docker stop rsai-debug 2>/dev/null || true
             docker rm   rsai-debug 2>/dev/null || true
-
-            echo '=== Checking env file ==='
-            [ -f /opt/rsai-debug.env ] || { echo 'ERROR: /opt/rsai-debug.env not found on tatsunote2'; exit 1; }
 
             echo '=== Starting container ==='
             docker run -d \
@@ -177,6 +217,49 @@ jobs:
           tags: tag:ci
           args: --ephemeral
 
+      - name: Write env file to tatsunote2
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_SSL: ${{ secrets.DB_SSL }}
+          API_KEY: ${{ secrets.API_KEY }}
+          READ_ONLY_KEY: ${{ secrets.READ_ONLY_KEY }}
+          CF_ACCESS_AUD: ${{ secrets.CF_ACCESS_AUD }}
+          CF_ACCESS_TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          ORIGIN_SHARED_SECRET: ${{ secrets.ORIGIN_SHARED_SECRET }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          {
+            printf 'DB_HOST=%s\n'              "${DB_HOST}"
+            printf 'DB_PORT=%s\n'              "${DB_PORT}"
+            printf 'DB_NAME=%s\n'              "${DB_NAME}"
+            printf 'DB_USER=%s\n'              "${DB_USER}"
+            printf 'DB_PASSWORD=%s\n'          "${DB_PASSWORD}"
+            printf 'DB_SSL=%s\n'               "${DB_SSL}"
+            printf 'API_KEY=%s\n'              "${API_KEY}"
+            printf 'READ_ONLY_KEY=%s\n'        "${READ_ONLY_KEY}"
+            printf 'CF_ACCESS_AUD=%s\n'        "${CF_ACCESS_AUD}"
+            printf 'CF_ACCESS_TEAM_DOMAIN=%s\n' "${CF_ACCESS_TEAM_DOMAIN}"
+            printf 'DISCORD_WEBHOOK_URL=%s\n'  "${DISCORD_WEBHOOK_URL}"
+            printf 'ADMIN_EMAILS=%s\n'         "${ADMIN_EMAILS}"
+            printf 'CF_API_TOKEN=%s\n'         "${CF_API_TOKEN}"
+            printf 'CF_ZONE_ID=%s\n'           "${CF_ZONE_ID}"
+            printf 'ORIGIN_SHARED_SECRET=%s\n' "${ORIGIN_SHARED_SECRET}"
+            printf 'GITHUB_PAT=%s\n'           "${GH_PAT}"
+            printf 'GITHUB_OWNER=C-lab-works\n'
+            printf 'GITHUB_REPO=rsai-backend\n'
+            printf 'GITHUB_BRANCH=debug\n'
+            printf 'LOG_LEVEL=DEBUG\n'
+            printf 'RUNMODE=debug\n'
+          } | ssh -o StrictHostKeyChecking=no root@tatsunote2 'cat > /opt/rsai-debug.env && chmod 600 /opt/rsai-debug.env'
+
       - name: Deploy to tatsunote2 via Tailscale SSH
         env:
           DEPLOY_IMAGE: ${{ env.IMAGE }}
@@ -189,9 +272,6 @@ jobs:
             echo '=== Stopping existing container ==='
             docker stop rsai-debug 2>/dev/null || true
             docker rm   rsai-debug 2>/dev/null || true
-
-            echo '=== Checking env file ==='
-            [ -f /opt/rsai-debug.env ] || { echo 'ERROR: /opt/rsai-debug.env not found on tatsunote2'; exit 1; }
 
             echo '=== Starting container ==='
             docker run -d \

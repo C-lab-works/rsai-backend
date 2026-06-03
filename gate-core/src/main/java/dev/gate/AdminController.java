@@ -566,7 +566,7 @@ public class AdminController {
                 ctx.status(400).json(Map.of("error", "カラムの定義が必要です")); return;
             }
 
-            StringBuilder sb = new StringBuilder("CREATE TABLE `").append(tableName).append("` (");
+            StringBuilder sb = new StringBuilder("CREATE TABLE `").append(escapeSqlIdentifier(tableName)).append("` (");
             List<String> colDefs = new ArrayList<>();
             for (Map<String, Object> col : columns) {
                 String name = (String) col.get("name");
@@ -577,7 +577,7 @@ public class AdminController {
                 if (type == null || !ALLOWED_COL_TYPES.contains(type)) {
                     ctx.status(400).json(Map.of("error", "サポートされていない型: " + type)); return;
                 }
-                StringBuilder colDef = new StringBuilder("`").append(name).append("` ").append(type);
+                StringBuilder colDef = new StringBuilder("`").append(escapeSqlIdentifier(name)).append("` ").append(type);
                 if (Boolean.TRUE.equals(col.get("notNull")))       colDef.append(" NOT NULL");
                 if (Boolean.TRUE.equals(col.get("autoIncrement"))) colDef.append(" AUTO_INCREMENT");
                 if (Boolean.TRUE.equals(col.get("pk")))            colDef.append(" PRIMARY KEY");
@@ -624,14 +624,14 @@ public class AdminController {
             }
 
             StringBuilder sb = new StringBuilder("ALTER TABLE `")
-                .append(resolvedTable).append("` ADD COLUMN `")
-                .append(colName).append("` ").append(colType);
+                .append(escapeSqlIdentifier(resolvedTable)).append("` ADD COLUMN `")
+                .append(escapeSqlIdentifier(colName)).append("` ").append(colType);
             if (notNull) sb.append(" NOT NULL");
             if (defaultVal != null && !defaultVal.isEmpty()) {
                 if (!DEFAULT_VALUE_PATTERN.matcher(defaultVal).matches()) {
                     ctx.status(400).json(Map.of("error", "デフォルト値に使えない文字が含まれています")); return;
                 }
-                sb.append(" DEFAULT '").append(defaultVal).append("'");
+                sb.append(" DEFAULT '").append(defaultVal.replace("'", "''")).append("'");
             }
             try (Statement s = conn.createStatement()) { s.execute(sb.toString()); }
             AuditLog.write(user, "ADD_COLUMN", resolvedTable + "/" + colName, colType, "ok", null);
@@ -990,6 +990,11 @@ public class AdminController {
 
     private boolean isValidIdentifier(String s) {
         return s != null && IDENTIFIER_PATTERN.matcher(s).matches();
+    }
+
+    // Escape backticks in SQL identifiers (defense-in-depth; IDENTIFIER_PATTERN already prohibits them)
+    private String escapeSqlIdentifier(String identifier) {
+        return identifier.replace("`", "``");
     }
 
     private Object normalizeValue(Object val) {
