@@ -105,6 +105,8 @@ jobs:
             name: ${{ env.SERVICE_NAME }}
             labels:
               cloud.googleapis.com/location: ${{ env.REGION }}
+            annotations:
+              run.googleapis.com/default-url-disabled: "true"
           spec:
             template:
               metadata:
@@ -181,6 +183,8 @@ jobs:
                         value: "${{ vars.GH_YAML_PATH }}"
                       - name: GITHUB_WORKFLOW_FILE
                         value: "${{ vars.GH_WORKFLOW_FILE }}"
+                      - name: ORIGIN_SHARED_SECRET
+                        value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
 
           EOF
 
@@ -193,11 +197,6 @@ jobs:
             --to-latest \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
-          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}" \
-            --member="allUsers" \
-            --role="roles/run.invoker" 2>/dev/null || true
 
       - name: Fetch Cloud Run logs on failure
         if: failure()
@@ -278,6 +277,8 @@ jobs:
             name: ${{ env.SERVICE_NAME }}
             labels:
               cloud.googleapis.com/location: ${{ env.REGION }}
+            annotations:
+              run.googleapis.com/default-url-disabled: "true"
           spec:
             template:
               metadata:
@@ -354,6 +355,8 @@ jobs:
                         value: "${{ vars.GH_YAML_PATH }}"
                       - name: GITHUB_WORKFLOW_FILE
                         value: "${{ vars.GH_WORKFLOW_FILE }}"
+                      - name: ORIGIN_SHARED_SECRET
+                        value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
 
           EOF
 
@@ -366,11 +369,6 @@ jobs:
             --to-latest \
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
-          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}" \
-            --member="allUsers" \
-            --role="roles/run.invoker" 2>/dev/null || true
 
       - name: Fetch Cloud Run logs on failure
         if: failure()
