@@ -5,6 +5,10 @@ on:
     branches: [debug]
   workflow_dispatch:
 
+concurrency:
+  group: spot-vm-runner
+  cancel-in-progress: false
+
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   RUNNER_VM: github-runner
