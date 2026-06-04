@@ -307,7 +307,7 @@ def main() -> None:
             safe_msg = str(e).replace(provider["key"], "***") if provider["key"] in str(e) else str(e)
             print(f"[{provider['name']}] failed: {safe_msg}, trying next...")
 
-    if raw is None:
+    if raw is None or used_provider is None:
         output_results("## Security Review\n\n All AI providers failed. Check workflow logs.")
         sys.exit(1)
 
