@@ -477,6 +477,7 @@ jobs:
             printf 'GITHUB_BRANCH=debug\n'
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
+            printf 'SKIP_CF_IP_CHECK=true\n'
           } > /opt/rsai-debug.env
           chmod 600 /opt/rsai-debug.env
 

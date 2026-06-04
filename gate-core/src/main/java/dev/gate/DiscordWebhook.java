@@ -14,13 +14,22 @@ import java.util.concurrent.atomic.AtomicLong;
 // エラー・管理操作をdiscordにwebhookで送信
 public class DiscordWebhook {
     private static final Logger     logger      = new Logger(DiscordWebhook.class);
-    private static final String     WEBHOOK     = System.getenv("DISCORD_WEBHOOK_URL");
+    private static final boolean    IS_DEBUG    = "debug".equalsIgnoreCase(System.getenv("RUNMODE"));
+    private static final String     WEBHOOK     = resolveWebhook();
     private static final String     INSTANCE    = Optional.ofNullable(System.getenv("K_REVISION"))
             .or(() -> Optional.ofNullable(System.getenv("K_SERVICE")))
-            .orElse("local");
+            .orElse(IS_DEBUG ? "debug" : "local");
     private static final long       DEBOUNCE_MS = 5_000L;
     private static final HttpClient HTTP        = HttpClient.newHttpClient();
     private static final ConcurrentHashMap<String, AtomicLong> lastSent = new ConcurrentHashMap<>();
+
+    private static String resolveWebhook() {
+        if (IS_DEBUG) {
+            String debugUrl = System.getenv("DISCORD_WEBHOOK_URL_DEBUG");
+            if (debugUrl != null && !debugUrl.isBlank()) return debugUrl;
+        }
+        return System.getenv("DISCORD_WEBHOOK_URL");
+    }
 
     private DiscordWebhook() {}
 
@@ -37,18 +46,19 @@ public class DiscordWebhook {
         if (now - ts.getAndSet(now) < DEBOUNCE_MS) return;
 
         int color = status >= 500 ? 15158332 : 16776960;
+        String prefix = IS_DEBUG ? "[DEBUG] " : "";
         String body = """
                 {
                   "content": "<@1086598323642830849>",
                   "embeds": [{
-                    "title": "%d  %s  %s",
+                    "title": "%s%d  %s  %s",
                     "description": "%s",
                     "color": %d,
                     "footer": { "text": "instance: %s" },
                     "timestamp": "%s"
                   }]
                 }
-                """.formatted(status, esc(method), esc(path), esc(message != null ? message : "(no message)"),
+                """.formatted(prefix, status, esc(method), esc(path), esc(message != null ? message : "(no message)"),
                               color, esc(INSTANCE), Instant.now());
         post(body);
     }
@@ -56,16 +66,17 @@ public class DiscordWebhook {
     public static void sendAdminOp(String user, String action, String target, String detail) {
         if (WEBHOOK == null || WEBHOOK.isBlank()) return;
         String desc = detail != null && !detail.isBlank() ? ", \"description\": \"" + esc(detail) + "\"" : "";
+        String prefix = IS_DEBUG ? "[DEBUG]" : "";
         String body = """
                 {
                   "embeds": [{
-                    "title": "[ADMIN] %s  %s"%s,
+                    "title": "[ADMIN]%s %s  %s"%s,
                     "color": 3447003,
                     "footer": { "text": "by: %s  |  instance: %s" },
                     "timestamp": "%s"
                   }]
                 }
-                """.formatted(esc(action), esc(target), desc, esc(user != null ? user : "unknown"),
+                """.formatted(prefix, esc(action), esc(target), desc, esc(user != null ? user : "unknown"),
                               esc(INSTANCE), Instant.now());
         post(body);
     }

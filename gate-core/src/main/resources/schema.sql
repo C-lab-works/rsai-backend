@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS metrics_endpoints (
     hits     BIGINT NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS credit (
+    id   INT          AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS operation_logs (
     id            BIGINT       AUTO_INCREMENT PRIMARY KEY,
     user          VARCHAR(255) NOT NULL,
