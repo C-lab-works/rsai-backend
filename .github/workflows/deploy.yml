@@ -19,6 +19,7 @@ env:
 jobs:
   # ── Spot VMを起動してrunnerがオンラインになるまで待機
   start-runner:
+    if: "!contains(github.event.head_commit.message, 'sync: master to debug')"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,8 +57,8 @@ jobs:
           echo "Runner did not come online within 5 minutes"
           exit 1
 
-  # ── Spot VMでのビルド & デプロイ
-  build-and-deploy:
+  # ── Spot VMでのビルド & レジストリ push (AR + GHCR)
+  build:
     needs: start-runner
     if: needs.start-runner.result == 'success'
     runs-on: [self-hosted, spot]
@@ -81,7 +82,6 @@ jobs:
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       - name: Log in to GitHub Container Registry
-        if: github.ref_name == 'debug'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -97,9 +97,7 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
 
-      # ── master: AR に直接ビルド → Cloud Run デプロイ ──
-
-      - name: Build and push to Artifact Registry (master only)
+      - name: Build and push to AR + GHCR (master)
         if: github.ref_name == 'master'
         uses: docker/build-push-action@v7
         with:
@@ -108,11 +106,111 @@ jobs:
           tags: |
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+            ${{ env.GHCR_BASE }}:debug
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
           cache-from: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
           cache-to:   type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache,mode=max
 
-      - name: Generate Cloud Run service YAML (master only)
+      - name: Build and push to GHCR (debug)
+        if: github.ref_name == 'debug'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE }}:debug
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
+          cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
+
+  # ── Spot VM失敗時のGitHub-hostedフォールバック
+  build-fallback:
+    needs: [start-runner, build]
+    if: >-
+      always() &&
+      !contains(github.event.head_commit.message, 'sync: master to debug') &&
+      (needs.start-runner.result == 'failure' ||
+       contains(fromJSON('["failure","cancelled"]'), needs.build.result))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Generate version.txt
+        run: |
+          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
+
+      - name: Build and push to AR + GHCR (master)
         if: github.ref_name == 'master'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+            ${{ env.GHCR_BASE }}:debug
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
+
+      - name: Build and push to GHCR (debug)
+        if: github.ref_name == 'debug'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE }}:debug
+            ${{ env.GHCR_BASE }}:${{ github.sha }}
+
+  # ── Cloud Run デプロイ (master only, deploy-debug と並列実行)
+  deploy-cloudrun:
+    needs: [build, build-fallback]
+    if: >-
+      always() &&
+      github.ref_name == 'master' &&
+      !contains(github.event.head_commit.message, 'sync: master to debug') &&
+      (needs.build.result == 'success' || needs.build-fallback.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Generate Cloud Run service YAML
         run: |
           AR_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
           cat > service.yaml <<EOF
@@ -203,8 +301,7 @@ jobs:
                         value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
           EOF
 
-      - name: Deploy to Cloud Run (master only)
-        if: github.ref_name == 'master'
+      - name: Deploy to Cloud Run
         run: |
           gcloud run services replace service.yaml \
             --region="${{ env.REGION }}" \
@@ -219,8 +316,8 @@ jobs:
             --region="${{ env.REGION }}" \
             --project="${{ env.PROJECT_ID }}"
 
-      - name: Fetch Cloud Run logs on failure (master only)
-        if: failure() && github.ref_name == 'master'
+      - name: Fetch Cloud Run logs on failure
+        if: failure()
         continue-on-error: true
         run: |
           REVISION=$(gcloud run revisions list \
@@ -237,22 +334,8 @@ jobs:
             --order=asc \
             --format="table(timestamp,textPayload)" 2>&1 || true
 
-      # ── debug: GHCR にビルド → tatsunote2 デプロイ ──
-
-      - name: Build and push to GHCR (debug only)
-        if: github.ref_name == 'debug'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.GHCR_BASE }}:debug
-            ${{ env.GHCR_BASE }}:${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
-          cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
-
-      - name: Discord通知 (master only)
-        if: always() && github.ref_name == 'master'
+      - name: Discord通知
+        if: always()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           JOB_STATUS:      ${{ job.status }}
@@ -297,183 +380,13 @@ jobs:
             curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
           done
 
-
-  # ── Spot VM失敗時のGitHub-hostedフォールバック
-  build-and-deploy-fallback:
-    needs: [start-runner, build-and-deploy]
-    if: always() && (needs.start-runner.result == 'failure' || contains(fromJSON('["failure","cancelled"]'), needs.build-and-deploy.result))
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      - name: Log in to GitHub Container Registry
-        if: github.ref_name == 'debug'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Generate version.txt
-        run: |
-          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
-
-      - name: Build and push to Artifact Registry (master only)
-        if: github.ref_name == 'master'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:latest
-            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-
-      - name: Generate Cloud Run service YAML (master only)
-        if: github.ref_name == 'master'
-        run: |
-          AR_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          cat > service.yaml <<EOF
-          apiVersion: serving.knative.dev/v1
-          kind: Service
-          metadata:
-            name: ${{ env.SERVICE_NAME }}
-            labels:
-              cloud.googleapis.com/location: ${{ env.REGION }}
-            annotations:
-              run.googleapis.com/ingress: all
-              run.googleapis.com/default-url-disabled: "true"
-          spec:
-            template:
-              metadata:
-                annotations:
-                  autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
-                  autoscaling.knative.dev/maxScale: "30"
-                  run.googleapis.com/cpu-throttling: "false"
-                  run.googleapis.com/startup-cpu-boost: "true"
-                  run.googleapis.com/execution-environment: gen2
-              spec:
-                containerConcurrency: 300
-                timeoutSeconds: 60
-                containers:
-                  - name: app
-                    image: ${AR_IMAGE}
-                    ports:
-                      - name: http1
-                        containerPort: 8080
-                    resources:
-                      limits:
-                        cpu: "2"
-                        memory: 2Gi
-                    startupProbe:
-                      httpGet:
-                        path: /health
-                      initialDelaySeconds: 3
-                      periodSeconds: 5
-                      failureThreshold: 60
-                      timeoutSeconds: 5
-                    env:
-                      - name: DB_HOST
-                        value: "${{ secrets.DB_HOST }}"
-                      - name: DB_PORT
-                        value: "${{ secrets.DB_PORT }}"
-                      - name: DB_NAME
-                        value: "${{ secrets.DB_NAME }}"
-                      - name: DB_USER
-                        value: "${{ secrets.DB_USER }}"
-                      - name: DB_PASSWORD
-                        value: "${{ secrets.DB_PASSWORD }}"
-                      - name: DB_SSL
-                        value: "${{ secrets.DB_SSL }}"
-                      - name: API_KEY
-                        value: "${{ secrets.API_KEY }}"
-                      - name: READ_ONLY_KEY
-                        value: "${{ secrets.READ_ONLY_KEY }}"
-                      - name: CF_ACCESS_AUD
-                        value: "${{ secrets.CF_ACCESS_AUD }}"
-                      - name: CF_ACCESS_TEAM_DOMAIN
-                        value: "${{ secrets.CF_ACCESS_TEAM_DOMAIN }}"
-                      - name: DISCORD_WEBHOOK_URL
-                        value: "${{ secrets.DISCORD_WEBHOOK_URL }}"
-                      - name: ADMIN_EMAILS
-                        value: "${{ secrets.ADMIN_EMAILS }}"
-                      - name: LOG_LEVEL
-                        value: "${{ vars.LOG_LEVEL || 'INFO' }}"
-                      - name: CF_API_TOKEN
-                        value: "${{ secrets.CF_API_TOKEN }}"
-                      - name: CF_ZONE_ID
-                        value: "${{ secrets.CF_ZONE_ID }}"
-                      - name: RUNMODE
-                        value: "cloudrun"
-                      - name: GITHUB_PAT
-                        value: "${{ secrets.GH_PAT }}"
-                      - name: GITHUB_OWNER
-                        value: "${{ vars.GH_OWNER }}"
-                      - name: GITHUB_REPO
-                        value: "${{ vars.GH_REPO }}"
-                      - name: GITHUB_BRANCH
-                        value: "${{ vars.GH_BRANCH }}"
-                      - name: GITHUB_YAML_PATH
-                        value: "${{ vars.GH_YAML_PATH }}"
-                      - name: GITHUB_WORKFLOW_FILE
-                        value: "${{ vars.GH_WORKFLOW_FILE }}"
-                      - name: ORIGIN_SHARED_SECRET
-                        value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
-          EOF
-
-      - name: Deploy to Cloud Run (master only)
-        if: github.ref_name == 'master'
-        run: |
-          gcloud run services replace service.yaml \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-          gcloud run services add-iam-policy-binding ${{ env.SERVICE_NAME }} \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}" \
-            --member=allUsers \
-            --role=roles/run.invoker
-          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
-            --to-latest \
-            --region="${{ env.REGION }}" \
-            --project="${{ env.PROJECT_ID }}"
-
-      - name: Build and push to GHCR (debug only)
-        if: github.ref_name == 'debug'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.GHCR_BASE }}:debug
-            ${{ env.GHCR_BASE }}:${{ github.sha }}
-
-  # ── tatsunote2 self-hosted runner でデプロイ (debug only)
+  # ── tatsunote2 self-hosted runner でデプロイ (master + debug, deploy-cloudrun と並列実行)
   deploy-debug:
-    needs: [build-and-deploy, build-and-deploy-fallback]
-    if: |
+    needs: [build, build-fallback]
+    if: >-
       always() &&
-      github.ref_name == 'debug' &&
-      (needs.build-and-deploy.result == 'success' || needs.build-and-deploy-fallback.result == 'success')
+      !contains(github.event.head_commit.message, 'sync: master to debug') &&
+      (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: [self-hosted, tatsunote2]
     timeout-minutes: 20
     permissions:
@@ -591,21 +504,26 @@ jobs:
             if [ "$STATUS" = "200" ]; then
               echo "Health check passed (attempt $i)"
               docker ps --filter name=rsai-debug
-              exit 0
+              break
             fi
             echo "Attempt $i/20: HTTP $STATUS, waiting..."
             sleep 5
           done
-          echo '=== Health check failed. Diagnostics: ==='
-          echo '--- Container status ---'
-          docker ps -a --filter name=rsai-debug
-          echo '--- Network membership ---'
-          docker network inspect rsai-debug-net --format '{{range .Containers}}{{.Name}} {{end}}'
-          echo '--- MySQL ping ---'
-          docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>&1 || true
-          echo '--- App logs (last 80 lines) ---'
-          docker logs --tail 80 rsai-debug
-          exit 1
+          if [ "$STATUS" != "200" ]; then
+            echo '=== Health check failed. Diagnostics: ==='
+            echo '--- Container status ---'
+            docker ps -a --filter name=rsai-debug
+            echo '--- Network membership ---'
+            docker network inspect rsai-debug-net --format '{{range .Containers}}{{.Name}} {{end}}'
+            echo '--- MySQL ping ---'
+            docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>&1 || true
+            echo '--- App logs (last 80 lines) ---'
+            docker logs --tail 80 rsai-debug
+            exit 1
+          fi
+
+          echo '=== Pruning unused images ==='
+          docker image prune -f
 
       - name: Discord通知
         if: always()
@@ -651,10 +569,16 @@ jobs:
             curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
           done
 
-  # ── masterのコードをdebugブランチに自動同期（masterデプロイ成功後）
+  # ── masterのコードをdebugブランチに自動同期（ビルド成功後）
+  # "sync: master to debug" コミットで識別子を付けることで、
+  # debug側のworkflow triggerで全ジョブがスキップされ二重実行を防ぐ
   sync-debug:
-    needs: build-and-deploy
-    if: github.ref == 'refs/heads/master' && needs.build-and-deploy.result == 'success'
+    needs: [build, build-fallback]
+    if: >-
+      always() &&
+      github.ref_name == 'master' &&
+      !contains(github.event.head_commit.message, 'sync: master to debug') &&
+      (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -666,5 +590,8 @@ jobs:
           token: ${{ secrets.GH_PAT }}
 
       - name: Push master → debug
-        run: git push origin master:debug
-
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git commit --allow-empty -m "sync: master to debug"
+          git push origin HEAD:debug --force
