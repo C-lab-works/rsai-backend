@@ -272,28 +272,30 @@ jobs:
           SHORT_SHA="${COMMIT_SHA:0:7}"
           COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
           FIRST_LINE=$(echo "$COMMIT_MSG" | head -1 | cut -c1-72)
-          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg title   "$TITLE" \
-              --argjson color $COLOR \
-              --arg sha     "\`${SHORT_SHA}\` ${FIRST_LINE}" \
-              --arg sha_url "$COMMIT_URL" \
-              --arg actor   "$ACTOR" \
-              --arg run_url "$RUN_URL" \
-              --arg ts      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              '{embeds:[{
-                title: $title,
-                color: $color,
-                url: $run_url,
-                fields: [
-                  {name:"環境",   value:"Cloud Run (prod)", inline:true},
-                  {name:"実行者", value:$actor,             inline:true},
-                  {name:"コミット", value:$sha,             inline:false}
-                ],
-                timestamp: $ts
-              }]}'
-            )"
+          PAYLOAD="$(jq -n \
+            --arg title   "$TITLE" \
+            --argjson color $COLOR \
+            --arg sha     "\`${SHORT_SHA}\` ${FIRST_LINE}" \
+            --arg sha_url "$COMMIT_URL" \
+            --arg actor   "$ACTOR" \
+            --arg run_url "$RUN_URL" \
+            --arg ts      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{embeds:[{
+              title: $title,
+              color: $color,
+              url: $run_url,
+              fields: [
+                {name:"環境",   value:"Cloud Run (prod)", inline:true},
+                {name:"実行者", value:$actor,             inline:true},
+                {name:"コミット", value:$sha,             inline:false}
+              ],
+              timestamp: $ts
+            }]}'
+          )"
+          IFS=',' read -ra URLS <<< "$DISCORD_WEBHOOK_URL"
+          for URL in "${URLS[@]}"; do
+            curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
+          done
 
 
   # ── Spot VM失敗時のGitHub-hostedフォールバック
@@ -625,27 +627,29 @@ jobs:
           fi
           SHORT_SHA="${COMMIT_SHA:0:7}"
           FIRST_LINE=$(echo "$COMMIT_MSG" | head -1 | cut -c1-72)
-          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg title   "$TITLE" \
-              --argjson color $COLOR \
-              --arg sha     "\`${SHORT_SHA}\` ${FIRST_LINE}" \
-              --arg actor   "$ACTOR" \
-              --arg run_url "$RUN_URL" \
-              --arg ts      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-              '{embeds:[{
-                title: $title,
-                color: $color,
-                url: $run_url,
-                fields: [
-                  {name:"環境",   value:"tatsunote2 (debug)", inline:true},
-                  {name:"実行者", value:$actor,               inline:true},
-                  {name:"コミット", value:$sha,               inline:false}
-                ],
-                timestamp: $ts
-              }]}'
-            )"
+          PAYLOAD="$(jq -n \
+            --arg title   "$TITLE" \
+            --argjson color $COLOR \
+            --arg sha     "\`${SHORT_SHA}\` ${FIRST_LINE}" \
+            --arg actor   "$ACTOR" \
+            --arg run_url "$RUN_URL" \
+            --arg ts      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{embeds:[{
+              title: $title,
+              color: $color,
+              url: $run_url,
+              fields: [
+                {name:"環境",   value:"tatsunote2 (debug)", inline:true},
+                {name:"実行者", value:$actor,               inline:true},
+                {name:"コミット", value:$sha,               inline:false}
+              ],
+              timestamp: $ts
+            }]}'
+          )"
+          IFS=',' read -ra URLS <<< "$DISCORD_WEBHOOK_URL"
+          for URL in "${URLS[@]}"; do
+            curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
+          done
 
   # ── masterのコードをdebugブランチに自動同期（masterデプロイ成功後）
   sync-debug:
