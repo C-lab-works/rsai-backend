@@ -561,3 +561,19 @@ jobs:
           docker logs --tail 80 rsai-debug
           exit 1
 
+  # ── masterのコードをdebugブランチに自動同期（masterデプロイ成功後）
+  sync-debug:
+    needs: build-and-deploy
+    if: github.ref == 'refs/heads/master' && needs.build-and-deploy.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push master → debug
+        run: git push origin master:debug
+
