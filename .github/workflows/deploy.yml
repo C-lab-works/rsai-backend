@@ -251,6 +251,50 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
           cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
 
+      - name: Discord通知 (master only)
+        if: always() && github.ref_name == 'master'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          JOB_STATUS:          ${{ job.status }}
+          COMMIT_SHA:          ${{ github.sha }}
+          COMMIT_MSG:          ${{ github.event.head_commit.message }}
+          ACTOR:               ${{ github.actor }}
+          REPO:                ${{ github.repository }}
+          RUN_URL:             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            TITLE="✅ Deploy 完了  [master → Cloud Run]"
+            COLOR=2278238
+          else
+            TITLE="❌ Deploy 失敗  [master → Cloud Run]"
+            COLOR=15689796
+          fi
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -1 | cut -c1-72)
+          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg title   "$TITLE" \
+              --argjson color $COLOR \
+              --arg sha     "\`${SHORT_SHA}\` ${FIRST_LINE}" \
+              --arg sha_url "$COMMIT_URL" \
+              --arg actor   "$ACTOR" \
+              --arg run_url "$RUN_URL" \
+              --arg ts      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '{embeds:[{
+                title: $title,
+                color: $color,
+                url: $run_url,
+                fields: [
+                  {name:"環境",   value:"Cloud Run (prod)", inline:true},
+                  {name:"実行者", value:$actor,             inline:true},
+                  {name:"コミット", value:$sha,             inline:false}
+                ],
+                timestamp: $ts
+              }]}'
+            )"
+
 
   # ── Spot VM失敗時のGitHub-hostedフォールバック
   build-and-deploy-fallback:
@@ -560,6 +604,48 @@ jobs:
           echo '--- App logs (last 80 lines) ---'
           docker logs --tail 80 rsai-debug
           exit 1
+
+      - name: Discord通知
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          JOB_STATUS:          ${{ job.status }}
+          COMMIT_SHA:          ${{ github.sha }}
+          COMMIT_MSG:          ${{ github.event.head_commit.message }}
+          ACTOR:               ${{ github.actor }}
+          REPO:                ${{ github.repository }}
+          RUN_URL:             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            TITLE="✅ Deploy 完了  [debug → tatsunote2]"
+            COLOR=2278238
+          else
+            TITLE="❌ Deploy 失敗  [debug → tatsunote2]"
+            COLOR=15689796
+          fi
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -1 | cut -c1-72)
+          curl -sS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg title   "$TITLE" \
+              --argjson color $COLOR \
+              --arg sha     "\`${SHORT_SHA}\` ${FIRST_LINE}" \
+              --arg actor   "$ACTOR" \
+              --arg run_url "$RUN_URL" \
+              --arg ts      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '{embeds:[{
+                title: $title,
+                color: $color,
+                url: $run_url,
+                fields: [
+                  {name:"環境",   value:"tatsunote2 (debug)", inline:true},
+                  {name:"実行者", value:$actor,               inline:true},
+                  {name:"コミット", value:$sha,               inline:false}
+                ],
+                timestamp: $ts
+              }]}'
+            )"
 
   # ── masterのコードをdebugブランチに自動同期（masterデプロイ成功後）
   sync-debug:
