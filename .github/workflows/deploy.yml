@@ -466,13 +466,13 @@ jobs:
               mysql:8.0
             echo 'Waiting for MySQL to be ready...'
             for i in $(seq 1 30); do
-              docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>/dev/null && echo 'MySQL ready' && break || true
+              docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>/dev/null && echo 'MySQL ready' && break || true
               sleep 3
             done
           else
             echo 'MySQL already running, ensuring network membership...'
             docker network connect rsai-debug-net rsai-mysql-debug 2>/dev/null || true
-            docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>/dev/null && echo 'MySQL ping OK' || echo 'WARNING: MySQL ping failed'
+            docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>/dev/null && echo 'MySQL ping OK' || echo 'WARNING: MySQL ping failed'
           fi
 
           echo '=== Pulling image ==='
@@ -516,7 +516,7 @@ jobs:
             echo '--- Network membership ---'
             docker network inspect rsai-debug-net --format '{{range .Containers}}{{.Name}} {{end}}'
             echo '--- MySQL ping ---'
-            docker exec rsai-mysql-debug mysqladmin ping -uroot -p"${DEBUG_DB_PASSWORD}" --silent 2>&1 || true
+            docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>&1 || true
             echo '--- App logs (last 80 lines) ---'
             docker logs --tail 80 rsai-debug
             exit 1
