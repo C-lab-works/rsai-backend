@@ -254,13 +254,13 @@ jobs:
       - name: Discord通知 (master only)
         if: always() && github.ref_name == 'master'
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          JOB_STATUS:          ${{ job.status }}
-          COMMIT_SHA:          ${{ github.sha }}
-          COMMIT_MSG:          ${{ github.event.head_commit.message }}
-          ACTOR:               ${{ github.actor }}
-          REPO:                ${{ github.repository }}
-          RUN_URL:             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          JOB_STATUS:      ${{ job.status }}
+          COMMIT_SHA:      ${{ github.sha }}
+          COMMIT_MSG:      ${{ github.event.head_commit.message }}
+          ACTOR:           ${{ github.actor }}
+          REPO:            ${{ github.repository }}
+          RUN_URL:         ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
             TITLE="✅ Deploy 完了  [master → Cloud Run]"
@@ -292,7 +292,7 @@ jobs:
               timestamp: $ts
             }]}'
           )"
-          IFS=',' read -ra URLS <<< "$DISCORD_WEBHOOK_URL"
+          IFS=',' read -ra URLS <<< "$DISCORD_WEBHOOK"
           for URL in "${URLS[@]}"; do
             curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
           done
@@ -610,13 +610,13 @@ jobs:
       - name: Discord通知
         if: always()
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          JOB_STATUS:          ${{ job.status }}
-          COMMIT_SHA:          ${{ github.sha }}
-          COMMIT_MSG:          ${{ github.event.head_commit.message }}
-          ACTOR:               ${{ github.actor }}
-          REPO:                ${{ github.repository }}
-          RUN_URL:             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          JOB_STATUS:      ${{ job.status }}
+          COMMIT_SHA:      ${{ github.sha }}
+          COMMIT_MSG:      ${{ github.event.head_commit.message }}
+          ACTOR:           ${{ github.actor }}
+          REPO:            ${{ github.repository }}
+          RUN_URL:         ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
             TITLE="✅ Deploy 完了  [debug → tatsunote2]"
@@ -646,7 +646,7 @@ jobs:
               timestamp: $ts
             }]}'
           )"
-          IFS=',' read -ra URLS <<< "$DISCORD_WEBHOOK_URL"
+          IFS=',' read -ra URLS <<< "$DISCORD_WEBHOOK"
           for URL in "${URLS[@]}"; do
             curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
           done

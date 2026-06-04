@@ -210,9 +210,15 @@ def format_comment(result: dict, provider_name: str) -> str:
 def send_discord(result: dict, provider_name: str) -> None:
     if not DISCORD_WEBHOOK:
         return
-    webhook_url = DISCORD_WEBHOOK.replace("canary.discord.com", "discord.com").replace("ptb.discord.com", "discord.com")
-    if not webhook_url.startswith("https://discord.com/api/webhooks/"):
-        print("Discord notification skipped: webhook URL must start with https://discord.com/api/webhooks/")
+    webhook_urls = [
+        u for u in (
+            raw.strip().replace("canary.discord.com", "discord.com").replace("ptb.discord.com", "discord.com")
+            for raw in DISCORD_WEBHOOK.split(",")
+        )
+        if u.startswith("https://discord.com/api/webhooks/")
+    ]
+    if not webhook_urls:
+        print("Discord notification skipped: no valid webhook URLs found")
         return
     findings = result.get("findings", [])
     summary  = result.get("summary", "")
@@ -251,23 +257,21 @@ def send_discord(result: dict, provider_name: str) -> None:
     }
 
     payload = json.dumps({"embeds": [embed]}).encode()
-    req = urllib.request.Request(
-        webhook_url, data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "DiscordBot (https://github.com/C-lab-works/rsai-backend, 1.0)",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10):
-            pass
-        print("Discord notification sent.")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        print(f"Discord notification failed: HTTP {e.code} {e.reason} — {body}")
-    except Exception:
-        print("Discord notification failed: network error")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "DiscordBot (https://github.com/C-lab-works/rsai-backend, 1.0)",
+    }
+    for url in webhook_urls:
+        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+            print(f"Discord notification sent: {url}")
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            print(f"Discord notification failed ({url}): HTTP {e.code} {e.reason} — {body}")
+        except Exception:
+            print(f"Discord notification failed ({url}): network error")
 
 
 def main() -> None:
