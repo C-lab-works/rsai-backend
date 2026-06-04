@@ -657,13 +657,13 @@ jobs:
     if: github.ref == 'refs/heads/master' && needs.build-and-deploy.result == 'success'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      workflows: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
 
       - name: Push master → debug
         run: git push origin master:debug
