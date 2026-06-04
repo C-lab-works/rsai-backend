@@ -261,17 +261,18 @@ def send_discord(result: dict, provider_name: str) -> None:
         "Content-Type": "application/json",
         "User-Agent": "DiscordBot (https://github.com/C-lab-works/rsai-backend, 1.0)",
     }
-    for url in webhook_urls:
+    for i, url in enumerate(webhook_urls):
+        label = f"webhook #{i + 1}"
         req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=10):
                 pass
-            print(f"Discord notification sent: {url}")
+            print(f"Discord notification sent: {label}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"Discord notification failed ({url}): HTTP {e.code} {e.reason} — {body}")
+            print(f"Discord notification failed ({label}): HTTP {e.code} {e.reason} — {body}")
         except Exception:
-            print(f"Discord notification failed ({url}): network error")
+            print(f"Discord notification failed ({label}): network error")
 
 
 def main() -> None:
@@ -307,7 +308,7 @@ def main() -> None:
             print(f"[{provider['name']}] failed: {safe_msg}, trying next...")
 
     if raw is None:
-        output_results("## Security Review\n\n⚠️ All AI providers failed. Check workflow logs.")
+        output_results("## Security Review\n\n All AI providers failed. Check workflow logs.")
         sys.exit(1)
 
     try:
