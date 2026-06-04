@@ -89,6 +89,22 @@ public class AdminController {
     @GetMapping("/admin/instances")
     public void listInstances(Context ctx) {
         ctx.header("Cache-Control", "no-store");
+        if (!FirestoreRest.get().isAvailable()) {
+            InstanceManager im = InstanceManager.get();
+            String buildSha = System.getenv("BUILD_SHA");
+            String revision = im.getInstanceId()
+                + (buildSha != null && !buildSha.isBlank()
+                    ? "-" + buildSha.substring(0, Math.min(8, buildSha.length()))
+                    : "");
+            ObjectNode n = mapper.createObjectNode();
+            n.put("instanceId", im.getInstanceId());
+            n.put("revision",   revision);
+            putStringField(n, "host", System.getenv("HOSTNAME"));
+            n.put("startedAt", im.getStartedAt().toString());
+            n.put("status", "running");
+            ctx.json(mapper.createArrayNode().add(n));
+            return;
+        }
         try {
             Instant now   = Instant.now();
             ArrayNode arr = mapper.createArrayNode();

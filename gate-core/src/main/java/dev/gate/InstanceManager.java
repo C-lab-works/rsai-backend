@@ -436,4 +436,6 @@ public class InstanceManager {
     }
 
     public String getInstanceId() { return instanceId; }
+
+    public Instant getStartedAt() { return startedAt; }
 }

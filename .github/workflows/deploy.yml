@@ -454,6 +454,7 @@ jobs:
           CF_ZONE_ID:            ${{ secrets.CF_ZONE_ID }}
           ORIGIN_SHARED_SECRET:  ${{ secrets.ORIGIN_SHARED_SECRET }}
           GH_PAT:                ${{ secrets.GH_PAT }}
+          GH_SHA:                ${{ github.sha }}
         run: |
           {
             printf 'DB_HOST=%s\n'               'rsai-mysql-debug'
@@ -477,6 +478,7 @@ jobs:
             printf 'GITHUB_BRANCH=debug\n'
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
+            printf 'BUILD_SHA=%s\n'            "${GH_SHA}"
           } > /opt/rsai-debug.env
           chmod 600 /opt/rsai-debug.env
 
