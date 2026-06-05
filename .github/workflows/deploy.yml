@@ -146,13 +146,12 @@ jobs:
           cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
 
   # ── Spot VM失敗時のGitHub-hostedフォールバック
-  # needsからstart-runnerを外すことで、start-runnerがfailure/skippedでも確実に起動できる
-  # start-runnerの失敗はbuildがskipped/failureになることで間接的に判断する
   build-fallback:
-    needs: [build]
+    needs: [start-runner, build]
     if: >-
       always() &&
-      contains(fromJSON('["failure","cancelled","skipped"]'), needs.build.result)
+      (needs.start-runner.result == 'failure' ||
+       contains(fromJSON('["failure","cancelled"]'), needs.build.result))
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
