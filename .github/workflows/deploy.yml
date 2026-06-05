@@ -240,7 +240,7 @@ jobs:
                     startupProbe:
                       httpGet:
                         path: /health
-                      initialDelaySeconds: 3
+                      initialDelaySeconds: 1
                       periodSeconds: 5
                       failureThreshold: 60
                       timeoutSeconds: 5
