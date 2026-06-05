@@ -241,9 +241,9 @@ jobs:
                       httpGet:
                         path: /health
                       initialDelaySeconds: 1
-                      periodSeconds: 1
-                      failureThreshold: 300
-                      timeoutSeconds: 5
+                      periodSeconds: 2
+                      failureThreshold: 150
+                      timeoutSeconds: 1
                     env:
                       - name: DB_HOST
                         value: "${{ secrets.DB_HOST }}"
