@@ -593,5 +593,7 @@ jobs:
         run: |
           git config user.email "actions@github.com"
           git config user.name "github-actions[bot]"
-          git commit --allow-empty -m "sync: master to debug"
+          git commit --amend -m "$(git log -1 --format=%B)
+
+sync: master to debug"
           git push origin HEAD:debug --force
