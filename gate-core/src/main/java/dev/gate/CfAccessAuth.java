@@ -34,9 +34,8 @@ public class CfAccessAuth implements Handler {
     private static final Logger logger = new Logger(CfAccessAuth.class);
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private static final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+    // アプリ全体で共有する HttpClient（接続タイムアウト 5s。読み取り上限は各 HttpRequest 側で指定）。
+    private static final HttpClient httpClient = dev.gate.core.Http.CLIENT;
 
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(1);
     private static final long CLOCK_SKEW_LEEWAY_SECS = 30L;
@@ -131,7 +130,12 @@ public class CfAccessAuth implements Handler {
         }
     }
 
-    // JWT認証が必要かどうかの判定。
+    // JWT 抽出・検証をこのフィルタで行う対象かどうかの判定。
+    // 注意: 「true=admin限定で拒否」ではない。/admin は handle() で admin email を強制するが、
+    // POST /congestion/ は handle() の非 /admin 分岐に落ち、トークンがあれば email を
+    // opportunistic に抽出するだけ（admin か否かは問わない）。
+    // POST /congestion の実際のアクセス制御は ApiKeyAuth（admin API キー）が担保し、
+    // ここで抽出した email は監査ログ用途（誰が更新したか）として CongestionController に渡る。
     private static boolean needsJwtVerification(Context ctx) {
         String path = ctx.path();
         if (path.startsWith("/admin")) return true;
@@ -174,6 +178,12 @@ public class CfAccessAuth implements Handler {
                 ctx.status(401).json(Map.of("error", "Invalid or expired Cloudflare Access token")).halt();
             }
         } else if (token != null && !token.isBlank()) {
+            // 非 /admin（実質 POST /congestion/）。ここでは admin 判定は行わず、
+            // 有効なトークンから email を抽出して監査用に attribute へ載せるだけ。
+            // アクセス可否は ApiKeyAuth（admin API キー）が既に担保しており、
+            // CongestionController 側は「email が存在する=CF認証済み」を要件とする
+            // （ADMIN_EMAILS 限定ではなく、CF Access 配下の認証ユーザを許容する設計）。
+            // トークンが無効/期限切れなら email は載らず、CongestionController が 401 を返す。
             try {
                 String email = verifyAndExtractEmailCached(token);
                 ctx.setAttribute(ATTR_VERIFIED_EMAIL, email);

@@ -115,6 +115,10 @@ public class CongestionController {
             }
             if (level < 0 || level > 2) { ctx.status(400).json(Map.of("error", "level must be 0-2")); return; }
 
+            // 要件は「CF Access で認証済みであること」。CfAccessAuth が opportunistic に
+            // 抽出した email がここに載る。ADMIN_EMAILS 限定ではなく（運用スタッフによる
+            // 混雑度更新を許容する設計）、admin API キー保有は ApiKeyAuth で別途担保済み。
+            // email が無い=トークン未提示/無効 → 認証必須として 401。
             String updatedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
             if (updatedBy == null || updatedBy.isBlank()) {
                 ctx.status(401).json(Map.of("error", "Authentication required"));

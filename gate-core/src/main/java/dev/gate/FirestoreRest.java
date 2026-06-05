@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class FirestoreRest {
 
     private static final Logger        log      = new Logger(FirestoreRest.class);
-    private static final HttpClient    HTTP     = HttpClient.newHttpClient();
+    private static final HttpClient    HTTP     = dev.gate.core.Http.CLIENT;
     private static final ObjectMapper  MAPPER   = new ObjectMapper();
     private static final String        META     = "http://metadata.google.internal/computeMetadata/v1/";
     private static final FirestoreRest INSTANCE = new FirestoreRest();

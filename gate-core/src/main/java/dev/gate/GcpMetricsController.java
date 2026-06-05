@@ -26,7 +26,7 @@ public class GcpMetricsController {
 
     private static final Logger      logger          = new Logger(GcpMetricsController.class);
     private static final ObjectMapper mapper          = new ObjectMapper();
-    private static final HttpClient  http            = HttpClient.newHttpClient();
+    private static final HttpClient  http            = dev.gate.core.Http.CLIENT;
     private static final String      METADATA_BASE   = "http://metadata.google.internal/computeMetadata/v1/";
     private static final String      MONITORING_BASE = "https://monitoring.googleapis.com/v3/projects/";
 

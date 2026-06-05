@@ -9,8 +9,6 @@ import dev.gate.core.Database;
 import dev.gate.core.HttpCache;
 import dev.gate.mapping.GetMapping;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
@@ -22,7 +20,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
-import java.util.zip.GZIPOutputStream;
 
 @GateController
 public class DataController {
@@ -55,7 +52,7 @@ public class DataController {
     private void refreshKey(String key, Builder builder) throws Exception {
         try (Connection conn = Database.getConnection()) {
             byte[] json = MAPPER.writeValueAsBytes(builder.build(conn));
-            byte[] gzip = gzip(json);
+            byte[] gzip = HttpCache.gzip(json);
             cache.put(key, new CacheEntry(json, gzip, HttpCache.etag(json)));
         }
     }
@@ -92,14 +89,6 @@ public class DataController {
         } else {
             ctx.jsonBytes(entry.json());
         }
-    }
-
-    private static byte[] gzip(byte[] data) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream(data.length / 3);
-        try (GZIPOutputStream gos = new GZIPOutputStream(baos)) {
-            gos.write(data);
-        }
-        return baos.toByteArray();
     }
 
     // /events

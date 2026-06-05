@@ -22,8 +22,11 @@ public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
     private static final AtomicInteger BG_COUNTER = new AtomicInteger();
+    // データ更新ポーラ・JWKS prefetch・インスタンスメトリクス・YAML キャッシュ更新など
+    // 複数の周期タスクを捌くためのスケジューラ。YAML キャッシュルートが増えると周期タスクも
+    // 増えるため、DB ストール時のスレッド占有に余裕を持たせて 8 本確保する。
     static final ScheduledExecutorService bg =
-            Executors.newScheduledThreadPool(6, r -> {
+            Executors.newScheduledThreadPool(8, r -> {
                 Thread t = new Thread(r, "bg-poller-" + BG_COUNTER.getAndIncrement());
                 t.setDaemon(true);
                 return t;
@@ -39,9 +42,6 @@ public class Main {
         // CF Access 認証ハンドラの初期化
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
         // prefetchJwks は DB 初期化後にキャッシュ充填と並列で実行
-
-        // Database init (background thread)
-        startDatabaseInit(config.getDatabase(), cfAccessAuth);
 
         // --- Middleware & Auth ---
 
@@ -77,8 +77,12 @@ public class Main {
             gate.register(new GcpMetricsController());
         }
 
-        // routes.yaml から宣言的ルートを登録
+        // routes.yaml から宣言的ルートを登録（DB 非依存。キャッシュ対象ルートを確定させてから
+        // DB 初期化スレッドの初回キャッシュ充填が走るよう、startDatabaseInit より前に呼ぶ）。
         YamlRouteLoader.load(gate);
+
+        // Database init (background thread) — DataSeeder・各種キャッシュ初回充填を含む
+        startDatabaseInit(config.getDatabase(), cfAccessAuth);
 
         // --- Startup ---
 
@@ -100,6 +104,7 @@ public class Main {
                     initFutures.add(bg.submit((Callable<Void>) () -> { new DataController().refreshAll(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { CongestionController.refreshCache(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { AnnouncementsController.refreshCache(); return null; }));
+                    initFutures.add(bg.submit((Callable<Void>) () -> { YamlRouteLoader.refreshAll(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { cfAccessAuth.prefetchJwks(); return null; }));
                     Exception initError = null;
                     for (Future<?> f : initFutures) {
@@ -181,6 +186,9 @@ public class Main {
 
         // 50分ごとにJWKS公開鍵を事前更新（TTL=60分の10分前）
         bg.scheduleAtFixedRate(cfAccessAuth::prefetchJwks, 50, 50, TimeUnit.MINUTES);
+
+        // routes.yaml の cache 指定ルートを、各 TTL 間隔で背景リフレッシュ
+        YamlRouteLoader.startBackgroundRefreshes(bg);
 
         // Firestore インスタンス管理（自己登録・コマンドリスナー・ブロードキャスト）
         InstanceManager.get().init(() -> APP_READY.set(false));

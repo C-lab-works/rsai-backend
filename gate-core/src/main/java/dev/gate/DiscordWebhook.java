@@ -20,7 +20,7 @@ public class DiscordWebhook {
             .or(() -> Optional.ofNullable(System.getenv("K_SERVICE")))
             .orElse(IS_DEBUG ? "debug" : "local");
     private static final long       DEBOUNCE_MS = 5_000L;
-    private static final HttpClient HTTP        = HttpClient.newHttpClient();
+    private static final HttpClient HTTP        = dev.gate.core.Http.CLIENT;
     private static final ConcurrentHashMap<String, AtomicLong> lastSent = new ConcurrentHashMap<>();
 
     private static String resolveWebhook() {

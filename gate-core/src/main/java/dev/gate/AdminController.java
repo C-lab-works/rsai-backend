@@ -49,7 +49,7 @@ public class AdminController {
 
     private static final Logger       logger              = new Logger(AdminController.class);
     private static final ObjectMapper mapper              = new ObjectMapper();
-    private static final HttpClient   http                = HttpClient.newHttpClient();
+    private static final HttpClient   http                = dev.gate.core.Http.CLIENT;
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
@@ -65,6 +65,11 @@ public class AdminController {
     // ファイルシステムアクセス系キーワード（正規化済み文字列への部分一致で拒否）
     private static final List<String> BLOCKED_SQL_FRAGMENTS = List.of(
         "INTO OUTFILE", "INTO DUMPFILE", "LOAD_FILE", "LOAD DATA"
+    );
+
+    // 書き込み系（INSERT/UPDATE/DELETE）と DDL（ALTER）。Discord 通知の要否判定に使用。
+    private static final Set<String> WRITE_SQL_KEYWORDS = Set.of(
+        "INSERT", "UPDATE", "DELETE", "ALTER"
     );
 
     // インスタンスコマンドホワイトリスト
@@ -295,6 +300,7 @@ public class AdminController {
             new DataController().refreshAll();
             AnnouncementsController.refreshCache();
             CongestionController.refreshCache();
+            dev.gate.core.YamlRouteLoader.refreshAll();
 
             String clearedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
             logger.info("cache refreshed by=" + clearedBy);
@@ -307,7 +313,7 @@ public class AdminController {
             res.put("ok", true);
             res.put("cf_cache_purged", cfPurged);
             ArrayNode cleared = res.putArray("refreshed");
-            for (String key : new String[]{"events", "food", "map", "announcements", "congestion"}) {
+            for (String key : new String[]{"events", "food", "map", "announcements", "congestion", "api"}) {
                 cleared.add(key);
             }
             ctx.json(res);
@@ -680,13 +686,23 @@ public class AdminController {
             for (String raw : splitStatements(sql)) {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
-                String norm = WHITESPACE_PATTERN.matcher(stripSqlComments(stmt).toUpperCase()).replaceAll(" ").trim();
+                String norm = normalizeSql(stmt);
+                // ファイルアクセス系（INTO OUTFILE/DUMPFILE, LOAD_FILE, LOAD DATA）を拒否。
+                // norm は大文字化＋空白圧縮済みなので BLOCKED_SQL_FRAGMENTS とそのまま部分一致できる。
+                // 注: stripSqlComments は文字列リテラルを除去しないため、リテラル内に該当語があると
+                // 誤検知し得るが、admin 専用ツールゆえ実害なしとして許容する（多層防御を優先）。
+                String blocked = matchedBlockedFragment(norm);
+                if (blocked != null) {
+                    ctx.status(403).json(Map.of("error", "ファイルアクセス系操作は許可されていません: " + blocked));
+                    return;
+                }
                 String[] words = WHITESPACE_PATTERN.split(norm, 3);
                 String first = words.length > 0 ? words[0] : "";
                 if (!ALLOWED_SQL_KEYWORDS.contains(first)) {
                     ctx.status(403).json(Map.of("error", "この操作は許可されていません: " + first));
                     return;
                 }
+                if (isWriteKeyword(first)) hasWrite = true;
                 if ("ALTER".equals(first)) {
                     String second = words.length > 1 ? words[1] : "";
                     if (!"TABLE".equals(second)) {
@@ -760,7 +776,27 @@ public class AdminController {
         }
     }
 
-    private static String stripSqlComments(String s) {
+    // SQL 文を検証用に正規化する: コメント除去 → 大文字化 → 連続空白を単一空白へ圧縮 → trim。
+    // テスト容易化と execSql とのロジック共有のため package-private。
+    static String normalizeSql(String stmt) {
+        return WHITESPACE_PATTERN.matcher(stripSqlComments(stmt).toUpperCase()).replaceAll(" ").trim();
+    }
+
+    // 先頭キーワードが書き込み系（INSERT/UPDATE/DELETE/ALTER）か。Discord 通知要否の判定に使用。
+    static boolean isWriteKeyword(String firstKeyword) {
+        return WRITE_SQL_KEYWORDS.contains(firstKeyword);
+    }
+
+    // 正規化済み（大文字化＋空白圧縮）SQL に含まれる最初のブロック対象フラグメントを返す。
+    // 該当なしは null。テスト容易化のため package-private。
+    static String matchedBlockedFragment(String norm) {
+        for (String frag : BLOCKED_SQL_FRAGMENTS) {
+            if (norm.contains(frag)) return frag;
+        }
+        return null;
+    }
+
+    static String stripSqlComments(String s) {
         StringBuilder out = new StringBuilder(s.length());
         int n = s.length();
         for (int i = 0; i < n; ) {
@@ -803,7 +839,7 @@ public class AdminController {
         return out.toString();
     }
 
-    private static List<String> splitStatements(String sql) {
+    static List<String> splitStatements(String sql) {
         List<String> stmts = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
         int n = sql.length();

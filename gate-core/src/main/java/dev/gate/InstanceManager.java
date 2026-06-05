@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -85,7 +84,7 @@ public class InstanceManager {
                 .timeout(Duration.ofSeconds(1))
                 .header("Metadata-Flavor", "Google")
                 .build();
-            HttpResponse<String> resp = HttpClient.newHttpClient()
+            HttpResponse<String> resp = dev.gate.core.Http.CLIENT
                 .send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() == 200) {
                 String id = resp.body().trim();

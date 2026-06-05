@@ -3,29 +3,40 @@
 #   - path:    エンドポイントの URL パス
 #     table:   クエリ対象の DB テーブル名
 #     columns: 返すカラムのリスト
+#     cache:   (必須) キャッシュ TTL。<数値><単位 s|m|h> 例: 30s / 5m / 1h
+#              0s = キャッシュ無効（リクエスト毎に DB を直接参照）
+#              1以上 = その間隔で背景更新し、ETag/304/gzip 付きでキャッシュ配信する
+#              ※ cache を書かないルートは設定漏れとしてスキップされる
 # → GET {path} が自動的に "SELECT {columns} FROM {table}" を実行し JSON 配列で返す
+# 管理画面の「キャッシュクリア」で全 cache ルートは即時更新される。
 
 routes:
   - path: /api/locations
     table: locations
     columns: [id, name, floor, location_code, svg_id, x, y]
+    cache: 30s
 
   - path: /api/categories
     table: categories
     columns: [id, name]
+    cache: 5m
 
   - path: /api/projects
     table: projects
     columns: [id, title, organizer, description, image_url, location_id]
+    cache: 30s
 
   - path: /api/foods
     table: foods
     columns: [id, name, description, image_url]
+    cache: 30s
 
   - path: /api/menus
     table: menus
     columns: [id, food_id, name, price, description, is_sold_out]
+    cache: 30s
 
   - path: /api/credit
     table: credit
     columns: [id, name]
+    cache: 1h
