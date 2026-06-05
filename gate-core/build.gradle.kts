@@ -63,7 +63,10 @@ graalvmNative {
                 // スタック / Direct バッファ / ネイティブ部分用に ~500 MB ヘッドルームを残す。
                 // それ以上を使うようになったら OOM-kill の手前で GC が動くようにし、
                 // コンテナクラッシュより OutOfMemoryError のほうがトリアージしやすい。
-                "-R:MaxHeapSize=1536m"
+                "-R:MaxHeapSize=1536m",
+                // 最大最適化（Oracle GraalVM GFTC 専用）
+                // バイナリサイズ増・ビルド時間増だが実行時スループット向上。初回のみ影響。
+                "-O3"
             )
         }
     }

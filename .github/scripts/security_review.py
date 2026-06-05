@@ -19,6 +19,7 @@ AFTER_SHA = os.environ.get("AFTER_SHA", "")
 GITHUB_STEP_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "30000"))
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
+REPORT_FILE = "security-review.md"
 
 SECURITY_PROMPT = """あなたはJava 21バックエンドサービス（Jetty HTTPサーバー、Firestore REST API、MySQL、Cloud Run上でデプロイ）のgit diffをレビューするシニアセキュリティエンジニアです。OWASP Top 10およびCWEタクソノミーを適用してください。
 
@@ -169,6 +170,10 @@ def ai_chat(provider: dict, prompt: str, max_continuation: int = 3) -> str:
 
 
 def output_results(body: str) -> None:
+    # Always write to report file so it can be uploaded as an artifact
+    with open(REPORT_FILE, "w") as f:
+        f.write(body + "\n")
+
     if PR_NUMBER:
         url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{PR_NUMBER}/comments"
         with gh_request(url, method="POST", body={"body": body}):
