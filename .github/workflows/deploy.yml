@@ -594,6 +594,6 @@ jobs:
             echo "debug already contains master. Nothing to sync."
             exit 0
           fi
-          git merge origin/master --no-edit \
+          git merge origin/master --no-ff --no-edit \
             -m "Merge branch 'master' into debug [skip ci]"
           git push origin HEAD:debug
