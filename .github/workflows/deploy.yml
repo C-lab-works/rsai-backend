@@ -17,9 +17,31 @@ env:
   AR_BASE:      ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rsai-backend/rsai-backend
 
 jobs:
+  # ── debug push がsyncかどうかを判定（masterのSHAの祖先なら sync）
+  check-sync:
+    if: github.ref_name == 'debug'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      is_sync: ${{ steps.check.outputs.is_sync }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        run: |
+          git fetch origin master
+          git merge-base --is-ancestor "${{ github.sha }}" origin/master \
+            && echo "is_sync=true"  >> "$GITHUB_OUTPUT" \
+            || echo "is_sync=false" >> "$GITHUB_OUTPUT"
+
   # ── Spot VMを起動してrunnerがオンラインになるまで待機
   start-runner:
-    if: "!contains(github.event.head_commit.message, 'sync: master to debug')"
+    needs: [check-sync]
+    if: "always() && needs.check-sync.outputs.is_sync != 'true'"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -128,7 +150,6 @@ jobs:
     needs: [start-runner, build]
     if: >-
       always() &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.start-runner.result == 'failure' ||
        contains(fromJSON('["failure","cancelled"]'), needs.build.result))
     runs-on: ubuntu-latest
@@ -195,7 +216,6 @@ jobs:
     if: >-
       always() &&
       github.ref_name == 'master' &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: ubuntu-latest
     permissions:
@@ -385,7 +405,6 @@ jobs:
     needs: [build, build-fallback]
     if: >-
       always() &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: [self-hosted, tatsunote2]
     timeout-minutes: 20
@@ -570,14 +589,12 @@ jobs:
           done
 
   # ── masterのコードをdebugブランチに自動同期（ビルド成功後）
-  # "sync: master to debug" コミットで識別子を付けることで、
-  # debug側のworkflow triggerで全ジョブがスキップされ二重実行を防ぐ
+  # debug側はcheck-syncジョブでSHAがmasterの祖先かを判定し、syncなら全ジョブをスキップ
   sync-debug:
     needs: [build, build-fallback]
     if: >-
       always() &&
       github.ref_name == 'master' &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: ubuntu-latest
     permissions:
@@ -590,10 +607,4 @@ jobs:
           token: ${{ secrets.GH_PAT }}
 
       - name: Push master → debug
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions[bot]"
-          git commit --amend -m "$(git log -1 --format=%B)
-
-sync: master to debug"
-          git push origin HEAD:debug --force
+        run: git push origin master:debug
