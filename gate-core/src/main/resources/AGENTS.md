@@ -14,7 +14,6 @@
 | `routes.yaml` | 宣言的 GET ルート定義。`YamlRouteLoader` が `Gate` に自動登録する |
 | `schema.sql` | MySQL テーブル定義。`DataSeeder` が初回起動時に適用 |
 | `logback.xml` | Logback ロギング設定（Cloud Run の Cloud Logging 向けフォーマット） |
-| `version.txt` | ビルド時に埋め込まれるバージョン文字列。`Main` が起動ログに出力 |
 
 ## Subdirectories
 

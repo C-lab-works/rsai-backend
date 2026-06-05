@@ -7,8 +7,6 @@ import dev.gate.core.Gate;
 import dev.gate.core.Logger;
 import dev.gate.core.YamlRouteLoader;
 
-import java.io.InputStream;
-import java.util.Properties;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -180,15 +178,11 @@ public class Main {
     }
 
     private static String loadVersion() {
-        // getClassLoader().getResourceAsStream は GraalVM native image で null を返す場合があるため
-        // Class.getResourceAsStream("/...") (絶対パス) を使用する
-        try (InputStream is = Main.class.getResourceAsStream("/version.txt")) {
-            if (is == null) return "unknown";
-            Properties props = new Properties();
-            props.load(is);
-            return props.getProperty("version", "unknown");
-        } catch (Exception e) {
-            return "unknown";
-        }
+        // バージョンはビルド成果物に焼き込まず、デプロイ時に環境変数 APP_VERSION で注入する。
+        // こうすることで version.txt を src 内で書き換える必要がなくなり、
+        // GraalVM nativeCompile のレイヤーキャッシュが SHA 変化で無効化されなくなる。
+        // 取得できない場合は空によるエラーを避けるため文字列 "null" を返す。
+        String version = System.getenv("APP_VERSION");
+        return (version == null || version.isEmpty()) ? "null" : version;
     }
 }

@@ -92,12 +92,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Generate version.txt
-        run: |
-          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
-
       - name: Build and push to AR + GHCR (master)
         if: github.ref_name == 'master'
         uses: docker/build-push-action@v7
@@ -161,12 +155,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Generate version.txt
-        run: |
-          BASE=$(grep '^version=' gate-core/src/main/resources/version.txt | cut -d'=' -f2 | tr -d '[:space:]')
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          echo "version=${BASE}-${SHORT_SHA}" > gate-core/src/main/resources/version.txt
-
       - name: Build and push to AR + GHCR (master)
         if: github.ref_name == 'master'
         uses: docker/build-push-action@v7
@@ -178,6 +166,8 @@ jobs:
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
+          cache-to:   type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache,mode=max
 
       - name: Build and push to GHCR (debug)
         if: github.ref_name == 'debug'
@@ -188,6 +178,8 @@ jobs:
           tags: |
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
+          cache-to:   type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug,mode=max
 
   # ── Cloud Run デプロイ (master only, deploy-debug と並列実行)
   deploy-cloudrun:
@@ -212,6 +204,7 @@ jobs:
       - name: Generate Cloud Run service YAML
         run: |
           AR_IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          APP_VERSION="$(echo "${{ github.sha }}" | cut -c1-7)"
           cat > service.yaml <<EOF
           apiVersion: serving.knative.dev/v1
           kind: Service
@@ -284,6 +277,8 @@ jobs:
                         value: "${{ secrets.CF_ZONE_ID }}"
                       - name: RUNMODE
                         value: "cloudrun"
+                      - name: APP_VERSION
+                        value: "${APP_VERSION}"
                       - name: GITHUB_PAT
                         value: "${{ secrets.GH_PAT }}"
                       - name: GITHUB_OWNER
@@ -436,6 +431,7 @@ jobs:
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
             printf 'BUILD_SHA=%s\n'            "${GH_SHA}"
+            printf 'APP_VERSION=%s\n'          "${GH_SHA:0:7}"
           } > /opt/rsai-debug.env
           chmod 600 /opt/rsai-debug.env
 
