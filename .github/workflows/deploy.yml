@@ -18,8 +18,9 @@ env:
 
 jobs:
   # ── Spot VMを起動してrunnerがオンラインになるまで待機
+  # （master→debug の自動同期pushは sync-debug が [skip ci] を付けるため
+  #   そもそもこのワークフロー自体が起動しない。通常の debug push では起動する）
   start-runner:
-    if: "!contains(github.event.head_commit.message, 'sync: master to debug')"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -60,7 +61,7 @@ jobs:
   # ── Spot VMでのビルド & レジストリ push (AR + GHCR)
   build:
     needs: start-runner
-    if: needs.start-runner.result == 'success'
+    if: always() && needs.start-runner.result == 'success'
     runs-on: [self-hosted, spot]
     timeout-minutes: 60
     permissions:
@@ -128,7 +129,6 @@ jobs:
     needs: [start-runner, build]
     if: >-
       always() &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.start-runner.result == 'failure' ||
        contains(fromJSON('["failure","cancelled"]'), needs.build.result))
     runs-on: ubuntu-latest
@@ -195,7 +195,6 @@ jobs:
     if: >-
       always() &&
       github.ref_name == 'master' &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: ubuntu-latest
     permissions:
@@ -385,7 +384,6 @@ jobs:
     needs: [build, build-fallback]
     if: >-
       always() &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: [self-hosted, tatsunote2]
     timeout-minutes: 20
@@ -570,28 +568,36 @@ jobs:
           done
 
   # ── masterのコードをdebugブランチに自動同期（ビルド成功後）
-  # "sync: master to debug" コミットで識別子を付けることで、
-  # debug側のworkflow triggerで全ジョブがスキップされ二重実行を防ぐ
+  # masterをdebugにマージしてpushする（force不要、debug独自コミットも保持）。
+  # 同期コミットに [skip ci] を付けるので、debugへのこのpushでは
+  # ワークフローが起動しない。開発者が通常にdebugへpushしたときは起動する。
   sync-debug:
     needs: [build, build-fallback]
     if: >-
       always() &&
       github.ref_name == 'master' &&
-      !contains(github.event.head_commit.message, 'sync: master to debug') &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: debug
           token: ${{ secrets.GH_PAT }}
 
-      - name: Push master → debug
+      - name: Merge master into debug and push
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions[bot]"
-          git commit --allow-empty -m "sync: master to debug"
-          git push origin HEAD:debug --force
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          # すでにdebugがmasterを含んでいれば（同期不要）何もしない
+          if git merge-base --is-ancestor origin/master HEAD; then
+            echo "debug already contains master. Nothing to sync."
+            exit 0
+          fi
+          git merge origin/master --no-edit \
+            -m "Merge branch 'master' into debug [skip ci]"
+          git push origin HEAD:debug
