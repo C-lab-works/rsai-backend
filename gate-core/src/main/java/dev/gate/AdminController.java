@@ -1215,7 +1215,7 @@ public class AdminController {
         String repo     = System.getenv("GITHUB_REPO");
         String branch   = System.getenv("GITHUB_BRANCH");
         String workflow = System.getenv("GITHUB_WORKFLOW_FILE");
-        if (workflow == null || workflow.isBlank()) workflow = "cloud-run-deploy.yml";
+        if (workflow == null || workflow.isBlank()) workflow = "deploy.yml";
         // codeQLとかを除外するためのworkflow指定。
         String url = "https://api.github.com/repos/" + owner + "/" + repo
                    + "/actions/workflows/" + workflow + "/runs?branch=" + branch + "&per_page=1";
