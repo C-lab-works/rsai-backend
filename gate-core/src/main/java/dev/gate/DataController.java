@@ -18,7 +18,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.zip.GZIPOutputStream;
 
 @GateController
@@ -36,9 +39,17 @@ public class DataController {
     }
 
     public void refreshAll() throws Exception {
-        refreshKey("events", this::buildEvents);
-        refreshKey("food",   this::buildFood);
-        refreshKey("map",    this::buildMap);
+        List<Future<Void>> futures = new ArrayList<>();
+        futures.add(Main.bg.submit((Callable<Void>) () -> { refreshKey("events", this::buildEvents); return null; }));
+        futures.add(Main.bg.submit((Callable<Void>) () -> { refreshKey("food",   this::buildFood); return null; }));
+        futures.add(Main.bg.submit((Callable<Void>) () -> { refreshKey("map",    this::buildMap); return null; }));
+        Exception err = null;
+        for (Future<Void> f : futures) {
+            try { f.get(); }
+            catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw ex; }
+            catch (ExecutionException ex) { if (err == null) err = (Exception) ex.getCause(); }
+        }
+        if (err != null) throw err;
     }
 
     private void refreshKey(String key, Builder builder) throws Exception {
