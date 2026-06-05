@@ -82,7 +82,7 @@ jobs:
   # ── Spot VMでのビルド & レジストリ push (AR + GHCR)
   build:
     needs: start-runner
-    if: needs.start-runner.result == 'success'
+    if: always() && needs.start-runner.result == 'success'
     runs-on: [self-hosted, spot]
     timeout-minutes: 60
     permissions:
