@@ -17,31 +17,10 @@ env:
   AR_BASE:      ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rsai-backend/rsai-backend
 
 jobs:
-  # ── debug push がsyncかどうかを判定（masterのSHAの祖先なら sync）
-  check-sync:
-    if: github.ref_name == 'debug'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      is_sync: ${{ steps.check.outputs.is_sync }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - id: check
-        run: |
-          git fetch origin master
-          git merge-base --is-ancestor "${{ github.sha }}" origin/master \
-            && echo "is_sync=true"  >> "$GITHUB_OUTPUT" \
-            || echo "is_sync=false" >> "$GITHUB_OUTPUT"
-
   # ── Spot VMを起動してrunnerがオンラインになるまで待機
+  # （master→debug の自動同期pushは sync-debug が [skip ci] を付けるため
+  #   そもそもこのワークフロー自体が起動しない。通常の debug push では起動する）
   start-runner:
-    needs: [check-sync]
-    if: "always() && needs.check-sync.outputs.is_sync != 'true'"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -589,7 +568,9 @@ jobs:
           done
 
   # ── masterのコードをdebugブランチに自動同期（ビルド成功後）
-  # debug側はcheck-syncジョブでSHAがmasterの祖先かを判定し、syncなら全ジョブをスキップ
+  # masterをdebugにマージしてpushする（force不要、debug独自コミットも保持）。
+  # 同期コミットに [skip ci] を付けるので、debugへのこのpushでは
+  # ワークフローが起動しない。開発者が通常にdebugへpushしたときは起動する。
   sync-debug:
     needs: [build, build-fallback]
     if: >-
@@ -598,13 +579,25 @@ jobs:
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: debug
           token: ${{ secrets.GH_PAT }}
 
-      - name: Push master → debug
-        run: git push origin master:debug
+      - name: Merge master into debug and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin master
+          # すでにdebugがmasterを含んでいれば（同期不要）何もしない
+          if git merge-base --is-ancestor origin/master HEAD; then
+            echo "debug already contains master. Nothing to sync."
+            exit 0
+          fi
+          git merge origin/master --no-edit \
+            -m "Merge branch 'master' into debug [skip ci]"
+          git push origin HEAD:debug
