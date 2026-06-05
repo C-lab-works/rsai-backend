@@ -8,7 +8,9 @@ RUN --mount=type=cache,target=/root/.gradle \
 COPY gate-core/src gate-core/src
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew :gate-core:nativeCompile --no-daemon -q
-FROM container-registry.oracle.com/graalvm/native-image:21-ol10
+FROM oraclelinux:10-slim
+# curl はコンテナ内 Docker health-cmd で必要
+RUN microdnf install -y --nodocs curl && microdnf clean all
 WORKDIR /app
 COPY --from=build /app/gate-core/build/native/nativeCompile/app ./app
 EXPOSE 8080
