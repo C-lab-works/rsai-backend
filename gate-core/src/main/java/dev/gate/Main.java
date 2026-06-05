@@ -7,7 +7,12 @@ import dev.gate.core.Gate;
 import dev.gate.core.Logger;
 import dev.gate.core.YamlRouteLoader;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,7 +22,7 @@ public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
     private static final AtomicInteger BG_COUNTER = new AtomicInteger();
-    private static final ScheduledExecutorService bg =
+    static final ScheduledExecutorService bg =
             Executors.newScheduledThreadPool(6, r -> {
                 Thread t = new Thread(r, "bg-poller-" + BG_COUNTER.getAndIncrement());
                 t.setDaemon(true);
@@ -33,7 +38,7 @@ public class Main {
 
         // CF Access 認証ハンドラの初期化
         CfAccessAuth cfAccessAuth = new CfAccessAuth();
-        cfAccessAuth.prefetchJwks();
+        // prefetchJwks は DB 初期化後にキャッシュ充填と並列で実行
 
         // Database init (background thread)
         startDatabaseInit(config.getDatabase(), cfAccessAuth);
@@ -89,11 +94,20 @@ public class Main {
                     Database.init(dbConfig);
                     DataSeeder.seed();
 
-                    // 起動時キャッシュ初回充填（同期）
+                    // 起動時キャッシュ初回充填（並列: events/food/map/混雑/お知らせ/JWKS）
                     log.info("Performing initial cache fill...");
-                    new DataController().refreshAll();
-                    CongestionController.refreshCache();
-                    AnnouncementsController.refreshCache();
+                    List<Future<?>> initFutures = new ArrayList<>();
+                    initFutures.add(bg.submit((Callable<Void>) () -> { new DataController().refreshAll(); return null; }));
+                    initFutures.add(bg.submit((Callable<Void>) () -> { CongestionController.refreshCache(); return null; }));
+                    initFutures.add(bg.submit((Callable<Void>) () -> { AnnouncementsController.refreshCache(); return null; }));
+                    initFutures.add(bg.submit((Callable<Void>) () -> { cfAccessAuth.prefetchJwks(); return null; }));
+                    Exception initError = null;
+                    for (Future<?> f : initFutures) {
+                        try { f.get(); }
+                        catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw ex; }
+                        catch (ExecutionException ex) { if (initError == null) initError = (Exception) ex.getCause(); }
+                    }
+                    if (initError != null) throw initError;
                     log.info("Initial cache fill OK");
 
                     APP_READY.set(true);
