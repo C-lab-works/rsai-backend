@@ -241,8 +241,8 @@ jobs:
                       httpGet:
                         path: /health
                       initialDelaySeconds: 1
-                      periodSeconds: 5
-                      failureThreshold: 60
+                      periodSeconds: 1
+                      failureThreshold: 300
                       timeoutSeconds: 5
                     env:
                       - name: DB_HOST
