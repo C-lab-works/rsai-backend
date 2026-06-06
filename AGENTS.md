@@ -3,7 +3,7 @@
 # rsai-backend
 
 ## Purpose
-立命祭 2026（立命館大学学園祭）の公開 API・管理パネル向けバックエンドサービス。Java 21 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
+学校祭用の公開 API・管理パネル向けバックエンドサービス。Java 21 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
 
 ## Key Files
 
@@ -24,11 +24,18 @@
 
 ## For AI Agents
 
-### Working In This Directory
+### Working In This Directory(not recommended)
 - ビルド: `./gradlew shadowJar`（JVM fat-jar）または `./gradlew nativeCompile`（native image）
 - native image は Linux x64 + GraalVM が必要。ローカルでは `./gradlew run` で JVM モード実行可能
 - 環境変数は `gate-core/src/main/resources/config.yml` と実行時 env で管理
 - Cloudflare IP フィルタをスキップするには `SKIP_CF_IP_CHECK=true` を設定
+
+## Working with debug branch
+- ビルド: debugブランチにpushしたら(ssh root@tatsunote2)にデプロイされます。(tailscale、コンテナ名:rsai-debug)
+- CFあり、debugv2.tatsut.jp (本番環境になるべく寄せています。)
+- 環境変数は、 /opt/rsai-debug.env で、そこに書かれていないものは本番環境と同じgithub secretsの内容が使われます。
+- 管理者ページのテストは不可能です。(代用手段を検討中)
+- DBはtatsunote2で動いてるデモDBに接続されます。
 
 ### Testing Requirements
 - `./gradlew test` で JUnit 5 テストを実行
