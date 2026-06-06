@@ -26,7 +26,7 @@ public class FirestoreRest {
 
     private static final Logger        log      = new Logger(FirestoreRest.class);
     private static final HttpClient    HTTP     = dev.gate.core.Http.CLIENT;
-    private static final ObjectMapper  MAPPER   = new ObjectMapper();
+    private static final ObjectMapper  MAPPER   = dev.gate.core.Json.MAPPER;
     private static final String        META     = "http://metadata.google.internal/computeMetadata/v1/";
     private static final FirestoreRest INSTANCE = new FirestoreRest();
 

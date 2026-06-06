@@ -24,7 +24,7 @@ import java.util.concurrent.Future;
 @GateController
 public class DataController {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final String CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=600";
     private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
     private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();

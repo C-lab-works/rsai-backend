@@ -25,7 +25,7 @@ import java.time.Instant;
 public class GcpMetricsController {
 
     private static final Logger      logger          = new Logger(GcpMetricsController.class);
-    private static final ObjectMapper mapper          = new ObjectMapper();
+    private static final ObjectMapper mapper          = dev.gate.core.Json.MAPPER;
     private static final HttpClient  http            = dev.gate.core.Http.CLIENT;
     private static final String      METADATA_BASE   = "http://metadata.google.internal/computeMetadata/v1/";
     private static final String      MONITORING_BASE = "https://monitoring.googleapis.com/v3/projects/";
@@ -50,7 +50,9 @@ public class GcpMetricsController {
         Instant alignedEnd  = Instant.ofEpochSecond((nowPeriod + 1) * periodSeconds);
         Instant alignedStart = alignedEnd.minusSeconds((long) periodSeconds * numBuckets);
 
-        ArrayNode alerts = buildAlertsFromMemory(alignedStart, alignedEnd);
+        // インメモリ・フォールバックは GCP 到達不可（catch）時にだけ構築する。
+        // happy path では queryAlerts() が Cloud Logging から取得（失敗時は内部で同フォールバック）。
+        ArrayNode alerts;
 
         try {
             String accessToken = fetchAccessToken();
@@ -71,7 +73,8 @@ public class GcpMetricsController {
                 instanceCount, cpuUtilization, alerts));
         } catch (Exception e) {
             logger.warn("gcpMetrics unavailable (not on GCP?): {}", e.getMessage());
-            ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets, alerts));
+            ArrayNode fallback = buildAlertsFromMemory(alignedStart, alignedEnd);
+            ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets, fallback));
         }
     }
 

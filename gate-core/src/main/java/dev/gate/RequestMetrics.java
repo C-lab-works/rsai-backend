@@ -16,6 +16,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -36,7 +37,9 @@ public class RequestMetrics {
     // 時間別リングバッファ
     private final AtomicLong[]    hourlyCounts   = new AtomicLong[HOURS];
     private final AtomicLong[]    hourlyErrors   = new AtomicLong[HOURS];
-    private final long[]          slotHour       = new long[HOURS];
+    // record() の定常パスをロックフリーにするため AtomicLongArray（要素ごとに volatile 可視性）。
+    // ロックを取るのは時間繰り上がり時のリセットだけ。
+    private final AtomicLongArray slotHour       = new AtomicLongArray(HOURS);
     // ReentrantLockを使う。Java 21 のVirtual Threadで synchronized を使うと
     // キャリアスレッドがピン留めされるため、高並列時にスループットが落ちる。
     private final ReentrantLock[] slotLocks      = new ReentrantLock[HOURS];
@@ -83,7 +86,7 @@ public class RequestMetrics {
         for (int i = 0; i < HOURS; i++) {
             hourlyCounts[i]   = new AtomicLong(0);
             hourlyErrors[i]   = new AtomicLong(0);
-            slotHour[i]       = currentHour - (HOURS - 1 - i);
+            slotHour.set(i, currentHour - (HOURS - 1 - i));
             slotLocks[i]      = new ReentrantLock();
         }
         for (int i = 0; i < BUCKETS.length; i++) {
@@ -101,6 +104,9 @@ public class RequestMetrics {
     public void init() {
         loadFromDb();
         scheduler.scheduleAtFixedRate(this::flushAll, 45, 45, TimeUnit.SECONDS);
+        // 停止時（Cloud Run SIGTERM / InstanceManager の stop→System.exit など）に
+        // 直近フラッシュ以降（最大45秒分）の差分を取りこぼさないよう最終フラッシュを登録する。
+        Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "metrics-shutdown"));
         logger.info("RequestMetrics永続化有効(45秒ごとにフラッシュ)");
     }
 
@@ -125,7 +131,7 @@ public class RequestMetrics {
                         if (s < 0) s += HOURS;
                         slotLocks[s].lock();
                         try {
-                            slotHour[s] = h;
+                            slotHour.set(s, h);
                             hourlyCounts[s].set(req);
                             hourlyErrors[s].set(err);
                             lastFlushedReq[s] = req;
@@ -190,7 +196,7 @@ public class RequestMetrics {
                 long req, err, diffReq, diffErr;
                 slotLocks[s].lock();
                 try {
-                    if (slotHour[s] != targetHour) continue;
+                    if (slotHour.get(s) != targetHour) continue;
                     req     = hourlyCounts[s].get();
                     err     = hourlyErrors[s].get();
                     diffReq = req - lastFlushedReq[s];
@@ -270,20 +276,31 @@ public class RequestMetrics {
 
         long hour = epochHour();
         int  slot = (int)(hour % HOURS);
-        slotLocks[slot].lock();
-        try {
-            if (slotHour[slot] != hour) {
-                hourlyCounts[slot].set(1);
-                hourlyErrors[slot].set(isError ? 1 : 0);
-                slotHour[slot] = hour;
-                lastFlushedReq[slot] = 0;
-                lastFlushedErr[slot] = 0;
-            } else {
-                hourlyCounts[slot].incrementAndGet();
-                if (isError) hourlyErrors[slot].incrementAndGet();
+        // 定常パス: 当該スロットが既に現在時間ならロック無しで AtomicLong を増やすだけ。
+        // 7000 req/s 規模でも同一時間帯の全リクエストが単一ロックへ直列化するのを避ける。
+        if (slotHour.get(slot) == hour) {
+            hourlyCounts[slot].incrementAndGet();
+            if (isError) hourlyErrors[slot].incrementAndGet();
+        } else {
+            // 時間繰り上がり（24時間に1回/スロット）のみロックして二重チェック後にリセット。
+            slotLocks[slot].lock();
+            try {
+                if (slotHour.get(slot) != hour) {
+                    // カウンタを先に確定してから slotHour を公開する。
+                    // これより前に fast-path に入る他スレッドは旧 hour を見て else 側（ロック待ち）に回る。
+                    hourlyCounts[slot].set(1);
+                    hourlyErrors[slot].set(isError ? 1 : 0);
+                    lastFlushedReq[slot] = 0;
+                    lastFlushedErr[slot] = 0;
+                    slotHour.set(slot, hour);
+                } else {
+                    // ロック待ちの間に別スレッドがリセット済み
+                    hourlyCounts[slot].incrementAndGet();
+                    if (isError) hourlyErrors[slot].incrementAndGet();
+                }
+            } finally {
+                slotLocks[slot].unlock();
             }
-        } finally {
-            slotLocks[slot].unlock();
         }
 
         if ((isError || ctx.statusCode() == 429) && !"/health".equals(path)) {

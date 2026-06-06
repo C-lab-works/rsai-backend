@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 public class CfAccessAuth implements Handler {
     public static final String ATTR_VERIFIED_EMAIL = "cf_verified_email";
     private static final Logger logger = new Logger(CfAccessAuth.class);
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = dev.gate.core.Json.MAPPER;
 
     // アプリ全体で共有する HttpClient（接続タイムアウト 5s。読み取り上限は各 HttpRequest 側で指定）。
     private static final HttpClient httpClient = dev.gate.core.Http.CLIENT;

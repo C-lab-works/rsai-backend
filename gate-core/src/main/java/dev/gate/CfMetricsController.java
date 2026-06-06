@@ -20,7 +20,7 @@ import java.util.Map;
 public class CfMetricsController {
 
     private static final Logger      logger         = new Logger(CfMetricsController.class);
-    private static final ObjectMapper mapper         = new ObjectMapper();
+    private static final ObjectMapper mapper         = dev.gate.core.Json.MAPPER;
     private static final HttpClient  http           = dev.gate.core.Http.CLIENT;
     private static final String      CF_GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
 
