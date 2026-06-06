@@ -8,12 +8,9 @@ CREATE TABLE IF NOT EXISTS seed_version (
     version INT NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS congestion_status (
-    location_id INT          PRIMARY KEY,
-    level       TINYINT(4)   NOT NULL DEFAULT 0,
-    updated_at  DATETIME     NOT NULL,
-    updated_by  VARCHAR(100) NOT NULL
-);
+-- congestion_status は DataSeeder.defineTables が現行形（location_code 主キー）で作成する。
+-- 以前ここで旧形（location_id 主キー）を定義していたが、それだと新規DBで毎回
+-- migrateV11 の変換が走っていたため削除した。
 
 CREATE TABLE IF NOT EXISTS metrics_hourly (
     hour     BIGINT PRIMARY KEY,
@@ -27,8 +24,10 @@ CREATE TABLE IF NOT EXISTS metrics_latency_histogram (
 );
 
 CREATE TABLE IF NOT EXISTS metrics_endpoints (
-    endpoint VARCHAR(250) PRIMARY KEY,
-    hits     BIGINT NOT NULL DEFAULT 0
+    endpoint VARCHAR(250) NOT NULL,
+    date     DATE         NOT NULL DEFAULT '2000-01-01',
+    hits     BIGINT       NOT NULL DEFAULT 0,
+    PRIMARY KEY (endpoint, date)
 );
 
 CREATE TABLE IF NOT EXISTS credit (
