@@ -2,7 +2,7 @@ name: Security Review
 
 on:
   push:
-    branches: [master]
+    branches: [master,debug]
   pull_request:
     branches: [master]
 
