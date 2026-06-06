@@ -26,7 +26,7 @@ import dev.gate.mapping.PostMapping;
 public class CongestionController {
 
     private static final Logger logger = new Logger(CongestionController.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
     private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();

@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AnnouncementsController {
 
     private static final Logger logger = new Logger(AnnouncementsController.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=60, stale-while-revalidate=120";
     private static final String CACHE_KEY = "announcements";
     private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """

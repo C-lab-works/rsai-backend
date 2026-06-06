@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
 public class YamlRouteLoader {
 
     private static final Logger log = new Logger(YamlRouteLoader.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = Json.MAPPER;
     // テーブル名・カラム名に英数字とアンダースコアのみ許可（SQLインジェクション防止）
     private static final Pattern SAFE_IDENT = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
     // cache フィールド書式: <数値><単位 s|m|h>

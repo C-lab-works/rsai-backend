@@ -48,7 +48,7 @@ import dev.gate.mapping.PutMapping;
 public class AdminController {
 
     private static final Logger       logger              = new Logger(AdminController.class);
-    private static final ObjectMapper mapper              = new ObjectMapper();
+    private static final ObjectMapper mapper              = dev.gate.core.Json.MAPPER;
     private static final HttpClient   http                = dev.gate.core.Http.CLIENT;
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[a-zA-Z0-9_]+");
     private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("[a-zA-Z0-9._\\-]+");

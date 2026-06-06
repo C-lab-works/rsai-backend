@@ -11,7 +11,7 @@ import java.util.Map;
 
 public class Context {
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = Json.MAPPER;
     private static final Logger logger = new Logger(Context.class);
     private static final byte[] EMPTY_BYTES = new byte[0];
     static final int MAX_BODY_SIZE = 1024 * 1024; // 1 MB default
