@@ -18,10 +18,10 @@ import java.security.Signature;
 import java.security.spec.RSAPublicKeySpec;
 import java.time.Duration;
 import java.time.Instant;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,15 +42,10 @@ public class CfAccessAuth implements Handler {
     private static final int VERIFICATION_CACHE_MAX = 10_000;
     private record VerificationResult(String email, long expiresAtEpochSec) {}
 
-    private static final Map<String, VerificationResult> verificationCache =
-        Collections.synchronizedMap(
-            new LinkedHashMap<String, VerificationResult>(256, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, VerificationResult> eldest) {
-                    return size() > VERIFICATION_CACHE_MAX;
-                }
-            }
-        );
+    private static final Cache<String, VerificationResult> verificationCache =
+        Caffeine.newBuilder()
+            .maximumSize(VERIFICATION_CACHE_MAX)
+            .build();
 
     private static volatile Set<String> adminEmailsRef = Set.of();
     // メールアドレスチェック
@@ -196,7 +191,7 @@ public class CfAccessAuth implements Handler {
     // 負荷軽減のためJWT結果のキャッシュ
     private String verifyAndExtractEmailCached(String token) throws Exception {
         long now = Instant.now().getEpochSecond();
-        VerificationResult cached = verificationCache.get(token);
+        VerificationResult cached = verificationCache.getIfPresent(token);
         if (cached != null && now < cached.expiresAtEpochSec()) {
             if (cached.email() != null) return cached.email();
             throw new SecurityException("JWT previously rejected (cached)");

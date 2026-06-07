@@ -14,7 +14,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 // /announcements エンドポイント
 @GateController
@@ -23,18 +23,17 @@ public class AnnouncementsController {
     private static final Logger logger = new Logger(AnnouncementsController.class);
     private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=60, stale-while-revalidate=120";
-    private static final String CACHE_KEY = "announcements";
     private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """
             SELECT id, title, content, is_emergency
             FROM announcements
             ORDER BY is_emergency DESC, id DESC
             """;
 
-    private record CacheEntry(byte[] json, String etag) {}
-    private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
+    private static final AtomicReference<CacheEntry> cache = new AtomicReference<>();
 
     public static String getCacheEtag() {
-        CacheEntry entry = cache.get(CACHE_KEY);
+        CacheEntry entry = cache.get();
         return entry != null ? entry.etag() : null;
     }
 
@@ -42,7 +41,7 @@ public class AnnouncementsController {
     public static void refreshCache() throws Exception {
         try {
             byte[] json = fetchAnnouncementsFromDb();
-            cache.put(CACHE_KEY, new CacheEntry(json, HttpCache.etag(json)));
+            cache.set(new CacheEntry(json, HttpCache.gzip(json), HttpCache.etag(json)));
             logger.info("announcements cache refreshed");
         } catch (Exception e) {
             logger.error("announcements refreshCache failed", e);
@@ -53,18 +52,24 @@ public class AnnouncementsController {
     // キャッシュからアナウンス内容を返す
     @GetMapping("/announcements")
     public void list(Context ctx) {
-        CacheEntry entry = cache.get(CACHE_KEY);
+        CacheEntry entry = cache.get();
         if (entry == null) {
             ctx.status(503).json(Map.of("error", "warming up"));
             return;
         }
         ctx.header("Cache-Control", CACHE_CONTROL);
         ctx.header("ETag", entry.etag());
+        ctx.header("Vary", "Accept-Encoding");
         if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
             ctx.status(304);
             return;
         }
-        ctx.jsonBytes(entry.json());
+        String ae = ctx.requestHeader("Accept-Encoding");
+        if (ae != null && ae.contains("gzip")) {
+            ctx.header("Content-Encoding", "gzip").jsonBytes(entry.jsonGzip());
+        } else {
+            ctx.jsonBytes(entry.json());
+        }
     }
 
     // DBからjsonへの変換

@@ -4,7 +4,6 @@
       { "pattern": "config\\.yml" },
       { "pattern": "schema\\.sql" },
       { "pattern": "routes\\.yaml" },
-      { "pattern": "version\\.txt" },
       { "pattern": "logback\\.xml" },
       { "pattern": "META-INF/services/.*" },
       { "pattern": "META-INF/native-image/.*" }
