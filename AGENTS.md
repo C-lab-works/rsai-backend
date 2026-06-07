@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-01 | Updated: 2026-06-01 -->
+<!-- Generated: 2026-06-01 | Updated: 2026-06-07 -->
 
 # rsai-backend
 
@@ -20,7 +20,9 @@
 |-----------|---------|
 | `gate-core/` | メインの Java ソースモジュール（コントローラー・ミドルウェア・独自フレームワーク） (see `gate-core/AGENTS.md`) |
 | `.github/` | CI/CD ワークフローとセキュリティレビュースクリプト (see `.github/AGENTS.md`) |
-| `docs/` | 補足ドキュメント（フローダイアグラム等） |
+| `deploy/` | nginx 等デプロイ設定テンプレート (see `deploy/AGENTS.md`) |
+| `docs/` | 補足ドキュメント（フローダイアグラム等） (see `docs/AGENTS.md`) |
+| `tools/` | 開発・運用補助スクリプト（負荷テスト等） (see `tools/AGENTS.md`) |
 
 ## For AI Agents
 
