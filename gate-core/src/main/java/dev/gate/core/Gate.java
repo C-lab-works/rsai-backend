@@ -10,6 +10,8 @@ import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
+import org.eclipse.jetty.websocket.server.JettyServerUpgradeRequest;
+import org.eclipse.jetty.websocket.server.JettyServerUpgradeResponse;
 import org.eclipse.jetty.websocket.server.config.JettyWebSocketServletContainerInitializer;
 
 import java.io.File;
@@ -141,17 +143,17 @@ public class Gate {
         JettyWebSocketServletContainerInitializer.configure(context, (servletContext, wsContainer) -> {
             wsContainer.setMaxTextMessageSize(finalWsMaxSize);
             router.getWsRoutes().forEach((path, wsHandler) -> {
-                wsContainer.addMapping(path, (req, res) -> new WsAdapter(wsHandler));
+                // WS アップグレードはサーブレット service() を通らないため、
+                // creator 内で before-filter チェーンの認可を必ず通す。
+                wsContainer.addMapping(path, (req, res) ->
+                        authorizeWsUpgrade(req, res) ? new WsAdapter(wsHandler) : null);
             });
         });
 
         context.addServlet(new ServletHolder(new HttpServlet() {
             @Override
             protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
-                String path = request.getPathInfo();
-                if (path == null || path.isEmpty()) path = request.getServletPath();
-                if (path == null || path.isEmpty()) path = "/";
-                if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+                String path = resolvePath(request);
 
                 // Jetty の正規化に依存しない多層防御: デコード後のパスに ".." が残っている場合は拒否。
                 // 正規ルートは ".." を含まないため、誤検知は発生しない。
@@ -234,6 +236,59 @@ public class Gate {
         }
 
         return new GateServer(server);
+    }
+
+    /**
+     * サーブレットと WebSocket アップグレードで共通のリクエストパス解決。
+     * pathInfo → servletPath → "/" の順にフォールバックし、末尾スラッシュを除去する。
+     */
+    private static String resolvePath(HttpServletRequest request) {
+        String path = request.getPathInfo();
+        if (path == null || path.isEmpty()) path = request.getServletPath();
+        if (path == null || path.isEmpty()) path = "/";
+        if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        return path;
+    }
+
+    /**
+     * WebSocket アップグレード要求に HTTP と同じ before-filter チェーン
+     * （CloudflareIpFilter / ApiKeyAuth / CfAccessAuth など）を適用する。
+     *
+     * <p>Jetty の WS アップグレードは WebSocketUpgradeFilter がフィルタチェーン先頭で
+     * 処理しサーブレットの service() に到達しないため、ここで実行しない限り
+     * WS ルートは無認証・IP フィルタなしで公開されてしまう。</p>
+     *
+     * <p>制約: {@link JettyServerUpgradeResponse} はボディ書き込み API を持たないため、
+     * 拒否時のボディは Jetty 標準のエラーページになる（ステータスコードとヘッダは反映される）。
+     * 許可時の 101 レスポンスにはヘッダを付けない（CSP 等は 101 には意味がないため）。</p>
+     *
+     * @return アップグレード許可なら true。false の場合は拒否レスポンス送信済み。
+     */
+    private boolean authorizeWsUpgrade(JettyServerUpgradeRequest req, JettyServerUpgradeResponse res) {
+        Context ctx = new Context(resolvePath(req.getHttpServletRequest()), req.getHttpServletRequest());
+        if (ctx.path().contains("..")) {
+            // サーブレット側と同じ多層防御（デコード後パスの ".." を拒否）
+            ctx.status(HttpServletResponse.SC_BAD_REQUEST).halt();
+        } else {
+            try {
+                for (Handler filter : beforeFilters) {
+                    filter.handle(ctx);
+                    if (ctx.isHalted()) break;
+                }
+            } catch (Exception e) {
+                logger.error("WS upgrade filter error: " + e.getMessage(), e);
+                ctx.status(500).halt();
+            }
+        }
+        if (!ctx.isHalted()) return true;
+
+        try {
+            ctx.headers().forEach(res::setHeader);
+            res.sendError(ctx.statusCode(), "WebSocket upgrade rejected");
+        } catch (IOException e) {
+            logger.error("WS upgrade rejection response failed: " + e.getMessage(), e);
+        }
+        return false;
     }
 
     public void scan(String packageName) throws Exception {
