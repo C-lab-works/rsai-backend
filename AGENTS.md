@@ -3,7 +3,7 @@
 # rsai-backend
 
 ## Purpose
-学校祭用の公開 API・管理パネル向けバックエンドサービス。Java 21 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
+学祭用の公開 API・管理パネル向けバックエンドサービス。Java 21 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
 
 ## Key Files
 
