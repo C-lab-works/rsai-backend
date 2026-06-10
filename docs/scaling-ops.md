@@ -31,9 +31,9 @@ variable の値に上書きされる**。当日中にデプロイする可能性
 | 項目 | 値 | 意味 |
 |---|---|---|
 | containerConcurrency | 600 | 1インスタンスの同時リクエスト数 |
-| maxScale | 30 | 最大インスタンス数(理論上 18,000 同時) |
+| maxScale | 15 | 最大インスタンス数(理論上 9,000 同時。リージョン CPU クォータ 60÷4vCPU) |
 | cpu / memory | 4 / 2Gi | startup-cpu-boost + always-allocated |
-| DB_POOL_SIZE | 5 | HikariCP 上限/インスタンス(30×5=150 ≦ MySQL max_connections 151) |
+| DB_POOL_SIZE | 5 | HikariCP 上限/インスタンス(15×5=75 ≦ MySQL max_connections 151) |
 | acceptQueueSize | 512 | Jetty TCP accept キュー(コード側デフォルト) |
 | PUBLIC_BASE_URL | https://v2.r-sai2026.site | 書き込み起点 purge の URL 構築用(cloudrun のみ) |
 
