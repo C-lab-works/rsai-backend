@@ -225,7 +225,10 @@ jobs:
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
               spec:
-                containerConcurrency: 300
+                # 公開GETはメモリキャッシュ配信(CPU軽量)なので高めに設定。
+                # インスタンスあたりの同時処理数を上げ、バースト時のスケールアウト
+                # (=コールドスタート・DB接続増・コスト増)を抑える。
+                containerConcurrency: 600
                 timeoutSeconds: 60
                 containers:
                   - name: app
@@ -257,6 +260,10 @@ jobs:
                         value: "${{ secrets.DB_PASSWORD }}"
                       - name: DB_SSL
                         value: "${{ secrets.DB_SSL }}"
+                      # maxScale 30 × プールが MySQL の max_connections を超えないよう
+                      # インスタンスあたりの HikariCP 上限を絞る(30×5=150)。
+                      - name: DB_POOL_SIZE
+                        value: "5"
                       - name: API_KEY
                         value: "${{ secrets.API_KEY }}"
                       - name: READ_ONLY_KEY

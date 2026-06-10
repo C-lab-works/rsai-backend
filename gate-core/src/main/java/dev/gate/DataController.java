@@ -26,8 +26,7 @@ public class DataController {
 
     private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final String CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=600";
-    private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
-    private static final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, HttpCache.Entry> cache = new ConcurrentHashMap<>();
 
     public static Map<String, String> getCacheEtags() {
         Map<String, String> result = new java.util.LinkedHashMap<>();
@@ -52,8 +51,7 @@ public class DataController {
     private void refreshKey(String key, Builder builder) throws Exception {
         try (Connection conn = Database.getConnection()) {
             byte[] json = MAPPER.writeValueAsBytes(builder.build(conn));
-            byte[] gzip = HttpCache.gzip(json);
-            cache.put(key, new CacheEntry(json, gzip, HttpCache.etag(json)));
+            cache.put(key, HttpCache.entryOf(json));
         }
     }
 
@@ -70,25 +68,12 @@ public class DataController {
     interface Builder { Object build(Connection conn) throws Exception; }
 
     private void serve(Context ctx, String key) {
-        CacheEntry entry = cache.get(key);
+        HttpCache.Entry entry = cache.get(key);
         if (entry == null) {
             ctx.status(503).json(Map.of("error", "warming up"));
             return;
         }
-        ctx.header("Cache-Control", CACHE_CONTROL);
-        ctx.header("ETag", entry.etag());
-        // gzip と identity で表現が異なるため CDN/プロキシに区別させる
-        ctx.header("Vary", "Accept-Encoding");
-        if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
-            ctx.status(304);
-            return;
-        }
-        String ae = ctx.requestHeader("Accept-Encoding");
-        if (ae != null && ae.contains("gzip")) {
-            ctx.header("Content-Encoding", "gzip").jsonBytes(entry.jsonGzip());
-        } else {
-            ctx.jsonBytes(entry.json());
-        }
+        HttpCache.serveJson(ctx, entry, CACHE_CONTROL);
     }
 
     // /events

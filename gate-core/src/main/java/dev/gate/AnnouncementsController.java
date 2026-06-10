@@ -29,11 +29,10 @@ public class AnnouncementsController {
             ORDER BY is_emergency DESC, id DESC
             """;
 
-    private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
-    private static final AtomicReference<CacheEntry> cache = new AtomicReference<>();
+    private static final AtomicReference<HttpCache.Entry> cache = new AtomicReference<>();
 
     public static String getCacheEtag() {
-        CacheEntry entry = cache.get();
+        HttpCache.Entry entry = cache.get();
         return entry != null ? entry.etag() : null;
     }
 
@@ -41,7 +40,7 @@ public class AnnouncementsController {
     public static void refreshCache() throws Exception {
         try {
             byte[] json = fetchAnnouncementsFromDb();
-            cache.set(new CacheEntry(json, HttpCache.gzip(json), HttpCache.etag(json)));
+            cache.set(HttpCache.entryOf(json));
             logger.info("announcements cache refreshed");
         } catch (Exception e) {
             logger.error("announcements refreshCache failed", e);
@@ -52,24 +51,12 @@ public class AnnouncementsController {
     // キャッシュからアナウンス内容を返す
     @GetMapping("/announcements")
     public void list(Context ctx) {
-        CacheEntry entry = cache.get();
+        HttpCache.Entry entry = cache.get();
         if (entry == null) {
             ctx.status(503).json(Map.of("error", "warming up"));
             return;
         }
-        ctx.header("Cache-Control", CACHE_CONTROL);
-        ctx.header("ETag", entry.etag());
-        ctx.header("Vary", "Accept-Encoding");
-        if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
-            ctx.status(304);
-            return;
-        }
-        String ae = ctx.requestHeader("Accept-Encoding");
-        if (ae != null && ae.contains("gzip")) {
-            ctx.header("Content-Encoding", "gzip").jsonBytes(entry.jsonGzip());
-        } else {
-            ctx.jsonBytes(entry.json());
-        }
+        HttpCache.serveJson(ctx, entry, CACHE_CONTROL);
     }
 
     // DBからjsonへの変換

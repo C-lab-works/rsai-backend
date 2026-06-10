@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
+import dev.gate.core.HttpCache;
 import dev.gate.core.Logger;
 import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
@@ -29,7 +30,7 @@ public class CongestionController {
     private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
-    private static final AtomicReference<byte[]> cachedData = new AtomicReference<>();
+    private static final AtomicReference<HttpCache.Entry> cachedData = new AtomicReference<>();
     private static final AtomicLong lastFetchedAt = new AtomicLong(0);
     public static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
     public static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
@@ -37,19 +38,18 @@ public class CongestionController {
     // エンドポイント
     @GetMapping("/congestion")
     public void getCongestion(Context ctx) {
-        byte[] cached = cachedData.get();
-        if (cached == null) {
+        HttpCache.Entry entry = cachedData.get();
+        if (entry == null) {
             ctx.status(503).json(Map.of("error", "warming up"));
             return;
         }
-        ctx.header("Cache-Control", CACHE_CONTROL);
-        ctx.jsonBytes(cached);
+        HttpCache.serveJson(ctx, entry, CACHE_CONTROL);
     }
-    
+
     // キャッシュ更新
     public static void refreshCache() throws Exception {
         byte[] json = fetchCongestionFromDb();
-        cachedData.set(json);
+        cachedData.set(HttpCache.entryOf(json));
         lastFetchedAt.set(System.currentTimeMillis());
         refreshFailCount.set(0);
         hasNotifiedFailure.set(false);

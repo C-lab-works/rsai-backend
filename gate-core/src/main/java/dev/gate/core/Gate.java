@@ -5,6 +5,8 @@ import dev.gate.annotation.GateController;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.eclipse.jetty.server.HttpConfiguration;
+import org.eclipse.jetty.server.HttpConnectionFactory;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -36,6 +38,9 @@ public class Gate {
     private final List<Handler> afterFilters = new CopyOnWriteArrayList<>();
     private int wsMaxMessageSize = 64 * 1024;
     private int idleTimeoutMs = 30_000;
+    // TCP accept キューの深さ。未設定だと JDK が backlog を 50 に丸めるため、
+    // バースト時（開場直後など）に接続を取りこぼす。512 で瞬間的な接続殺到を吸収する。
+    private int acceptQueueSize = 512;
     private volatile boolean started = false;
 
     private ErrorHandler errorHandler = (ctx, e) -> {
@@ -101,6 +106,17 @@ public class Gate {
         return this;
     }
 
+    public Gate acceptQueueSize(int size) {
+        if (started) {
+            throw new IllegalStateException("acceptQueueSize() must be called before start()");
+        }
+        if (size < 0) {
+            throw new IllegalArgumentException("acceptQueueSize must be >= 0");
+        }
+        this.acceptQueueSize = size;
+        return this;
+    }
+
     public Gate errorHandler(ErrorHandler handler) {
         this.errorHandler = handler;
         return this;
@@ -131,9 +147,14 @@ public class Gate {
                 .factory();
         threadPool.setVirtualThreadsExecutor(Executors.newThreadPerTaskExecutor(vtFactory));
         Server server = new Server(threadPool);
-        ServerConnector connector = new ServerConnector(server);
+        HttpConfiguration httpConfig = new HttpConfiguration();
+        // Server: Jetty(...) ヘッダを抑制（毎レスポンスの無駄なバイト + 実装のフィンガープリント防止）
+        httpConfig.setSendServerVersion(false);
+        httpConfig.setSendXPoweredBy(false);
+        ServerConnector connector = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
         connector.setPort(port);
         connector.setIdleTimeout(idleTimeoutMs);
+        connector.setAcceptQueueSize(acceptQueueSize);
         server.addConnector(connector);
 
         ServletContextHandler context = new ServletContextHandler();
