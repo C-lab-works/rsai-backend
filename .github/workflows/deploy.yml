@@ -238,7 +238,7 @@ jobs:
                         containerPort: 8080
                     resources:
                       limits:
-                        cpu: "2"
+                        cpu: "4"
                         memory: 2Gi
                     startupProbe:
                       httpGet:
@@ -300,6 +300,10 @@ jobs:
                         value: "${{ vars.GH_WORKFLOW_FILE }}"
                       - name: ORIGIN_SHARED_SECRET
                         value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
+                      # 書き込み起点の CF targeted purge 用 (CfPurge が purge URL を組み立てる)。
+                      # debug 環境には設定しない = URL purge 無効。
+                      - name: PUBLIC_BASE_URL
+                        value: "https://v2.r-sai2026.site"
           EOF
 
       - name: Deploy to Cloud Run

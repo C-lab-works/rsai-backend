@@ -199,6 +199,7 @@ public class InstanceManager {
             new DataController().refreshAll();
             AnnouncementsController.refreshCache();
             CongestionController.refreshCache();
+            dev.gate.core.YamlRouteLoader.refreshAll();
         } catch (Exception e) {
             log.warn("pollBroadcast failed: {}", e.getMessage());
         }

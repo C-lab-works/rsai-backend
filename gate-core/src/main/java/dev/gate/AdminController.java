@@ -307,7 +307,7 @@ public class AdminController {
 
             InstanceManager.get().broadcastCacheRefresh();
 
-            boolean cfPurged = purgeCfCache();
+            boolean cfPurged = CfPurge.purgeEverythingSync();
 
             ObjectNode res = mapper.createObjectNode();
             res.put("ok", true);
@@ -320,35 +320,6 @@ public class AdminController {
         } catch (Exception e) {
             logger.error("clearCache error", e);
             ctx.status(500).json(Map.of("error", "Cache refresh failed"));
-        }
-    }
-
-    private boolean purgeCfCache() {
-        String apiToken = System.getenv("CF_API_TOKEN");
-        String zoneId   = System.getenv("CF_ZONE_ID");
-        if (apiToken == null || apiToken.isBlank() || zoneId == null || zoneId.isBlank()) {
-            logger.warn("purgeCfCache skipped: CF_API_TOKEN or CF_ZONE_ID not configured");
-            return false;
-        }
-        try {
-            HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.cloudflare.com/client/v4/zones/" + zoneId + "/purge_cache"))
-                .header("Authorization", "Bearer " + apiToken)
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(10))
-                .POST(HttpRequest.BodyPublishers.ofString("{\"purge_everything\":true}"))
-                .build();
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (res.statusCode() == 200) {
-                logger.info("CF cache purged successfully");
-                return true;
-            }
-            logger.warn("CF cache purge returned HTTP {}: {}", res.statusCode(),
-                res.body().substring(0, Math.min(200, res.body().length())));
-            return false;
-        } catch (Exception e) {
-            logger.warn("CF cache purge failed: {}", e.getMessage());
-            return false;
         }
     }
 
@@ -466,6 +437,7 @@ public class AdminController {
                 ps.setString(i, pkVal);
                 int updated = ps.executeUpdate();
                 AuditLog.write(user, "UPDATE_ROW", table + "/" + pkVal, null, "ok", null);
+                CacheSync.scheduleFullSync("updateRow:" + table);
                 ctx.json(Map.of("updated", updated));
             }
         } catch (SQLIntegrityConstraintViolationException e) {
@@ -506,6 +478,7 @@ public class AdminController {
                 ps.setString(1, pkVal);
                 int deleted = ps.executeUpdate();
                 AuditLog.write(user, "DELETE_ROW", table + "/" + pkVal, null, "ok", null);
+                CacheSync.scheduleFullSync("deleteRow:" + table);
                 ctx.json(Map.of("deleted", deleted));
             }
         } catch (SQLIntegrityConstraintViolationException e) {
@@ -544,6 +517,7 @@ public class AdminController {
                 for (String col : insertCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 ps.executeUpdate();
                 AuditLog.write(user, "INSERT_ROW", table, null, "ok", null);
+                CacheSync.scheduleFullSync("insertRow:" + table);
                 try (ResultSet gen = ps.getGeneratedKeys()) {
                     if (gen.next()) ctx.json(Map.of("id", gen.getLong(1)));
                     else ctx.json(Map.of("ok", true));
@@ -761,6 +735,7 @@ public class AdminController {
                 String sqlDetail = sql.length() > 200 ? sql.substring(0, 200) + "..." : sql;
                 AuditLog.write(executor, "EXECUTE_SQL", sqlTarget, sqlDetail, "ok", null);
                 if (hasWrite) DiscordWebhook.sendAdminOp(executor, "EXECUTE_SQL", sqlTarget, sqlDetail);
+                if (hasWrite || hasDdl) CacheSync.scheduleFullSync("execSql");
                 ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
             } catch (Exception e) {
                 if (!hasDdl) {

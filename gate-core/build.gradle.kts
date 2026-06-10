@@ -1,7 +1,7 @@
 plugins {
     id("application")
     id("com.gradleup.shadow") version "9.4.1"
-    id("org.graalvm.buildtools.native") version "0.10.3"
+    id("org.graalvm.buildtools.native") version "1.1.1"
 }
 
 application {
@@ -13,7 +13,7 @@ version = "1.0-SNAPSHOT"
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -57,7 +57,9 @@ graalvmNative {
                 "--initialize-at-build-time=org.slf4j",
                 "-H:+UnlockExperimentalVMOptions",
                 "-H:+AddAllCharsets",
-                "-H:+StaticExecutableWithDynamicLibC",
+                // libc 以外を静的リンク（旧 -H:+StaticExecutableWithDynamicLibC の安定版 API。
+                // GraalVM 25 で旧オプションは非推奨）。ランタイムイメージは glibc が必要 (oraclelinux:10-slim)。
+                "--static-nolibc",
                 // G1 GC を使用。Oracle GraalVM (GFTC) でのみ利用可。
                 // Linux x64 でのみサポート (Cloud Run は satisfies)。
                 // - Serial GC より stop-the-world ポーズが短く、並列 GC でスループットも高い。
@@ -69,8 +71,9 @@ graalvmNative {
                 // それ以上を使うようになったら OOM-kill の手前で GC が動くようにし、
                 // コンテナクラッシュより OutOfMemoryError のほうがトリアージしやすい。
                 "-R:MaxHeapSize=1536m",
-                // 最大最適化（Oracle GraalVM GFTC 専用）
-                // バイナリサイズ増・ビルド時間増だが実行時スループット向上。初回のみ影響。
+                // 最大最適化（Oracle GraalVM GFTC 専用）。
+                // GraalVM for JDK 24+ では -O3 で GraalNN（ML ベースの静的プロファイル推論）が
+                // 自動有効になる（実プロファイルを --pgo で渡した場合のみ ML 推論は無効化される）。
                 "-O3"
             )
         }

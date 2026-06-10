@@ -24,7 +24,7 @@ variable の値に上書きされる**。当日中にデプロイする可能性
 (Settings → Secrets and variables → Actions → Variables → `MIN_SCALE`)。
 
 コスト目安: `cpu-throttling: false`(always-allocated)のため、min-instance 1 あたり
-2vCPU/2GiB 常時課金で月 $90 前後。当日だけなら数ドル。
+4vCPU/2GiB 常時課金で月 $180 前後。当日だけなら数ドル。
 
 ## 現在のキャパシティ設定(deploy.yml)
 
@@ -32,9 +32,26 @@ variable の値に上書きされる**。当日中にデプロイする可能性
 |---|---|---|
 | containerConcurrency | 600 | 1インスタンスの同時リクエスト数 |
 | maxScale | 30 | 最大インスタンス数(理論上 18,000 同時) |
-| cpu / memory | 2 / 2Gi | startup-cpu-boost + always-allocated |
+| cpu / memory | 4 / 2Gi | startup-cpu-boost + always-allocated |
 | DB_POOL_SIZE | 5 | HikariCP 上限/インスタンス(30×5=150 ≦ MySQL max_connections 151) |
 | acceptQueueSize | 512 | Jetty TCP accept キュー(コード側デフォルト) |
+| PUBLIC_BASE_URL | https://v2.r-sai2026.site | 書き込み起点 purge の URL 構築用(cloudrun のみ) |
+
+## 書き込み起点の自動 purge(エッジ TTL 5 分の前提)
+
+公開エンドポイントの `s-maxage` は一律 300 秒。鮮度は TTL ではなく書き込み起点の purge で担保する:
+
+- **混雑更新** (`POST /congestion/{code}`) → 自インスタンス即時 refresh + 全インスタンス broadcast(約4秒で追従)
+  + CF へ `/congestion` の URL purge(伝播の取りこぼし対策で 10 秒後に再 purge)
+- **管理画面のテーブル編集 / 書き込み SQL** → `CacheSync` が 3 秒コアレッシングで
+  「全キャッシュ再構築 + broadcast + CF purge_everything」を自動実行(クリアボタンの押し忘れ対策)
+- `/admin/cache/clear` は従来どおり手動の保険として残存
+
+注意:
+- CF の URL purge は完全一致。クエリ文字列付きでキャッシュされた変種は purge 対象外なので、
+  Cache Rule のキャッシュキーは「クエリ文字列を無視」に設定しておくこと
+- ブラウザ側 `max-age` は purge できないため短いまま(30〜60 秒)
+- `PUBLIC_BASE_URL` 未設定の環境(debug)では URL purge は無効(s-maxage で自然失効)
 
 ## Cloudflare キャッシュの動作確認
 
