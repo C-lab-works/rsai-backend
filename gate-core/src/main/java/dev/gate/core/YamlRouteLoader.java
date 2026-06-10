@@ -50,9 +50,8 @@ public class YamlRouteLoader {
     // cache フィールド書式: <数値><単位 s|m|h>
     private static final Pattern CACHE_PATTERN = Pattern.compile("^(\\d+)\\s*([smh])$");
 
-    private record CacheEntry(byte[] json, byte[] jsonGzip, String etag) {}
     private record YamlRoute(String path, String sql, long cacheSeconds,
-                            AtomicReference<CacheEntry> cache) {}
+                            AtomicReference<HttpCache.Entry> cache) {}
 
     // cacheSeconds > 0 のルートのみを保持。load() で一度だけ確定する。
     private static volatile List<YamlRoute> CACHED_ROUTES = List.of();
@@ -181,30 +180,18 @@ public class YamlRouteLoader {
         };
     }
 
-    // キャッシュ配信ハンドラ（DataController#serve と同じ挙動）
+    // キャッシュ配信ハンドラ（HttpCache.serveJson による共通挙動）
     private static void registerCachedRoute(Gate gate, YamlRoute route) {
         String cacheControl = "public, max-age=" + route.cacheSeconds()
                 + ", s-maxage=" + route.cacheSeconds()
                 + ", stale-while-revalidate=" + (route.cacheSeconds() * 2);
         gate.get(route.path(), ctx -> {
-            CacheEntry entry = route.cache().get();
+            HttpCache.Entry entry = route.cache().get();
             if (entry == null) {
                 ctx.status(503).json(Map.of("error", "warming up"));
                 return;
             }
-            ctx.header("Cache-Control", cacheControl);
-            ctx.header("ETag", entry.etag());
-            ctx.header("Vary", "Accept-Encoding");
-            if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
-                ctx.status(304);
-                return;
-            }
-            String ae = ctx.requestHeader("Accept-Encoding");
-            if (ae != null && ae.contains("gzip")) {
-                ctx.header("Content-Encoding", "gzip").jsonBytes(entry.jsonGzip());
-            } else {
-                ctx.jsonBytes(entry.json());
-            }
+            HttpCache.serveJson(ctx, entry, cacheControl);
         });
     }
 
@@ -231,7 +218,7 @@ public class YamlRouteLoader {
              Statement  stmt = conn.createStatement();
              ResultSet  rs   = stmt.executeQuery(route.sql())) {
             byte[] json = MAPPER.writeValueAsBytes(resultSetToArray(rs));
-            route.cache().set(new CacheEntry(json, HttpCache.gzip(json), HttpCache.etag(json)));
+            route.cache().set(HttpCache.entryOf(json));
         }
     }
 

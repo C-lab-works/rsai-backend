@@ -26,7 +26,10 @@ public class Database {
         String password = envOrDefault("DB_PASSWORD", config.getPassword());
         String host     = envOrDefault("DB_HOST",     config.getHost());
         int    port     = Integer.parseInt(envOrDefault("DB_PORT", String.valueOf(config.getPort())));
-        int    poolSize = config.getMaxPoolSize();
+        // DB を使うのは背景ポーラーと管理系のみで、公開 GET はメモリキャッシュ配信。
+        // Cloud Run のスケールアウト時に MySQL の max_connections を食い潰さないよう、
+        // 環境変数 DB_POOL_SIZE でインスタンスあたりのプール上限を絞れるようにする。
+        int    poolSize = intEnvOrDefault("DB_POOL_SIZE", config.getMaxPoolSize());
 
         boolean ssl = Boolean.parseBoolean(envOrDefault("DB_SSL", String.valueOf(config.isSsl())));
         String sslParams = ssl
@@ -42,7 +45,7 @@ public class Database {
         hikari.setUsername(user);
         hikari.setPassword(password);
         hikari.setMaximumPoolSize(poolSize);
-        hikari.setMinimumIdle(3);
+        hikari.setMinimumIdle(Math.min(2, poolSize));
         hikari.setPoolName("gate-pool");
         hikari.setInitializationFailTimeout(-1);
         hikari.setConnectionTimeout(5_000);
@@ -61,7 +64,8 @@ public class Database {
             dev.gate.DiscordWebhook.sendError("DB", "INIT", 500, "Database initialization failed: " + e.getMessage());
             throw e;
         }
-        logger.info("Database connection pool initialized");
+        logger.info("Database connection pool initialized (maxPoolSize={}, minimumIdle={})",
+                poolSize, Math.min(2, poolSize));
         ready = true;
     }
 
@@ -125,5 +129,25 @@ public class Database {
     private static String envOrDefault(String key, String defaultValue) {
         String val = System.getenv(key);
         return (val != null && !val.isBlank()) ? val : defaultValue;
+    }
+
+    /**
+     * 整数の環境変数を読む。未設定はデフォルト、不正値（非数値・1未満）は
+     * 警告してデフォルトにフォールバックする（設定ミスで起動リトライループに陥らないため）。
+     */
+    private static int intEnvOrDefault(String key, int defaultValue) {
+        String val = System.getenv(key);
+        if (val == null || val.isBlank()) return defaultValue;
+        try {
+            int parsed = Integer.parseInt(val.trim());
+            if (parsed < 1) {
+                logger.warn("{} must be >= 1 but was {} — falling back to {}", key, parsed, defaultValue);
+                return defaultValue;
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid {} value '{}' — falling back to {}", key, val, defaultValue);
+            return defaultValue;
+        }
     }
 }
