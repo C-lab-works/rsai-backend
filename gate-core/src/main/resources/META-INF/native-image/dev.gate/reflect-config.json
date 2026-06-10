@@ -76,6 +76,8 @@
 
   { "name": "com.github.benmanes.caffeine.cache.SSMS",
     "allDeclaredConstructors": true },
+  { "name": "com.github.benmanes.caffeine.cache.PSMS",
+    "allDeclaredConstructors": true },
   { "name": "com.github.benmanes.caffeine.cache.BoundedLocalCache$BoundedLocalManualCache",
     "allDeclaredConstructors": true }
 ]
