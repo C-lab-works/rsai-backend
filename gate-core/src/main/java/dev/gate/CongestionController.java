@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,7 +30,9 @@ public class CongestionController {
     private static final Logger logger = new Logger(CongestionController.class);
     private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+    // s-maxage(エッジ)は 5 分: 更新時は書き込み起点で即 purge するため長くできる。
+    // max-age(ブラウザ)は purge が届かないので 30 秒のまま。
+    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=300, stale-while-revalidate=600";
     private static final AtomicReference<HttpCache.Entry> cachedData = new AtomicReference<>();
     private static final AtomicLong lastFetchedAt = new AtomicLong(0);
     public static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
@@ -147,6 +150,7 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
+            propagateUpdate();
             AuditLog.write(updatedBy, "UPDATE_CONGESTION", locationCode, "level=" + level, "ok", null);
             DiscordWebhook.sendAdminOp(updatedBy, "UPDATE_CONGESTION", locationCode, "level=" + level);
             ctx.json(Map.of("ok", true, "location_code", locationCode, "level", level));
@@ -155,5 +159,22 @@ public class CongestionController {
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
                     "detail", "DB error"));
         }
+    }
+
+    /**
+     * 書き込み成功後の即時伝播。エッジ TTL 5 分でも更新が数秒で公開されるよう、
+     * 30 秒ポーラー任せにせず 自インスタンス再構築 → broadcast → CF purge を行う。
+     * 他インスタンスは pollBroadcast(2 秒周期)で追従するため、伝播中に CF が
+     * stale インスタンスから再キャッシュした場合に備えて 10 秒後にもう一度 purge する。
+     */
+    private static void propagateUpdate() {
+        try {
+            refreshCache();
+        } catch (Exception e) {
+            logger.warn("congestion immediate refresh failed (poller will catch up): {}", e.getMessage());
+        }
+        InstanceManager.get().broadcastCacheRefresh();
+        CfPurge.purgeUrlsAsync("/congestion");
+        Main.bg.schedule(() -> CfPurge.purgeUrlsAsync("/congestion"), 10, TimeUnit.SECONDS);
     }
 }

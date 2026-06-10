@@ -1,4 +1,4 @@
-FROM container-registry.oracle.com/graalvm/native-image:21-ol10 AS build
+FROM container-registry.oracle.com/graalvm/native-image:25-ol10 AS build
 WORKDIR /app
 COPY settings.gradle.kts gradlew ./
 COPY gradle/ gradle/

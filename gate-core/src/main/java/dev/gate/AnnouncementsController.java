@@ -22,7 +22,9 @@ public class AnnouncementsController {
 
     private static final Logger logger = new Logger(AnnouncementsController.class);
     private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
-    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=60, stale-while-revalidate=120";
+    // s-maxage(エッジ)は 5 分: 管理画面の編集は CacheSync が自動 purge するため長くできる。
+    // max-age(ブラウザ)は purge が届かないので 30 秒のまま。
+    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=300, stale-while-revalidate=600";
     private static final String SELECT_ACTIVE_ANNOUNCEMENTS_SQL = """
             SELECT id, title, content, is_emergency
             FROM announcements

@@ -182,9 +182,10 @@ public class YamlRouteLoader {
 
     // キャッシュ配信ハンドラ（HttpCache.serveJson による共通挙動）
     private static void registerCachedRoute(Gate gate, YamlRoute route) {
+        // s-maxage(エッジ)は一律 5 分: 管理画面の編集は CacheSync が自動 purge するため
+        // 背景更新間隔(cacheSeconds)より長くできる。max-age(ブラウザ)は purge 不能なので従来どおり。
         String cacheControl = "public, max-age=" + route.cacheSeconds()
-                + ", s-maxage=" + route.cacheSeconds()
-                + ", stale-while-revalidate=" + (route.cacheSeconds() * 2);
+                + ", s-maxage=300, stale-while-revalidate=600";
         gate.get(route.path(), ctx -> {
             HttpCache.Entry entry = route.cache().get();
             if (entry == null) {
