@@ -103,7 +103,11 @@ jobs:
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
+          # 標準フロー (debug 検証 → master push) ではソースツリーが debug ビルドと一致するため、
+          # debug 側のキャッシュも参照して nativeCompile レイヤーを再利用する (build ~5分 → 1-2分)
+          cache-from: |
+            type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
+            type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
           cache-to:   type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache,mode=max
 
       - name: Build and push to GHCR (debug)
@@ -166,7 +170,10 @@ jobs:
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
+          # build ジョブと同じく debug 側キャッシュも参照する
+          cache-from: |
+            type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
+            type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
           cache-to:   type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache,mode=max
 
       - name: Build and push to GHCR (debug)
