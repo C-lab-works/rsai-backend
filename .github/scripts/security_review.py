@@ -54,7 +54,7 @@ Respond in this exact JSON format:
   "summary": "全体的なセキュリティ評価を1〜2文の日本語で記述"
 }
 
-If no genuine issues found, return {"findings": [], "summary": "No security issues found."}
+If no genuine issues found, return {"findings": [], "summary": "簡単なコードの要約とセキュリティ評価(例: "コードは全体的に安全ですが、ユーザー入力のサニタイズが不足している箇所があります。")"}
 Diff to analyze:
 """
 
