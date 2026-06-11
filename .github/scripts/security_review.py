@@ -192,9 +192,17 @@ def output_results(body: str) -> None:
         print(body)
 
 
+def _safe_text(text: str, max_len: int = 800) -> str:
+    """Collapse code fences and truncate to prevent markdown breakage."""
+    text = re.sub(r"```[a-zA-Z]*\n?", "`", text)
+    if len(text) > max_len:
+        text = text[:max_len].rstrip() + "…"
+    return text
+
+
 def format_comment(result: dict, provider_name: str) -> str:
     findings = result.get("findings", [])
-    summary = result.get("summary", "")
+    summary = _safe_text(result.get("summary", ""), max_len=800)
     severity_icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}
 
     if not findings:
@@ -204,8 +212,8 @@ def format_comment(result: dict, provider_name: str) -> str:
     for f in findings:
         icon = severity_icon.get(f.get("severity", "LOW"), "⚪")
         lines.append(f"### {icon} [{f.get('severity')}] `{f.get('file', '')}`")
-        lines.append(f"{f.get('description', '')}")
-        lines.append(f"**Fix:** {f.get('recommendation', '')}\n")
+        lines.append(_safe_text(f.get("description", ""), max_len=500))
+        lines.append(f"**Fix:** {_safe_text(f.get('recommendation', ''), max_len=500)}\n")
 
     lines.append(f"**サマリー:** {summary}")
     lines.append(f"\n*レビュー実施: {provider_name}*")
@@ -245,8 +253,8 @@ def send_discord(result: dict, provider_name: str) -> None:
     for f in findings[:10]:
         icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🔵"}.get(f.get("severity", "LOW"), "⚪")
         name  = f"{icon} [{f.get('severity')}] `{f.get('file', '')}`"
-        value = f.get("description", "")
-        rec   = f.get("recommendation", "")
+        value = _safe_text(f.get("description", ""), max_len=900)
+        rec   = _safe_text(f.get("recommendation", ""), max_len=200)
         if rec:
             value += f"\n**Fix:** {rec}"
         fields.append({"name": name, "value": value[:1024], "inline": False})
@@ -254,7 +262,7 @@ def send_discord(result: dict, provider_name: str) -> None:
     title = "✅ Security Review — No issues" if not findings else f"🔒 Security Review — {len(findings)} finding(s)"
     embed = {
         "title": title,
-        "description": summary[:2048],
+        "description": _safe_text(summary, max_len=2000),
         "color": color,
         "fields": fields,
         "footer": {"text": f"{ref} · {GITHUB_REPOSITORY} · {provider_name}"},
