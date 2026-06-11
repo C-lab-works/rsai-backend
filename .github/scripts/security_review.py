@@ -56,11 +56,6 @@ Respond in this exact JSON format:
 }
 
 If no genuine issues found, return {"findings": [], "summary": "簡単なコードの要約とセキュリティ評価(例: "コードは全体的に安全ですが、ユーザー入力のサニタイズが不足している箇所があります。")"}
-
-The input below contains two sections:
-1. === DIFF === : the git diff to review
-2. === FULL FILE CONTEXT === : full contents of each changed file for broader context (variable origins, caller chains, auth checks outside the diff, etc.)
-Use both sections. The diff shows what changed; the file context shows the surrounding code the diff depends on.
 """
 
 
@@ -169,12 +164,24 @@ def get_file_contexts(diff: str, max_chars: int) -> dict[str, str]:
 
 
 def build_prompt(diff: str, contexts: dict[str, str]) -> str:
-    parts = ["=== DIFF ===\n", diff]
+    parts = [SECURITY_PROMPT]
+    if contexts:
+        parts.append(
+            "The input below has two sections.\n"
+            "1. === DIFF === : the git diff to review\n"
+            "2. === FULL FILE CONTEXT === : full contents of each changed file "
+            "(use to trace variable origins, caller chains, and auth checks outside the diff)\n"
+            "Use both. Diff shows what changed; file context shows what the diff depends on.\n"
+        )
+    else:
+        parts.append("Diff to analyze:\n")
+    parts.append("\n=== DIFF ===\n")
+    parts.append(diff)
     if contexts:
         parts.append("\n\n=== FULL FILE CONTEXT ===")
         for path, content in contexts.items():
             parts.append(f"\n--- {path} ---\n{content}")
-    return SECURITY_PROMPT + "".join(parts)
+    return "".join(parts)
 
 
 def ai_chat(provider: dict, prompt: str, max_continuation: int = 3) -> str:
