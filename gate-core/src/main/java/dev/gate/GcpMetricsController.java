@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Logger;
+import dev.gate.core.TtlCache;
 import dev.gate.mapping.GetMapping;
 
 import java.net.URI;
@@ -34,6 +35,9 @@ public class GcpMetricsController {
     // projectId はインスタンス起動後に変わらないため 1 回だけ取得してキャッシュする（#10b）
     private static volatile String cachedProjectId = null;
 
+    // range パラメータをキーとして 15 秒間レスポンスをキャッシュする
+    private final TtlCache<ObjectNode> responseCache = new TtlCache<>(15_000L);
+
     @GetMapping("/admin/metrics/gcp")
     public void gcpMetrics(Context ctx) {
         ctx.header("Cache-Control", "no-store");
@@ -50,66 +54,73 @@ public class GcpMetricsController {
         }
 
         // バケット境界に揃える
-        long nowPeriod      = Instant.now().getEpochSecond() / periodSeconds;
-        Instant alignedEnd  = Instant.ofEpochSecond((nowPeriod + 1) * periodSeconds);
+        long nowPeriod       = Instant.now().getEpochSecond() / periodSeconds;
+        Instant alignedEnd   = Instant.ofEpochSecond((nowPeriod + 1) * periodSeconds);
         Instant alignedStart = alignedEnd.minusSeconds((long) periodSeconds * numBuckets);
 
-        // インメモリ・フォールバックは GCP 到達不可（catch）時にだけ構築する。
-        // happy path では queryAlerts() が Cloud Logging から取得（失敗時は内部で同フォールバック）。
-        ArrayNode alerts;
+        // TTL キャッシュキーは range パラメータ（null の場合は "24h" 扱い）
+        String cacheKey = rangeParam != null ? rangeParam : "24h";
 
         try {
-            // FirestoreRest の共有トークンキャッシュを再利用する（#10a）
-            String accessToken = FirestoreRest.accessToken();
-            // projectId はキャッシュ済み。未取得なら 1 回だけメタデータサーバーに問い合わせる（#10b）
-            if (cachedProjectId == null) {
-                synchronized (GcpMetricsController.class) {
-                    if (cachedProjectId == null) {
-                        cachedProjectId = fetchMetadata("project/project-id").strip();
-                    }
-                }
-            }
-            String projectId = cachedProjectId;
-            String service   = System.getenv().getOrDefault("K_SERVICE", "");
-            String periodStr = periodSeconds + "s";
-
-            // 3 つの Monitoring クエリを並列実行する（#10c）
-            final Instant fStart = alignedStart;
-            final Instant fEnd   = alignedEnd;
-            final int fNumBuckets = numBuckets;
-            final int fPeriodSec  = periodSeconds;
-
-            Future<ArrayNode>   alertsFuture = Main.bg.submit(
-                () -> queryAlerts(accessToken, projectId, fStart, fEnd));
-            Future<long[]>      instanceFuture = Main.bg.submit(
-                () -> queryLongMetric(accessToken, projectId, service,
-                    "run.googleapis.com/container/instance_count",
-                    "ALIGN_MAX", "REDUCE_MAX", fStart, fEnd, periodStr, fNumBuckets, fPeriodSec));
-            Future<double[]>    cpuFuture = Main.bg.submit(
-                () -> queryDoubleMetric(accessToken, projectId, service,
-                    "run.googleapis.com/container/cpu/utilizations",
-                    "ALIGN_PERCENTILE_50", "REDUCE_PERCENTILE_50", fStart, fEnd, periodStr, fNumBuckets, fPeriodSec));
-
-            // 結果を収集。各クエリが失敗してもレスポンス形状を変えない（フォールバックで 0 埋め）
-            ArrayNode alertsResult;
-            try { alertsResult = alertsFuture.get(); }
-            catch (Exception e) { logger.warn("queryAlerts failed: {}", e.getMessage()); alertsResult = buildAlertsFromMemory(fStart, fEnd); }
-
-            long[] instanceCount;
-            try { instanceCount = instanceFuture.get(); }
-            catch (Exception e) { logger.warn("queryLongMetric failed: {}", e.getMessage()); instanceCount = new long[fNumBuckets]; }
-
-            double[] cpuUtilization;
-            try { cpuUtilization = cpuFuture.get(); }
-            catch (Exception e) { logger.warn("queryDoubleMetric failed: {}", e.getMessage()); cpuUtilization = new double[fNumBuckets]; }
-
-            ctx.json(buildResponse(alignedStart, alignedEnd, periodSeconds, numBuckets,
-                instanceCount, cpuUtilization, alertsResult));
+            ObjectNode response = responseCache.get(cacheKey, () -> buildGcpResponse(
+                    alignedStart, alignedEnd, periodSeconds, numBuckets));
+            ctx.json(response);
         } catch (Exception e) {
             logger.warn("gcpMetrics unavailable (not on GCP?): {}", e.getMessage());
             ArrayNode fallback = buildAlertsFromMemory(alignedStart, alignedEnd);
             ctx.json(buildEmptyResponse(alignedStart, alignedEnd, periodSeconds, numBuckets, fallback));
         }
+    }
+
+    /** GCP Monitoring から実際にデータを取得してレスポンスを組み立てる。キャッシュのローダーとして使用。 */
+    private ObjectNode buildGcpResponse(Instant alignedStart, Instant alignedEnd,
+                                        int periodSeconds, int numBuckets) throws Exception {
+        // FirestoreRest の共有トークンキャッシュを再利用する（#10a）
+        String accessToken = FirestoreRest.accessToken();
+        // projectId はキャッシュ済み。未取得なら 1 回だけメタデータサーバーに問い合わせる（#10b）
+        if (cachedProjectId == null) {
+            synchronized (GcpMetricsController.class) {
+                if (cachedProjectId == null) {
+                    cachedProjectId = fetchMetadata("project/project-id").strip();
+                }
+            }
+        }
+        String projectId = cachedProjectId;
+        String service   = System.getenv().getOrDefault("K_SERVICE", "");
+        String periodStr = periodSeconds + "s";
+
+        // 3 つの Monitoring クエリを並列実行する（#10c）
+        final Instant fStart     = alignedStart;
+        final Instant fEnd       = alignedEnd;
+        final int fNumBuckets    = numBuckets;
+        final int fPeriodSec     = periodSeconds;
+
+        Future<ArrayNode> alertsFuture = Main.bg.submit(
+            () -> queryAlerts(accessToken, projectId, fStart, fEnd));
+        Future<long[]> instanceFuture = Main.bg.submit(
+            () -> queryLongMetric(accessToken, projectId, service,
+                "run.googleapis.com/container/instance_count",
+                "ALIGN_MAX", "REDUCE_MAX", fStart, fEnd, periodStr, fNumBuckets, fPeriodSec));
+        Future<double[]> cpuFuture = Main.bg.submit(
+            () -> queryDoubleMetric(accessToken, projectId, service,
+                "run.googleapis.com/container/cpu/utilizations",
+                "ALIGN_PERCENTILE_50", "REDUCE_PERCENTILE_50", fStart, fEnd, periodStr, fNumBuckets, fPeriodSec));
+
+        // 結果を収集。各クエリが失敗してもレスポンス形状を変えない（フォールバックで 0 埋め）
+        ArrayNode alertsResult;
+        try { alertsResult = alertsFuture.get(); }
+        catch (Exception e) { logger.warn("queryAlerts failed: {}", e.getMessage()); alertsResult = buildAlertsFromMemory(fStart, fEnd); }
+
+        long[] instanceCount;
+        try { instanceCount = instanceFuture.get(); }
+        catch (Exception e) { logger.warn("queryLongMetric failed: {}", e.getMessage()); instanceCount = new long[fNumBuckets]; }
+
+        double[] cpuUtilization;
+        try { cpuUtilization = cpuFuture.get(); }
+        catch (Exception e) { logger.warn("queryDoubleMetric failed: {}", e.getMessage()); cpuUtilization = new double[fNumBuckets]; }
+
+        return buildResponse(alignedStart, alignedEnd, periodSeconds, numBuckets,
+            instanceCount, cpuUtilization, alertsResult);
     }
 
     // レスポンス構築
