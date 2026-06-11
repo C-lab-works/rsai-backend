@@ -86,6 +86,11 @@ public class Main {
 
         // --- Startup ---
 
+        // Cloud Run の keepalive タイムアウト（600s）より長く設定し、
+        // Cloud Run 側で接続を切る前に Jetty が先に切ることを防ぐ。
+        // Cloud Run の requestTimeout=60s が暴走リクエストのガードになるため
+        // Jetty のアイドルタイムアウトは長めにしておいてよい。
+        gate.timeout(620_000);
         gate.start(config.getPort());
         log.info("rsai-backend is running on port {}", config.getPort());
     }
@@ -139,7 +144,6 @@ public class Main {
     private static void startBackgroundJobs(CfAccessAuth cfAccessAuth) {
         final DataController dataController = new DataController();
         final AtomicInteger dataFailCount = new AtomicInteger(0);
-        final AtomicInteger announcementsFailCount = new AtomicInteger(0);
         final AtomicInteger congestionFailCount = new AtomicInteger(0);
 
         // 30秒ごとにevents/food/mapを更新
@@ -156,18 +160,6 @@ public class Main {
                 }
             }
         }, 30, 30, TimeUnit.SECONDS);
-
-        // 60秒ごとにお知らせを更新（display_from/until の時刻変化に追従）
-        // お知らせは表示遅延しても致命ではないので Discord 通知はしない
-        bg.scheduleAtFixedRate(() -> {
-            try {
-                AnnouncementsController.refreshCache();
-                announcementsFailCount.set(0);
-            } catch (Exception e) {
-                int fails = announcementsFailCount.incrementAndGet();
-                log.warn("AnnouncementsController poll failed ({}): {}", fails, e.getMessage());
-            }
-        }, 60, 60, TimeUnit.SECONDS);
 
         // 30秒ごとに混雑情報を更新
         bg.scheduleAtFixedRate(() -> {

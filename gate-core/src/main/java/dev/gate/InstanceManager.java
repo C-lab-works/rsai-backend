@@ -39,6 +39,7 @@ public class InstanceManager {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
 
     private volatile String lastBroadcastRefreshAt = null;
+    private volatile String lastCongestionAt       = null;
     private volatile String lastCmdRequestId       = null;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     // metrics サブコレクションのドキュメント数をメモリで追跡して 121-doc クエリを廃止
@@ -109,7 +110,10 @@ public class InstanceManager {
             initUptimeTracking();
             try {
                 Map<String, Object> bDoc = fs.get("broadcast/cache");
-                if (bDoc != null) lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
+                if (bDoc != null) {
+                    lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
+                    lastCongestionAt       = (String) bDoc.get("congestionAt");
+                }
             } catch (Exception ignored) {}
 
             // 起動時に既存 metrics ドキュメント数を 1 回だけ取得してカウンターを初期化
@@ -192,14 +196,25 @@ public class InstanceManager {
         try {
             Map<String, Object> doc = fs.get("broadcast/cache");
             if (doc == null) return;
-            String refreshAt = (String) doc.get("refreshAt");
-            if (refreshAt == null || refreshAt.equals(lastBroadcastRefreshAt)) return;
-            lastBroadcastRefreshAt = refreshAt;
-            log.info("broadcast cache refresh received");
-            new DataController().refreshAll();
-            AnnouncementsController.refreshCache();
-            CongestionController.refreshCache();
-            dev.gate.core.YamlRouteLoader.refreshAll();
+            String refreshAt    = (String) doc.get("refreshAt");
+            String congestionAt = (String) doc.get("congestionAt");
+
+            if (refreshAt != null && !refreshAt.equals(lastBroadcastRefreshAt)) {
+                // フル再構築: events/food/map/announcements/congestion/yaml すべて更新
+                lastBroadcastRefreshAt = refreshAt;
+                // フル再構築は congestion も含むため、次回ポーリングで余分な単独更新を走らせない
+                lastCongestionAt = congestionAt;
+                log.info("broadcast cache refresh received");
+                new DataController().refreshAll();
+                AnnouncementsController.refreshCache();
+                CongestionController.refreshCache();
+                dev.gate.core.YamlRouteLoader.refreshAll();
+            } else if (congestionAt != null && !congestionAt.equals(lastCongestionAt)) {
+                // 混雑度のみスコープ更新: フル再構築は不要
+                lastCongestionAt = congestionAt;
+                log.info("broadcast congestion refresh received");
+                CongestionController.refreshCache();
+            }
         } catch (Exception e) {
             log.warn("pollBroadcast failed: {}", e.getMessage());
         }
@@ -210,7 +225,9 @@ public class InstanceManager {
     private void pollCommand() {
         if (stopped.get()) return;
         try {
-            Map<String, Object> doc = fs.get("instances/" + instanceId);
+            // フィールドマスクで cmd と res.requestId のみ取得し、大きな res ペイロードの
+            // 2 秒ごとの再ダウンロードを防ぐ（#8）
+            Map<String, Object> doc = fs.get("instances/" + instanceId, "cmd", "res.requestId");
             if (doc == null) return;
             Map<String, Object> cmd = (Map<String, Object>) doc.get("cmd");
             if (cmd == null) return;
@@ -316,9 +333,30 @@ public class InstanceManager {
     public void broadcastCacheRefresh() {
         if (!fs.isAvailable()) return;
         try {
-            fs.update("broadcast/cache", Map.of("refreshAt", Instant.now().toString()));
+            String ts = Instant.now().toString();
+            fs.update("broadcast/cache", Map.of("refreshAt", ts));
+            // 書き込み元インスタンスは次の pollBroadcast で二重実行しないようスキップする
+            lastBroadcastRefreshAt = ts;
         } catch (Exception e) {
             log.warn("broadcastCacheRefresh failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 混雑度キャッシュのみを他インスタンスにブロードキャストする。
+     * フル再構築（~10 SQLクエリ + gzip）を全インスタンスに強制しないスコープ更新。
+     * ローリングデプロイ中の旧リビジョンインスタンスは congestionAt フィールドを無視するが、
+     * その間は既存の 30 秒ポーラーが追従するため許容できる遷移ウィンドウとなる。
+     */
+    public void broadcastCongestionRefresh() {
+        if (!fs.isAvailable()) return;
+        try {
+            String ts = Instant.now().toString();
+            fs.update("broadcast/cache", Map.of("congestionAt", ts));
+            // 書き込み元インスタンスは次の pollBroadcast で二重実行しないようスキップする
+            lastCongestionAt = ts;
+        } catch (Exception e) {
+            log.warn("broadcastCongestionRefresh failed: {}", e.getMessage());
         }
     }
 

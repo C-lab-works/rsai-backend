@@ -283,9 +283,7 @@ public class DataSeeder {
             "  id            INT          PRIMARY KEY AUTO_INCREMENT," +
             "  title         VARCHAR(255) NOT NULL DEFAULT ''," +
             "  content       TEXT         NOT NULL," +
-            "  is_emergency  TINYINT(1)   NOT NULL DEFAULT 0," +
-            "  display_from  DATETIME," +
-            "  display_until DATETIME" +
+            "  is_emergency  TINYINT(1)   NOT NULL DEFAULT 0" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foods (" +

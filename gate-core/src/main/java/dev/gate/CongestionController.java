@@ -9,7 +9,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,7 +33,6 @@ public class CongestionController {
     // max-age(ブラウザ)は purge が届かないので 30 秒のまま。
     private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=300, stale-while-revalidate=600";
     private static final AtomicReference<HttpCache.Entry> cachedData = new AtomicReference<>();
-    private static final AtomicLong lastFetchedAt = new AtomicLong(0);
     public static final java.util.concurrent.atomic.AtomicInteger refreshFailCount = new java.util.concurrent.atomic.AtomicInteger(0);
     public static final AtomicBoolean hasNotifiedFailure = new AtomicBoolean(false);
 
@@ -53,7 +51,6 @@ public class CongestionController {
     public static void refreshCache() throws Exception {
         byte[] json = fetchCongestionFromDb();
         cachedData.set(HttpCache.entryOf(json));
-        lastFetchedAt.set(System.currentTimeMillis());
         refreshFailCount.set(0);
         hasNotifiedFailure.set(false);
     }
@@ -150,10 +147,22 @@ public class CongestionController {
                     ps.executeUpdate();
                 }
             }
-            propagateUpdate();
-            AuditLog.write(updatedBy, "UPDATE_CONGESTION", locationCode, "level=" + level, "ok", null);
-            DiscordWebhook.sendAdminOp(updatedBy, "UPDATE_CONGESTION", locationCode, "level=" + level);
+            // レスポンスを先に返してから伝播処理を非同期実行する（#1: 書き込みパスを非同期化）
             ctx.json(Map.of("ok", true, "location_code", locationCode, "level", level));
+            final String finalLocationCode = locationCode;
+            final int finalLevel = level;
+            final String finalUpdatedBy = updatedBy;
+            Main.bg.execute(() -> {
+                try {
+                    propagateUpdate();
+                    AuditLog.write(finalUpdatedBy, "UPDATE_CONGESTION", finalLocationCode, "level=" + finalLevel, "ok", null);
+                    DiscordWebhook.sendAdminOp(finalUpdatedBy, "UPDATE_CONGESTION", finalLocationCode, "level=" + finalLevel);
+                } catch (Exception e) {
+                    logger.warn("updateCongestion async propagation failed: {}", e.getMessage());
+                }
+            });
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (Exception e) {
             logger.error("updateCongestion error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable",
@@ -173,7 +182,7 @@ public class CongestionController {
         } catch (Exception e) {
             logger.warn("congestion immediate refresh failed (poller will catch up): {}", e.getMessage());
         }
-        InstanceManager.get().broadcastCacheRefresh();
+        InstanceManager.get().broadcastCongestionRefresh();
         CfPurge.purgeUrlsAsync("/congestion");
         Main.bg.schedule(() -> CfPurge.purgeUrlsAsync("/congestion"), 10, TimeUnit.SECONDS);
     }
