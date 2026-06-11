@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Logger;
+import dev.gate.core.TtlCache;
 import dev.gate.mapping.GetMapping;
 
 import java.net.URI;
@@ -23,6 +24,9 @@ public class CfMetricsController {
     private static final ObjectMapper mapper         = dev.gate.core.Json.MAPPER;
     private static final HttpClient  http           = dev.gate.core.Http.CLIENT;
     private static final String      CF_GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
+
+    // range パラメータをキーとして 15 秒間レスポンスをキャッシュする
+    private final TtlCache<ObjectNode> responseCache = new TtlCache<>(15_000L);
 
     @GetMapping("/admin/metrics/cf")
     public void cfMetrics(Context ctx) {
@@ -54,10 +58,21 @@ public class CfMetricsController {
         Instant alignedStart = alignedEnd.minusSeconds((long) numBuckets * bucketMinutes * 60);
         int     queryLimit   = numBuckets * bucketMinutes + 2;
 
+        // TTL キャッシュキーは range パラメータ（null の場合は "24h" 扱い）
+        String cacheKey = rp.isEmpty() ? "24h" : rp;
+
+        final Instant fStart       = alignedStart;
+        final Instant fEnd         = alignedEnd;
+        final int     fNumBuckets  = numBuckets;
+        final int     fBucketMin   = bucketMinutes;
+
         try {
-            String   body   = buildRequestBody(cfZoneId, alignedStart, alignedEnd, queryLimit, dataset);
-            JsonNode groups = executeGraphQL(cfApiToken, body, dataset);
-            ctx.json(buildResponse(groups, alignedStart, numBuckets, bucketMinutes));
+            ObjectNode response = responseCache.get(cacheKey, () -> {
+                String   body   = buildRequestBody(cfZoneId, fStart, fEnd, queryLimit, dataset);
+                JsonNode groups = executeGraphQL(cfApiToken, body, dataset);
+                return buildResponse(groups, fStart, fNumBuckets, fBucketMin);
+            });
+            ctx.json(response);
         } catch (Exception e) {
             logger.warn("cfMetrics failed: {}", e.getMessage());
             ctx.json(buildEmptyResponse(alignedStart, alignedEnd, numBuckets, bucketMinutes));

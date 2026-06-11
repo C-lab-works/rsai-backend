@@ -34,6 +34,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
@@ -90,63 +91,162 @@ public class AdminController {
         "TINYINT(1)", "FLOAT", "DOUBLE", "DATE", "DATETIME", "TIME"
     );
 
+    /** インスタンスのステータス付きビュー（listInstances / listInstancesMetrics 共通）。 */
+    private record InstanceView(String id, String revision, String host, String startedAt, String status) {}
+
+    /** Firestore 不可時のフォールバック: 自インスタンスのみを返す。 */
+    private static InstanceView selfInstanceView() {
+        InstanceManager im = InstanceManager.get();
+        String buildSha = System.getenv("BUILD_SHA");
+        String revision = im.getInstanceId()
+            + (buildSha != null && !buildSha.isBlank()
+                ? "-" + buildSha.substring(0, Math.min(8, buildSha.length()))
+                : "");
+        return new InstanceView(im.getInstanceId(), revision, System.getenv("HOSTNAME"),
+            im.getStartedAt().toString(), "running");
+    }
+
+    /**
+     * Firestore の instances コレクションからステータスを派生させたビュー一覧を返す。
+     * lastSeen が 30 秒以上前のものは一覧から除外し、heartbeat 未到達のまま
+     * 300 秒経過したドキュメントは削除する。
+     */
+    private List<InstanceView> deriveInstanceViews(Instant now) throws Exception {
+        List<InstanceView> views = new ArrayList<>();
+        for (FirestoreRest.Entry entry : FirestoreRest.get().list("instances")) {
+            Map<String, Object> d   = entry.data();
+            String rawStatus        = (String) d.get("status");
+            String lastSeenStr      = (String) d.get("lastSeen");
+
+            String status;
+            if ("stopped".equals(rawStatus)) {
+                status = "stopped";
+            } else if (lastSeenStr != null) {
+                long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
+                if (age >= 30) continue;
+                status = age < 10 ? "running" : "degraded";
+            } else {
+                String startedAt = (String) d.get("startedAt");
+                if (startedAt != null) {
+                    long sinceStart = Duration.between(Instant.parse(startedAt), now).toSeconds();
+                    if (sinceStart >= 300) {
+                        try { FirestoreRest.get().delete("instances/" + entry.id()); } catch (Exception ignored) {}
+                        continue;
+                    }
+                }
+                status = "stopped";
+            }
+            views.add(new InstanceView(
+                entry.id(),
+                (String) d.get("revision"),
+                (String) d.get("host"),
+                (String) d.get("startedAt"),
+                status
+            ));
+        }
+        return views;
+    }
+
+    /** InstanceView を arr に JSON ノードとして追加し、そのノードを返す。 */
+    private ObjectNode addInstanceViewNode(ArrayNode arr, InstanceView v) {
+        ObjectNode n = arr.addObject();
+        n.put("instanceId", v.id());
+        putStringField(n, "revision",  v.revision());
+        putStringField(n, "host",      v.host());
+        putStringField(n, "startedAt", v.startedAt());
+        n.put("status", v.status());
+        return n;
+    }
+
     // インスタンス一覧を返す（lastSeen からステータスを派生）
     @GetMapping("/admin/instances")
     public void listInstances(Context ctx) {
         ctx.header("Cache-Control", "no-store");
         if (!FirestoreRest.get().isAvailable()) {
-            InstanceManager im = InstanceManager.get();
-            String buildSha = System.getenv("BUILD_SHA");
-            String revision = im.getInstanceId()
-                + (buildSha != null && !buildSha.isBlank()
-                    ? "-" + buildSha.substring(0, Math.min(8, buildSha.length()))
-                    : "");
-            ObjectNode n = mapper.createObjectNode();
-            n.put("instanceId", im.getInstanceId());
-            n.put("revision",   revision);
-            putStringField(n, "host", System.getenv("HOSTNAME"));
-            n.put("startedAt", im.getStartedAt().toString());
-            n.put("status", "running");
-            ctx.json(mapper.createArrayNode().add(n));
+            ArrayNode arr = mapper.createArrayNode();
+            addInstanceViewNode(arr, selfInstanceView());
+            ctx.json(arr);
             return;
         }
         try {
-            Instant now   = Instant.now();
             ArrayNode arr = mapper.createArrayNode();
-            for (FirestoreRest.Entry entry : FirestoreRest.get().list("instances")) {
-                Map<String, Object> d   = entry.data();
-                String rawStatus        = (String) d.get("status");
-                String lastSeenStr      = (String) d.get("lastSeen");
-
-                String status;
-                if ("stopped".equals(rawStatus)) {
-                    status = "stopped";
-                } else if (lastSeenStr != null) {
-                    long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
-                    if (age >= 30) continue; 
-                    status = age < 10 ? "running" : "degraded";
-                } else {
-                    String startedAt = (String) d.get("startedAt");
-                    if (startedAt != null) {
-                        long sinceStart = Duration.between(Instant.parse(startedAt), now).toSeconds();
-                        if (sinceStart >= 300) {
-                            try { FirestoreRest.get().delete("instances/" + entry.id()); } catch (Exception ignored) {}
-                            continue;
-                        }
-                    }
-                    status = "stopped";
-                }
-
-                ObjectNode n = arr.addObject();
-                n.put("instanceId", entry.id());
-                putStringField(n, "revision",  (String) d.get("revision"));
-                putStringField(n, "host",      (String) d.get("host"));
-                putStringField(n, "startedAt", (String) d.get("startedAt"));
-                n.put("status", status);
+            for (InstanceView v : deriveInstanceViews(Instant.now())) {
+                addInstanceViewNode(arr, v);
             }
             ctx.json(arr);
         } catch (Exception e) {
             logger.error("listInstances error", e);
+            ctx.status(503).json(Map.of("error", "Firestore unavailable"));
+        }
+    }
+
+    // 全インスタンスのメトリクス履歴を一括取得する（非 stopped インスタンスを並列フェッチ）
+    // GET /admin/instances/metrics?limit=20
+    // Router の find() は exactRoutes を先に検索するため、
+    // parameterized route /admin/instances/{id} より先にこちらがマッチする。
+    @GetMapping("/admin/instances/metrics")
+    public void listInstancesMetrics(Context ctx) {
+        ctx.header("Cache-Control", "no-store");
+        int limit = 20;
+        try { limit = Math.max(1, Math.min(200, Integer.parseInt(ctx.query("limit")))); } catch (Exception ignored) {}
+        final int effectiveLimit = limit;
+
+        if (!FirestoreRest.get().isAvailable()) {
+            // listInstances と同じフォールバック: 自インスタンスのみ（メトリクスは Firestore 依存のため空）
+            ArrayNode arr = mapper.createArrayNode();
+            addInstanceViewNode(arr, selfInstanceView()).set("points", mapper.createArrayNode());
+            ctx.json(arr);
+            return;
+        }
+        try {
+            List<InstanceView> instances = deriveInstanceViews(Instant.now());
+
+            // 非 stopped インスタンスのメトリクスを並列フェッチする（clearCache / Main.java と同パターン）
+            List<Future<ArrayNode>> futures = new ArrayList<>();
+            for (InstanceView info : instances) {
+                if ("stopped".equals(info.status())) {
+                    futures.add(null); // stopped はフェッチしない
+                } else {
+                    final String instanceId = info.id();
+                    futures.add(Main.bg.submit(() -> {
+                        ArrayNode pts = mapper.createArrayNode();
+                        for (FirestoreRest.Entry e :
+                                FirestoreRest.get().query("instances/" + instanceId, "metrics", "t", true, effectiveLimit)) {
+                            Map<String, Object> d = e.data();
+                            ObjectNode n = pts.addObject();
+                            n.put("t",            toLong(d.get("t")));
+                            n.put("cpu",          toDouble(d.get("cpu")));
+                            n.put("heap_used_mb", toLong(d.get("heap_used_mb")));
+                            n.put("threads",      (int) toLong(d.get("threads")));
+                        }
+                        return pts;
+                    }));
+                }
+            }
+
+            // 結果を収集。単一インスタンスのフェッチ失敗は警告ログのみ、全体は 200 を維持する
+            ArrayNode arr = mapper.createArrayNode();
+            for (int i = 0; i < instances.size(); i++) {
+                InstanceView info = instances.get(i);
+                ObjectNode n = addInstanceViewNode(arr, info);
+
+                ArrayNode points;
+                if (futures.get(i) == null) {
+                    points = mapper.createArrayNode(); // stopped はフェッチしない
+                } else {
+                    try {
+                        points = futures.get(i).get();
+                    } catch (Exception e) {
+                        logger.warn("listInstancesMetrics: failed to fetch metrics for instanceId={}: {}",
+                            info.id(), e.getMessage());
+                        points = mapper.createArrayNode();
+                    }
+                }
+                n.set("points", points);
+            }
+            ctx.json(arr);
+        } catch (Exception e) {
+            logger.error("listInstancesMetrics error", e);
             ctx.status(503).json(Map.of("error", "Firestore unavailable"));
         }
     }
