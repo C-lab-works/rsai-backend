@@ -3,8 +3,10 @@ package dev.gate.core;
 import org.slf4j.LoggerFactory;
 
 /**
- * SLF4J の薄いラッパー。ログレベルが無効なときに varargs (Object[]) のアロケーションを
- * 避けるため、format 関数は isXxxEnabled() ガードを入れている。
+ * SLF4J の薄いラッパー。isXxxEnabled() ガードによってメッセージのフォーマット処理と
+ * SLF4J 内部へのフォワードをスキップする。
+ * varargs (Object[]) の配列自体は呼び出しサイトで生成されるためガードでは防げないが、
+ * SLF4J も内部でレベルチェックを行うため、このガードは主にフォーマット文字列の連結コスト削減が目的。
  * ホットパスではデフォルト INFO レベルなので、debug() のオーバーヘッドがリクごとに乗ってくるのを防ぐ。
  */
 public class Logger {

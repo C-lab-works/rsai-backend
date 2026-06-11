@@ -214,6 +214,8 @@ public class Gate {
                             );
                         }
                     }
+                } catch (ClientErrorException ce) {
+                    ctx.status(ce.status()).json(java.util.Map.of("error", ce.getMessage()));
                 } catch (Exception e) {
                     errorHandler.handle(ctx, e);
                 } finally {

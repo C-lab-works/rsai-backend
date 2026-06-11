@@ -1,7 +1,5 @@
 package dev.gate.core;
 
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -129,15 +127,13 @@ public class Router {
             }
 
             if (match) {
-                // マッチ確認後にパラメータを抽出（URLデコード済み）
+                // マッチ確認後にパラメータを抽出。
+                // Gate.resolvePath() が request.getPathInfo()（Jetty デコード済み）を使うため、
+                // ここで再度 URLDecode を行うと二重デコードになる。セグメントをそのまま使う。
                 Map<String, String> params = new HashMap<>();
                 for (int i = 0; i < route.segments().length; i++) {
                     if (route.segments()[i] == null) {
-                        String raw = requestSegments[i];
-                        // Preserve literal '+' in path segments (RFC 3986).
-                        // URLDecoder treats '+' as space (form-encoding), so escape it first.
-                        String decoded = URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8);
-                        params.put(route.paramNames()[i], decoded);
+                        params.put(route.paramNames()[i], requestSegments[i]);
                     }
                 }
                 Map<String, String> immutableParams = Map.copyOf(params);

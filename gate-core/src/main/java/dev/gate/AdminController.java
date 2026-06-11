@@ -204,6 +204,8 @@ public class AdminController {
             });
 
             ctx.status(202).json(Map.of("requestId", requestId));
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (Exception e) {
             logger.error("sendCommand error instanceId={}", instanceId, e);
             ctx.status(503).json(Map.of("error", "Firestore unavailable"));
@@ -297,10 +299,18 @@ public class AdminController {
     @PostMapping("/admin/cache/clear")
     public void clearCache(Context ctx) {
         try {
-            new DataController().refreshAll();
-            AnnouncementsController.refreshCache();
-            CongestionController.refreshCache();
-            dev.gate.core.YamlRouteLoader.refreshAll();
+            // 4 つのキャッシュ再構築を並列実行する（#13）
+            List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+            futures.add(Main.bg.submit((java.util.concurrent.Callable<Void>) () -> { new DataController().refreshAll(); return null; }));
+            futures.add(Main.bg.submit((java.util.concurrent.Callable<Void>) () -> { AnnouncementsController.refreshCache(); return null; }));
+            futures.add(Main.bg.submit((java.util.concurrent.Callable<Void>) () -> { CongestionController.refreshCache(); return null; }));
+            futures.add(Main.bg.submit((java.util.concurrent.Callable<Void>) () -> { dev.gate.core.YamlRouteLoader.refreshAll(); return null; }));
+            Exception firstError = null;
+            for (java.util.concurrent.Future<?> f : futures) {
+                try { f.get(); }
+                catch (java.util.concurrent.ExecutionException ex) { if (firstError == null) firstError = (Exception) ex.getCause(); }
+            }
+            if (firstError != null) throw firstError;
 
             String clearedBy = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
             logger.info("cache refreshed by=" + clearedBy);
@@ -365,9 +375,18 @@ public class AdminController {
             ObjectNode root = mapper.createObjectNode();
             DatabaseMetaData meta = conn.getMetaData();
 
+            // getPrimaryKeys を 1 回だけ呼び、PK セットと KEY_SEQ 順の最初の列を両方取得する（#14a）
             Set<String> pks = new HashSet<>();
+            // KEY_SEQ 昇順で並ぶため、最初に追加されたものが KEY_SEQ 最小（= 主キー代表列）
+            String firstPkCol = null;
             try (ResultSet rs = meta.getPrimaryKeys(null, null, resolvedTable)) {
-                while (rs.next()) pks.add(rs.getString("COLUMN_NAME"));
+                // KEY_SEQ でソートされた順に読む
+                java.util.TreeMap<Short, String> pkBySeq = new java.util.TreeMap<>();
+                while (rs.next()) {
+                    pks.add(rs.getString("COLUMN_NAME"));
+                    pkBySeq.put(rs.getShort("KEY_SEQ"), rs.getString("COLUMN_NAME"));
+                }
+                if (!pkBySeq.isEmpty()) firstPkCol = pkBySeq.firstEntry().getValue();
             }
 
             ArrayNode cols = root.putArray("cols");
@@ -386,7 +405,8 @@ public class AdminController {
 
             ArrayNode rows = root.putArray("rows");
             String sort  = ctx.query("sort");
-            String pkCol = getPkColumn(conn, resolvedTable);
+            // firstPkCol は上で取得済み。getPkColumn() の二重呼び出しを廃止（#14a）
+            String pkCol = firstPkCol;
             String order = ("desc".equalsIgnoreCase(sort) && pkCol != null)
                 ? " ORDER BY `" + pkCol + "` DESC" : "";
             try (Statement s = conn.createStatement();
@@ -440,6 +460,8 @@ public class AdminController {
                 CacheSync.scheduleFullSync("updateRow:" + table);
                 ctx.json(Map.of("updated", updated));
             }
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (SQLIntegrityConstraintViolationException e) {
             logger.warn("updateRow constraint violation: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", toUserMessage(e)));
@@ -523,6 +545,8 @@ public class AdminController {
                     else ctx.json(Map.of("ok", true));
                 }
             }
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (SQLIntegrityConstraintViolationException e) {
             logger.warn("insertRow constraint violation: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", toUserMessage(e)));
@@ -585,6 +609,8 @@ public class AdminController {
             AuditLog.write(user, "CREATE_TABLE", tableName, columns.size() + " columns", "ok", null);
             DiscordWebhook.sendAdminOp(user, "CREATE_TABLE", tableName, columns.size() + " columns");
             ctx.json(Map.of("ok", true));
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (SQLSyntaxErrorException e) {
             logger.warn("createTable syntax error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", "テーブル作成に失敗しました"));
@@ -633,6 +659,8 @@ public class AdminController {
             AuditLog.write(user, "ADD_COLUMN", resolvedTable + "/" + colName, colType, "ok", null);
             DiscordWebhook.sendAdminOp(user, "ADD_COLUMN", resolvedTable + "/" + colName, colType);
             ctx.json(Map.of("ok", true));
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (SQLSyntaxErrorException e) {
             logger.warn("addColumn syntax error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", "カラム追加に失敗しました"));
@@ -745,6 +773,8 @@ public class AdminController {
             } finally {
                 if (!hasDdl) conn.setAutoCommit(true);
             }
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (Exception e) {
             logger.error("execSql error by={}", executor, e);
             ctx.status(400).json(Map.of("error", sanitizeSqlError(e)));
@@ -1350,6 +1380,8 @@ public class AdminController {
                 return;
             }
             ctx.json(Map.of("commitSha", result.commitSha(), "newSha", result.newFileSha()));
+        } catch (dev.gate.core.ClientErrorException ce) {
+            throw ce;
         } catch (IllegalStateException e) {
             logger.warn("putYamlRoutes: GitHub not configured: {}", e.getMessage());
             ctx.status(503).json(Map.of("error", "GitHub not configured: " + e.getMessage()));

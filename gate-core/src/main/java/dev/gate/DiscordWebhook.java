@@ -37,13 +37,25 @@ public class DiscordWebhook {
         return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
     }
 
+    /**
+     * 指定キーの送信を許可するか判定する。
+     * getAndSet の代わりに compareAndSet を使い、デバウンス期間内は
+     * タイムスタンプを進めない（連続エラーでも最初の 1 件だけ通す）。
+     * package-private でテスト可能にする（#11）。
+     */
+    static boolean shouldSend(String key, long now) {
+        AtomicLong ts = lastSent.computeIfAbsent(key, k -> new AtomicLong(0L));
+        long last = ts.get();
+        if (now - last < DEBOUNCE_MS) return false;
+        return ts.compareAndSet(last, now);
+    }
+
     public static void sendError(String method, String path, int status, String message) {
         if (WEBHOOK == null || WEBHOOK.isBlank()) return;
 
         String key = method + " " + path + " " + status;
         long now   = System.currentTimeMillis();
-        AtomicLong ts = lastSent.computeIfAbsent(key, k -> new AtomicLong(0L));
-        if (now - ts.getAndSet(now) < DEBOUNCE_MS) return;
+        if (!shouldSend(key, now)) return;
 
         int color = status >= 500 ? 15158332 : 16776960;
         String prefix = IS_DEBUG ? "[DEBUG] " : "";

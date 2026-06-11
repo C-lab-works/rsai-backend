@@ -113,12 +113,10 @@ Base URL: `https://v2.r-sai2026.site`
 {
   "announcements": [
     { "id": 2, "content": "【緊急】お知らせ内容", "is_emergency": true },
-    { "id": 1, "content": "通常お知らせ内容", "is_emergency": false, "display_from": "2026-07-01 00:00:00", "display_until": "2026-07-05 23:59:59" }
+    { "id": 1, "content": "通常お知らせ内容", "is_emergency": false }
   ]
 }
 ```
-
-> `display_from` / `display_until` — 設定されている場合のみ含まれる。
 
 ---
 

@@ -37,7 +37,8 @@ public class Database {
             : "useSSL=false&allowPublicKeyRetrieval=true";
 
         hikari.setJdbcUrl(String.format(
-            "jdbc:mysql://%s:%d/%s?%s&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000",
+            "jdbc:mysql://%s:%d/%s?%s&tinyInt1isBit=false&useUnicode=true&characterEncoding=UTF-8&connectTimeout=5000&socketTimeout=30000" +
+            "&rewriteBatchedStatements=true&cachePrepStmts=true&prepStmtCacheSize=64",
             host, port, dbName, sslParams
         ));
         logger.info("Connecting to MySQL at {}:{}/{} (ssl={})", host, port, dbName, ssl);

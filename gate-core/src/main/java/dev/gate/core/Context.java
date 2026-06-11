@@ -53,7 +53,7 @@ public class Context {
         try {
             int contentLength = request.getContentLength();
             if (contentLength > MAX_BODY_SIZE) {
-                throw new RuntimeException("Request body too large: " + contentLength + " bytes (max: " + MAX_BODY_SIZE + ")");
+                throw new ClientErrorException(413, "Request body too large: " + contentLength + " bytes (max: " + MAX_BODY_SIZE + ")");
             }
             // 99% の POST リクは UTF-8 または charset 未指定なので、
             // Charset.forName() (内部でロックと HashMap 検索) を避ける。
@@ -62,7 +62,7 @@ public class Context {
             // readNBytes caps reads at MAX_BODY_SIZE+1, preventing OOM on chunked transfers
             byte[] bytes = request.getInputStream().readNBytes(MAX_BODY_SIZE + 1);
             if (bytes.length > MAX_BODY_SIZE) {
-                throw new RuntimeException("Request body too large (max: " + MAX_BODY_SIZE + " bytes)");
+                throw new ClientErrorException(413, "Request body too large (max: " + MAX_BODY_SIZE + " bytes)");
             }
             cachedBody = new String(bytes, charset);
             return cachedBody;
@@ -91,7 +91,9 @@ public class Context {
         try {
             return mapper.readValue(raw, type);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse request body as " + type.getSimpleName() + ": " + e.getMessage(), e);
+            // 不正な JSON はクライアント起因エラー。null を返すことで呼び出し元の body == null → 400 分岐に委ねる。
+            logger.warn("Invalid JSON body ({}): {}", type.getSimpleName(), e.getMessage());
+            return null;
         }
     }
 

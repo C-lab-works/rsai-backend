@@ -59,6 +59,14 @@ public class FirestoreRest {
 
     public boolean isAvailable() { return available; }
 
+    /**
+     * パッケージ内共有のアクセストークン取得。GcpMetricsController など同一パッケージの
+     * クラスが FirestoreRest のキャッシュ済みトークンを再利用できるよう公開する（#10）。
+     */
+    static String accessToken() throws Exception {
+        return INSTANCE.token();
+    }
+
     // 認証
     private String token() throws Exception {
         // 高速パス: ロックなしで有効なキャッシュを確認
@@ -92,6 +100,26 @@ public class FirestoreRest {
 
     public Map<String, Object> get(String path) throws Exception {
         HttpResponse<String> res = http("GET", docBase + path, null);
+        if (res.statusCode() == 404) return null;
+        assertOk("GET " + path, res);
+        return toMap(MAPPER.readTree(res.body()));
+    }
+
+    /**
+     * フィールドマスク付き GET。指定フィールドのみ取得してペイロードを削減する。
+     * maskFields は URL エンコードして ?mask.fieldPaths=f1&mask.fieldPaths=f2 形式で付加する。
+     */
+    public Map<String, Object> get(String path, String... maskFields) throws Exception {
+        if (maskFields == null || maskFields.length == 0) return get(path);
+        StringBuilder url = new StringBuilder(docBase + path + "?");
+        for (String f : maskFields) {
+            url.append("mask.fieldPaths=")
+               .append(URLEncoder.encode(f, StandardCharsets.UTF_8))
+               .append("&");
+        }
+        // 末尾の "&" を除去
+        url.setLength(url.length() - 1);
+        HttpResponse<String> res = http("GET", url.toString(), null);
         if (res.statusCode() == 404) return null;
         assertOk("GET " + path, res);
         return toMap(MAPPER.readTree(res.body()));

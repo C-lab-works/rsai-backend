@@ -33,7 +33,7 @@ public final class HttpCache {
         ctx.header("ETag", entry.etag());
         // gzip と identity で表現が異なるため CDN/プロキシに区別させる
         ctx.header("Vary", "Accept-Encoding");
-        if (entry.etag().equals(ctx.requestHeader("If-None-Match"))) {
+        if (etagMatches(ctx.requestHeader("If-None-Match"), entry.etag())) {
             ctx.status(304);
             return;
         }
@@ -44,6 +44,23 @@ public final class HttpCache {
         } else {
             ctx.jsonBytes(entry.json());
         }
+    }
+
+    /**
+     * RFC 9110 準拠の If-None-Match マッチング。
+     * カンマ区切りリスト・ワイルドカード（*）・弱い ETag（W/"..."）を処理する。
+     * 弱い ETag は弱い比較（タグ部分のみ）で照合する（RFC 9110 §13.1.2）。
+     */
+    static boolean etagMatches(String inm, String etag) {
+        if (inm == null) return false;
+        if (inm.equals(etag)) return true;            // 高速パス
+        for (String part : inm.split(",")) {
+            String t = part.trim();
+            if (t.equals("*")) return true;
+            if (t.startsWith("W/")) t = t.substring(2);
+            if (t.equals(etag)) return true;
+        }
+        return false;
     }
 
     // CRC32 ベースの弱い ETag。引用符付きで返すのでヘッダ値にそのまま使える。
