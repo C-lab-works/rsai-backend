@@ -3,8 +3,16 @@ name: Security Review
 on:
   push:
     branches: [master, debug]
+    paths-ignore:
+      - .github/scripts/security_review.py
+      - .github/security_review_ignore.txt
+      - .github/workflows/security-review.yml
   pull_request:
     branches: [master]
+    paths-ignore:
+      - .github/scripts/security_review.py
+      - .github/security_review_ignore.txt
+      - .github/workflows/security-review.yml
 
 jobs:
   security-review:

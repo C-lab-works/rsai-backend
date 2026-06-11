@@ -18,6 +18,7 @@ BEFORE_SHA = os.environ.get("BEFORE_SHA", "")
 AFTER_SHA = os.environ.get("AFTER_SHA", "")
 GITHUB_STEP_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 MAX_DIFF_CHARS = int(os.environ.get("MAX_DIFF_CHARS", "30000"))
+MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS", "80000"))
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "")
 REPORT_FILE = "security-review.md"
 
@@ -55,7 +56,11 @@ Respond in this exact JSON format:
 }
 
 If no genuine issues found, return {"findings": [], "summary": "簡単なコードの要約とセキュリティ評価(例: "コードは全体的に安全ですが、ユーザー入力のサニタイズが不足している箇所があります。")"}
-Diff to analyze:
+
+The input below contains two sections:
+1. === DIFF === : the git diff to review
+2. === FULL FILE CONTEXT === : full contents of each changed file for broader context (variable origins, caller chains, auth checks outside the diff, etc.)
+Use both sections. The diff shows what changed; the file context shows the surrounding code the diff depends on.
 """
 
 
@@ -132,6 +137,44 @@ def filter_diff(diff: str, patterns: list[str]) -> str:
             continue
         kept.append(section)
     return "".join(kept)
+
+
+def get_file_contexts(diff: str, max_chars: int) -> dict[str, str]:
+    """Return full contents of files changed in the diff, budget-capped at max_chars total."""
+    paths: list[str] = []
+    for m in re.finditer(r"^diff --git a/(.*?) b/", diff, re.MULTILINE):
+        path = m.group(1)
+        if path not in paths:
+            paths.append(path)
+
+    result: dict[str, str] = {}
+    total = 0
+    for path in paths:
+        if total >= max_chars:
+            break
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError:
+            continue
+        remaining = max_chars - total
+        if len(content) > remaining:
+            content = content[:remaining].rstrip() + "\n... (truncated)"
+        result[path] = content
+        total += len(content)
+
+    return result
+
+
+def build_prompt(diff: str, contexts: dict[str, str]) -> str:
+    parts = ["=== DIFF ===\n", diff]
+    if contexts:
+        parts.append("\n\n=== FULL FILE CONTEXT ===")
+        for path, content in contexts.items():
+            parts.append(f"\n--- {path} ---\n{content}")
+    return SECURITY_PROMPT + "".join(parts)
 
 
 def ai_chat(provider: dict, prompt: str, max_continuation: int = 3) -> str:
@@ -307,12 +350,17 @@ def main() -> None:
         print("All changes matched ignore patterns, skipping.")
         return
 
+    contexts = get_file_contexts(diff, MAX_CONTEXT_CHARS)
+    if contexts:
+        print(f"File context loaded: {len(contexts)} file(s), {sum(len(v) for v in contexts.values())} chars.")
+    prompt = build_prompt(diff, contexts)
+
     raw = None
     used_provider = None
     for provider in providers:
         print(f"Trying provider: {provider['name']} ({provider['model']})...")
         try:
-            raw = ai_chat(provider, SECURITY_PROMPT + diff)
+            raw = ai_chat(provider, prompt)
             used_provider = provider["name"]
             print(f"Success with {provider['name']}")
             break
