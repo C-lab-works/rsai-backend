@@ -21,7 +21,7 @@
   .app{
     display:grid; height:100vh;
     grid-template-columns:320px 1fr;
-    grid-template-rows:auto 1fr 6px var(--anno-h);
+    grid-template-rows:auto 1fr 6px var(--anno-h, 300px);
     grid-template-areas:
       "header header"
       "sidebar canvas"
@@ -259,7 +259,7 @@
 
     { "id": "seeder",        "title": "DataSeeder",              "subtitle": "スキーマ / シード migration",   "group": "core", "x": 1300, "y": 190, "w": 220, "h": 56 },
     { "id": "db",            "title": "Database (HikariCP)",     "subtitle": "MySQL 接続プール",             "group": "core", "x": 1300, "y": 330, "w": 220, "h": 56 },
-    { "id": "mysql",         "title": "MySQL / Cloud SQL",       "subtitle": "festival DB",                  "group": "core", "x": 1300, "y": 470, "w": 220, "h": 56 }
+    { "id": "mysql",         "title": "MySQL",                    "subtitle": "festival DB (パブリックIP)",   "group": "core", "x": 1300, "y": 470, "w": 220, "h": 56 }
   ],
   "flows": [
     {
@@ -449,8 +449,6 @@ async function loadData(){
 }
 
 let DATA, NODE_BY_ID = {}, GROUP_BY_ID = {}, COL_INDEX = {};
-const COL_OF_GROUP = { ext:0, boot:1, filt:2, ctrl:3, core:4 };
-
 let svg, defs, colLayer, edgeLayer, nodeLayer, badgeLayer;
 let VB = {x:0,y:0,w:1680,h:980};      // current viewBox
 let activeFlowId = null;
@@ -460,7 +458,13 @@ const nodeEls = {};                    // nodeId  -> g element
 const badgeCycle = {};                 // edgeKey -> current cycle index (multi-step)
 
 /* ── geometry helpers ── */
-function colOf(n){ return COL_OF_GROUP[n.group] ?? 0; }
+let _divXs = null;
+function colOf(n){
+  if(!_divXs) _divXs = DATA.columns
+    .filter(c => c.divider != null).map(c => c.divider).sort((a,b)=>a-b);
+  for(let i = 0; i < _divXs.length; i++){ if(n.x < _divXs[i]) return i; }
+  return _divXs.length;
+}
 
 function anchorPoints(a, b){
   if(a.id === b.id){
@@ -484,7 +488,7 @@ function anchorPoints(a, b){
 }
 
 /* lane offset: separate A→B from B→A so badges never stack */
-const LANE = 19;
+const LANE = 38;
 function laneFor(fromId, toId, allKeys){
   if(fromId === toId) return 0;
   if(!allKeys.has(toId + "->" + fromId)) return 0;
@@ -1075,6 +1079,7 @@ function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_\-]/g, m => "\\"+m); }
 /* ── boot ── */
 (async function(){
   DATA = await loadData();
+  _divXs = null;   // reset column-divider cache after data load
   DATA.nodes.forEach(n => NODE_BY_ID[n.id] = n);
   DATA.groups.forEach(g => GROUP_BY_ID[g.id] = g);
   DATA.columns.forEach((c,i) => COL_INDEX[c.id] = i);
