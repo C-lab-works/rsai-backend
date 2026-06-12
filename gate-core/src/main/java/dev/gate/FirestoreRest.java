@@ -151,15 +151,31 @@ public class FirestoreRest {
     }
 
     public List<Entry> list(String collectionPath) throws Exception {
-        HttpResponse<String> res = http("GET", docBase + collectionPath + "?pageSize=200", null);
-        if (res.statusCode() == 404) return Collections.emptyList();
-        assertOk("LIST " + collectionPath, res);
-        JsonNode docs = MAPPER.readTree(res.body()).path("documents");
-        if (!docs.isArray()) return Collections.emptyList();
+        // ページング追従: nextPageToken がある間、最大 10 ページ（2000件）まで取得する
+        final int MAX_PAGES = 10;
         List<Entry> result = new ArrayList<>();
-        for (JsonNode doc : docs) {
-            String name = doc.path("name").asText();
-            result.add(new Entry(name.substring(name.lastIndexOf('/') + 1), toMap(doc)));
+        String pageToken = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            String url = docBase + collectionPath + "?pageSize=200"
+                + (pageToken != null ? "&pageToken=" + URLEncoder.encode(pageToken, StandardCharsets.UTF_8) : "");
+            HttpResponse<String> res = http("GET", url, null);
+            if (res.statusCode() == 404) return Collections.emptyList();
+            assertOk("LIST " + collectionPath, res);
+            JsonNode root = MAPPER.readTree(res.body());
+            JsonNode docs = root.path("documents");
+            if (docs.isArray()) {
+                for (JsonNode doc : docs) {
+                    String name = doc.path("name").asText();
+                    result.add(new Entry(name.substring(name.lastIndexOf('/') + 1), toMap(doc)));
+                }
+            }
+            // 次ページトークンがなければ終了
+            JsonNode nextToken = root.path("nextPageToken");
+            if (!nextToken.isTextual() || nextToken.asText().isEmpty()) break;
+            pageToken = nextToken.asText();
+            if (page == MAX_PAGES - 1) {
+                log.warn("LIST {} reached max pages ({}), {} docs returned so far", collectionPath, MAX_PAGES, result.size());
+            }
         }
         return result;
     }

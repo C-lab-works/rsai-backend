@@ -108,11 +108,16 @@ public class AdminController {
 
     /**
      * Firestore の instances コレクションからステータスを派生させたビュー一覧を返す。
-     * lastSeen が 30 秒以上前のものは一覧から除外し、heartbeat 未到達のまま
-     * 300 秒経過したドキュメントは削除する。
+     * - lastSeen が 30 秒以上前の非 stopped はビューから除外する。
+     * - 非 stopped で lastSeen が 3600 秒超の残骸、および
+     *   stopped で lastSeen（または startedAt）が 86400 秒超の古いドキュメントは
+     *   非同期で削除する（応答はブロックしない）。
      */
     private List<InstanceView> deriveInstanceViews(Instant now) throws Exception {
         List<InstanceView> views = new ArrayList<>();
+        // 非同期削除対象の id を収集するリスト
+        List<String> toDelete = new ArrayList<>();
+
         for (FirestoreRest.Entry entry : FirestoreRest.get().list("instances")) {
             Map<String, Object> d   = entry.data();
             String rawStatus        = (String) d.get("status");
@@ -120,17 +125,36 @@ public class AdminController {
 
             String status;
             if ("stopped".equals(rawStatus)) {
+                // stopped: lastSeen または startedAt が 86400 秒超なら削除対象
+                String ageRef = lastSeenStr != null ? lastSeenStr : (String) d.get("startedAt");
+                if (ageRef != null) {
+                    long age = Duration.between(Instant.parse(ageRef), now).toSeconds();
+                    if (age >= 86400) {
+                        toDelete.add(entry.id());
+                        continue;
+                    }
+                } else {
+                    // 時刻が一切ない stopped は削除対象
+                    toDelete.add(entry.id());
+                    continue;
+                }
                 status = "stopped";
             } else if (lastSeenStr != null) {
                 long age = Duration.between(Instant.parse(lastSeenStr), now).toSeconds();
-                if (age >= 30) continue;
+                if (age >= 3600) {
+                    // 1時間超の残骸: 削除対象（ビューからも除外）
+                    toDelete.add(entry.id());
+                    continue;
+                }
+                if (age >= 30) continue; // 30s〜3600s はスキップのみ
                 status = age < 10 ? "running" : "degraded";
             } else {
+                // lastSeen なし非 stopped: startedAt が 300 秒超なら削除対象に統合
                 String startedAt = (String) d.get("startedAt");
                 if (startedAt != null) {
                     long sinceStart = Duration.between(Instant.parse(startedAt), now).toSeconds();
                     if (sinceStart >= 300) {
-                        try { FirestoreRest.get().delete("instances/" + entry.id()); } catch (Exception ignored) {}
+                        toDelete.add(entry.id());
                         continue;
                     }
                 }
@@ -144,6 +168,24 @@ public class AdminController {
                 status
             ));
         }
+
+        // 削除対象がある場合は 1 タスクにまとめて非同期実行する
+        if (!toDelete.isEmpty()) {
+            final List<String> ids = List.copyOf(toDelete);
+            Main.bg.submit(() -> {
+                int deleted = 0;
+                for (String id : ids) {
+                    try {
+                        FirestoreRest.get().delete("instances/" + id);
+                        deleted++;
+                    } catch (Exception ignored) {
+                        // 個別失敗は無視して続行
+                    }
+                }
+                logger.info("残骸インスタンス削除完了: {}件", deleted);
+            });
+        }
+
         return views;
     }
 
