@@ -40,3 +40,8 @@ routes:
     table: credit
     columns: [id, name]
     cache: 1h
+
+  - path: /api/bus
+    table: bus
+    columns: [id,bus_id,Destination,School,School_Platform,Shinsapporo,Shinsapporo_Platform,Ooyati,Atubetu,Ooasa]
+    cache: 15m
