@@ -160,38 +160,7 @@ public class DataController {
 
     private Object buildFood(Connection conn) throws Exception {
         ObjectNode root = MAPPER.createObjectNode();
-
-        ArrayNode foods = root.putArray("foods");
-        try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-               "SELECT id, name, description, image_url FROM foods ORDER BY id")) {
-            while (rs.next()) {
-                ObjectNode f = foods.addObject();
-                f.put("id",   rs.getInt("id"));
-                f.put("name", rs.getString("name"));
-                putStringOrNull(f, "description", rs.getString("description"));
-                putStringOrNull(f, "image_url",   rs.getString("image_url"));
-            }
-        }
-
-        ArrayNode menus = root.putArray("menus");
-        try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-               "SELECT id, food_id, name, price, description, is_sold_out " +
-               "FROM menus ORDER BY food_id, id")) {
-            while (rs.next()) {
-                ObjectNode m = menus.addObject();
-                m.put("id",      rs.getInt("id"));
-                m.put("food_id", rs.getInt("food_id"));
-                m.put("name",    rs.getString("name"));
-                int price = rs.getInt("price");
-                if (!rs.wasNull()) m.put("price", price);
-                putStringOrNull(m, "description", rs.getString("description"));
-                int soldOut = rs.getInt("is_sold_out");
-                if (!rs.wasNull()) m.put("is_sold_out", soldOut == 1);
-            }
-        }
-
+        root.putArray("items");
         return root;
     }
 
