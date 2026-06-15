@@ -26,8 +26,6 @@ public class DataSeeder {
                 seedProjects(conn);
                 seedTimetables(conn);
                 seedAnnouncements(conn);
-                seedFoods(conn);
-                seedMenus(conn);
                 seedProjectCategories(conn);
                 setSeedVersion(conn, 2);
             }
@@ -167,7 +165,7 @@ public class DataSeeder {
             // column already exists
         }
         defineTables(conn);
-        logger.info("Created foods, menus, project_categories tables");
+        logger.info("Created project_categories and related tables");
     }
 
     private static void migrateV6(Connection conn) throws Exception {
@@ -291,23 +289,6 @@ public class DataSeeder {
             "  is_emergency  TINYINT(1)   NOT NULL DEFAULT 0" +
             ")");
         exec(conn,
-            "CREATE TABLE IF NOT EXISTS foods (" +
-            "  id          INT  PRIMARY KEY AUTO_INCREMENT," +
-            "  name        TEXT NOT NULL," +
-            "  description TEXT," +
-            "  image_url   TEXT" +
-            ")");
-        exec(conn,
-            "CREATE TABLE IF NOT EXISTS menus (" +
-            "  id          INT        PRIMARY KEY AUTO_INCREMENT," +
-            "  food_id     INT        NOT NULL," +
-            "  name        TEXT       NOT NULL," +
-            "  price       INT," +
-            "  description TEXT," +
-            "  is_sold_out TINYINT(1)," +
-            "  FOREIGN KEY (food_id) REFERENCES foods(id)" +
-            ")");
-        exec(conn,
             "CREATE TABLE IF NOT EXISTS bus (" +
             "  id                   INT          PRIMARY KEY AUTO_INCREMENT," +
             "  bus_id               INT          NOT NULL," +
@@ -384,18 +365,6 @@ public class DataSeeder {
             "INSERT IGNORE INTO announcements (id, content, is_emergency) VALUES " +
             "(1, 'ここにお知らせを表示できます（テスト表示）', 0), " +
             "(2, '【緊急】ここに緊急お知らせを表示できます（テスト表示）', 1)");
-    }
-
-    private static void seedFoods(Connection conn) throws Exception {
-        exec(conn,
-            "INSERT IGNORE INTO foods (id, name, description) VALUES " +
-            "(1, 'キッチンカー店舗（未定）', 'ここに店舗説明を入力できます')");
-    }
-
-    private static void seedMenus(Connection conn) throws Exception {
-        exec(conn,
-            "INSERT IGNORE INTO menus (id, food_id, name, price) VALUES " +
-            "(1, 1, 'メニュー（未定）', NULL)");
     }
 
     private static void migrateV11(Connection conn) throws Exception {
