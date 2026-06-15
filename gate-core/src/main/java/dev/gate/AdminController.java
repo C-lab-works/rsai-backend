@@ -26,15 +26,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
@@ -611,9 +610,9 @@ public class AdminController {
             logger.warn("updateRow syntax error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", "SQL構文エラー"));
         } catch (SQLException e) {
-            if (isDataTypeError(e)) {
-                logger.warn("updateRow data type error: {}", e.getMessage());
-                ctx.status(400).json(Map.of("error", toDataTypeMessage()));
+            if (isClientSqlError(e)) {
+                logger.warn("updateRow SQL client error code={}: {}", e.getErrorCode(), e.getMessage());
+                ctx.status(400).json(Map.of("error", toClientSqlMessage(e)));
             } else {
                 logger.error("updateRow error", e);
                 ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -648,6 +647,14 @@ public class AdminController {
         } catch (SQLIntegrityConstraintViolationException e) {
             logger.warn("deleteRow constraint violation: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", toUserMessage(e)));
+        } catch (SQLException e) {
+            if (isClientSqlError(e)) {
+                logger.warn("deleteRow SQL client error code={}: {}", e.getErrorCode(), e.getMessage());
+                ctx.status(400).json(Map.of("error", toClientSqlMessage(e)));
+            } else {
+                logger.error("deleteRow error", e);
+                ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            }
         } catch (Exception e) {
             logger.error("deleteRow error", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -696,9 +703,9 @@ public class AdminController {
             logger.warn("insertRow syntax error: {}", e.getMessage());
             ctx.status(400).json(Map.of("error", "SQL構文エラー"));
         } catch (SQLException e) {
-            if (isDataTypeError(e)) {
-                logger.warn("insertRow data type error: {}", e.getMessage());
-                ctx.status(400).json(Map.of("error", toDataTypeMessage()));
+            if (isClientSqlError(e)) {
+                logger.warn("insertRow SQL client error code={}: {}", e.getErrorCode(), e.getMessage());
+                ctx.status(400).json(Map.of("error", toClientSqlMessage(e)));
             } else {
                 logger.error("insertRow error", e);
                 ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -831,10 +838,6 @@ public class AdminController {
                 String stmt = raw.strip();
                 if (stmt.isEmpty()) continue;
                 String norm = normalizeSql(stmt);
-                // ファイルアクセス系（INTO OUTFILE/DUMPFILE, LOAD_FILE, LOAD DATA）を拒否。
-                // norm は大文字化＋空白圧縮済みなので BLOCKED_SQL_FRAGMENTS とそのまま部分一致できる。
-                // 注: stripSqlComments は文字列リテラルを除去しないため、リテラル内に該当語があると
-                // 誤検知し得るが、admin 専用ツールゆえ実害なしとして許容する（多層防御を優先）。
                 String blocked = matchedBlockedFragment(norm);
                 if (blocked != null) {
                     ctx.status(403).json(Map.of("error", "ファイルアクセス系操作は許可されていません: " + blocked));
@@ -1229,6 +1232,24 @@ public class AdminController {
         if (code == 1048) return "Column cannot be null: " + extractColumnName(msg);
         if (code == 1216 || code == 1217 || code == 1451 || code == 1452)
             return "Foreign key constraint violation";
+        return "Constraint violation";
+    }
+
+    private boolean isClientSqlError(SQLException e) {
+        int code = e.getErrorCode();
+        return code == 1048 || code == 1062
+            || code == 1216 || code == 1217 || code == 1451 || code == 1452
+            || code == 1292 || code == 1366;
+    }
+
+    private String toClientSqlMessage(SQLException e) {
+        if (e instanceof SQLIntegrityConstraintViolationException sce) return toUserMessage(sce);
+        int code = e.getErrorCode();
+        if (code == 1292 || code == 1366) return toDataTypeMessage();
+        String msg = e.getMessage();
+        if (code == 1062) return "Duplicate entry: " + extractDuplicateValue(msg);
+        if (code == 1048) return "Column cannot be null: " + extractColumnName(msg);
+        if (code == 1216 || code == 1217 || code == 1451 || code == 1452) return "Foreign key constraint violation";
         return "Constraint violation";
     }
 
