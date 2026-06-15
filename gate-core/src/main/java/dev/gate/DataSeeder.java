@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 13) {
-                logger.info("Seed data v13 already present — skipping");
+            if (v >= 14) {
+                logger.info("Seed data v14 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -84,7 +84,12 @@ public class DataSeeder {
             logger.info("Migrating schema v12 -> v13");
             migrateV12(conn);
             setSeedVersion(conn, 13);
-            logger.info("Seed data v13 ready");
+            if (v <= 13) {
+                logger.info("Migrating schema v13 -> v14");
+                migrateV13(conn);
+                setSeedVersion(conn, 14);
+            }
+            logger.info("Seed data v14 ready");
         }
     }
 
@@ -444,6 +449,23 @@ public class DataSeeder {
             exec(conn, "ALTER TABLE metrics_endpoints ADD PRIMARY KEY (endpoint, date)");
             logger.info("Added date column to metrics_endpoints with composite PK (endpoint, date)");
         }
+    }
+
+    private static void migrateV13(Connection conn) throws Exception {
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS bus (" +
+            "  id                   INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  bus_id               INT          NOT NULL," +
+            "  Destination          VARCHAR(100) NOT NULL," +
+            "  School               TIME         NOT NULL," +
+            "  School_Platform      VARCHAR(100)," +
+            "  Shinsapporo          TIME," +
+            "  Shinsapporo_Platform VARCHAR(100)," +
+            "  Ooyati               TIME," +
+            "  Ooasa                TIME," +
+            "  Atubetu              TIME" +
+            ")");
+        logger.info("Created bus table");
     }
 
     // ── util ──────────────────────────────────────────────────
