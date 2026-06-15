@@ -26,16 +26,6 @@ routes:
     columns: [id, title, organizer, description, image_url, location_id]
     cache: 5m
 
-  - path: /api/foods
-    table: foods
-    columns: [id, name, description, image_url]
-    cache: 3m
-
-  - path: /api/menus
-    table: menus
-    columns: [id, food_id, name, price, description, is_sold_out]
-    cache: 1m
-
   - path: /api/credit
     table: credit
     columns: [id, name]
