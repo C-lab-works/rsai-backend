@@ -28,3 +28,7 @@ deployer-key.json
 
 *graphify*
 SPEC.md
+
+### Generated artifacts ###
+bundle.json
+instdump.json
