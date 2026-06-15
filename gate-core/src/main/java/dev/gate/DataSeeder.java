@@ -302,6 +302,19 @@ public class DataSeeder {
             "  is_sold_out TINYINT(1)," +
             "  FOREIGN KEY (food_id) REFERENCES foods(id)" +
             ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS bus (" +
+            "  id                   INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  bus_id               INT          NOT NULL," +
+            "  Destination          VARCHAR(100) NOT NULL," +
+            "  School               TIME         NOT NULL," +
+            "  School_Platform      VARCHAR(100)," +
+            "  Shinsapporo          TIME," +
+            "  Shinsapporo_Platform VARCHAR(100)," +
+            "  Ooyati               TIME," +
+            "  Ooasa                TIME," +
+            "  Atubetu              TIME" +
+            ")");
     }
 
     // ── seed data ─────────────────────────────────────────────
