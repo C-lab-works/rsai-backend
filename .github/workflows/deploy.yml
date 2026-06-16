@@ -508,13 +508,15 @@ jobs:
               -h "${PROD_DB_HOST}" -P "${PROD_DB_PORT}" \
               -u "${PROD_DB_USER}" \
               --single-transaction --quick --skip-lock-tables \
-              --verbose \
-              "${PROD_DB_NAME}" 2>&1 | tee /tmp/dump_stderr_$$  | \
+              --no-tablespaces \
+              "${PROD_DB_NAME}" \
+            2>/tmp/dump_stderr_$$ | \
           docker exec -i \
             -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" \
             rsai-mysql-debug \
-            mysql -uroot -v rsai_debug
+            mysql -uroot rsai_debug
           SYNC_EXIT=${PIPESTATUS[0]}
+          cat /tmp/dump_stderr_$$ || true
           if [ "$SYNC_EXIT" -eq 0 ]; then
             echo "[sync] SUCCESS: prod → rsai_debug sync complete"
             TABLE_COUNT=$(docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug \
@@ -522,7 +524,6 @@ jobs:
             echo "[sync] Tables restored: ${TABLE_COUNT}"
           else
             echo "[sync] ERROR: mysqldump/restore failed (exit=${SYNC_EXIT})"
-            cat /tmp/dump_stderr_$$ || true
             exit 1
           fi
           rm -f /tmp/dump_stderr_$$
