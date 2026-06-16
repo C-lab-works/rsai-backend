@@ -401,7 +401,7 @@ jobs:
       always() &&
       (needs.build.result == 'success' || needs.build-fallback.result == 'success')
     runs-on: [self-hosted, tatsunote2]
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       packages: read
 
@@ -459,6 +459,11 @@ jobs:
         env:
           DEPLOY_IMAGE: ${{ env.GHCR_BASE }}:debug
           DEBUG_DB_PASSWORD: ${{ secrets.DEBUG_DB_PASSWORD }}
+          PROD_DB_HOST:     "100.102.67.64"
+          PROD_DB_PORT:     ${{ secrets.DB_PORT }}
+          PROD_DB_NAME:     ${{ secrets.DB_NAME }}
+          PROD_DB_USER:     ${{ secrets.DB_USER }}
+          PROD_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           set -e
 
