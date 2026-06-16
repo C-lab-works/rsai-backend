@@ -494,6 +494,39 @@ jobs:
             docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>/dev/null && echo 'MySQL ping OK' || echo 'WARNING: MySQL ping failed'
           fi
 
+          echo '=== Syncing prod DB → debug DB ==='
+          echo "[sync] Resetting rsai_debug..."
+          docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug \
+            mysql -uroot -v -e "DROP DATABASE IF EXISTS rsai_debug; CREATE DATABASE rsai_debug;" \
+            && echo "[sync] DB reset OK" || { echo "[sync] ERROR: DB reset failed"; exit 1; }
+
+          echo "[sync] Starting mysqldump from ${PROD_DB_HOST}:${PROD_DB_PORT}/${PROD_DB_NAME}..."
+          docker run --rm \
+            -e MYSQL_PWD="${PROD_DB_PASSWORD}" \
+            mysql:8.0 \
+            mysqldump \
+              -h "${PROD_DB_HOST}" -P "${PROD_DB_PORT}" \
+              -u "${PROD_DB_USER}" \
+              --single-transaction --quick --skip-lock-tables \
+              --verbose \
+              "${PROD_DB_NAME}" 2>&1 | tee /tmp/dump_stderr_$$  | \
+          docker exec -i \
+            -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" \
+            rsai-mysql-debug \
+            mysql -uroot -v rsai_debug
+          SYNC_EXIT=${PIPESTATUS[0]}
+          if [ "$SYNC_EXIT" -eq 0 ]; then
+            echo "[sync] SUCCESS: prod → rsai_debug sync complete"
+            TABLE_COUNT=$(docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug \
+              mysql -uroot -sN -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='rsai_debug';")
+            echo "[sync] Tables restored: ${TABLE_COUNT}"
+          else
+            echo "[sync] ERROR: mysqldump/restore failed (exit=${SYNC_EXIT})"
+            cat /tmp/dump_stderr_$$ || true
+            exit 1
+          fi
+          rm -f /tmp/dump_stderr_$$
+
           echo '=== Pulling image ==='
           docker pull "${DEPLOY_IMAGE}"
 
