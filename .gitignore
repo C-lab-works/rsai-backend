@@ -32,3 +32,5 @@ SPEC.md
 ### Generated artifacts ###
 bundle.json
 instdump.json
+/.understand-anything
+start-dashboard.bat
