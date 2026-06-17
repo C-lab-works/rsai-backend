@@ -469,6 +469,16 @@ jobs:
         run: |
           set -e
 
+          # パスワードをファイルベースで管理（コマンドライン引数経由でのプロセスリスト露出を防止）
+          DEBUG_CNF=$(mktemp /tmp/.mysql_debug_XXXXXX.cnf)
+          PROD_CNF=$(mktemp /tmp/.mysql_prod_XXXXXX.cnf)
+          MYSQL_INIT_ENV=$(mktemp /tmp/.mysql_init_env_XXXXXX)
+          chmod 600 "${DEBUG_CNF}" "${PROD_CNF}" "${MYSQL_INIT_ENV}"
+          printf '[client]\npassword=%s\n' "${DEBUG_DB_PASSWORD}" > "${DEBUG_CNF}"
+          printf '[client]\npassword=%s\n' "${PROD_DB_PASSWORD}"  > "${PROD_CNF}"
+          printf 'MYSQL_ROOT_PASSWORD=%s\nMYSQL_DATABASE=rsai_debug\n' "${DEBUG_DB_PASSWORD}" > "${MYSQL_INIT_ENV}"
+          trap 'rm -f "${DEBUG_CNF}" "${PROD_CNF}" "${MYSQL_INIT_ENV}"' EXIT
+
           echo '=== Ensuring Docker network ==='
           docker network create rsai-debug-net 2>/dev/null || true
 
@@ -481,33 +491,38 @@ jobs:
               --name rsai-mysql-debug \
               --network rsai-debug-net \
               --restart unless-stopped \
-              -e MYSQL_ROOT_PASSWORD="${DEBUG_DB_PASSWORD}" \
-              -e MYSQL_DATABASE=rsai_debug \
+              --env-file "${MYSQL_INIT_ENV}" \
               -v rsai-mysql-debug-data:/var/lib/mysql \
               mysql:8.0
             echo 'Waiting for MySQL to be ready...'
+            docker cp "${DEBUG_CNF}" rsai-mysql-debug:/root/.my_debug.cnf
+            docker exec rsai-mysql-debug chmod 600 /root/.my_debug.cnf
             for i in $(seq 1 30); do
-              docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>/dev/null && echo 'MySQL ready' && break || true
+              docker exec rsai-mysql-debug mysqladmin --defaults-extra-file=/root/.my_debug.cnf ping -uroot --silent 2>/dev/null && echo 'MySQL ready' && break || true
               sleep 3
             done
           else
             echo 'MySQL already running, ensuring network membership...'
             docker network connect rsai-debug-net rsai-mysql-debug 2>/dev/null || true
-            docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>/dev/null && echo 'MySQL ping OK' || echo 'WARNING: MySQL ping failed'
+            docker cp "${DEBUG_CNF}" rsai-mysql-debug:/root/.my_debug.cnf
+            docker exec rsai-mysql-debug chmod 600 /root/.my_debug.cnf
+            docker exec rsai-mysql-debug mysqladmin --defaults-extra-file=/root/.my_debug.cnf ping -uroot --silent 2>/dev/null && echo 'MySQL ping OK' || echo 'WARNING: MySQL ping failed'
           fi
 
           echo '=== Syncing prod DB → debug DB ==='
           echo "[sync] Resetting rsai_debug..."
-          docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug \
-            mysql -uroot -v -e "DROP DATABASE IF EXISTS rsai_debug; CREATE DATABASE rsai_debug;" \
+          docker exec rsai-mysql-debug \
+            mysql --defaults-extra-file=/root/.my_debug.cnf -uroot -v \
+            -e "DROP DATABASE IF EXISTS rsai_debug; CREATE DATABASE rsai_debug;" \
             && echo "[sync] DB reset OK" || { echo "[sync] ERROR: DB reset failed"; exit 1; }
 
           DUMP_FILE="/tmp/prod_dump_$$.sql"
           echo "[sync] Dumping from ${PROD_DB_HOST}:${PROD_DB_PORT}/${PROD_DB_NAME}..."
           docker run --rm \
-            -e MYSQL_PWD="${PROD_DB_PASSWORD}" \
+            -v "${PROD_CNF}:/tmp/.my_prod.cnf:ro" \
             mysql:8.0 \
             mysqldump \
+              --defaults-extra-file=/tmp/.my_prod.cnf \
               -h "${PROD_DB_HOST}" -P "${PROD_DB_PORT}" \
               -u "${PROD_DB_USER}" \
               --single-transaction --quick --skip-lock-tables \
@@ -525,16 +540,15 @@ jobs:
           echo "[sync] Dump OK: ${DUMP_SIZE} bytes"
 
           echo "[sync] Importing into rsai_debug..."
-          docker exec -i \
-            -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" \
-            rsai-mysql-debug \
-            mysql -uroot rsai_debug < "${DUMP_FILE}"
+          docker exec -i rsai-mysql-debug \
+            mysql --defaults-extra-file=/root/.my_debug.cnf -uroot rsai_debug < "${DUMP_FILE}"
           IMPORT_EXIT=$?
           rm -f "${DUMP_FILE}" /tmp/dump_stderr_$$
           if [ "$IMPORT_EXIT" -eq 0 ]; then
             echo "[sync] SUCCESS: prod → rsai_debug sync complete"
-            TABLE_COUNT=$(docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug \
-              mysql -uroot -sN -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='rsai_debug';")
+            TABLE_COUNT=$(docker exec rsai-mysql-debug \
+              mysql --defaults-extra-file=/root/.my_debug.cnf -uroot -sN \
+              -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='rsai_debug';")
             echo "[sync] Tables restored: ${TABLE_COUNT}"
           else
             echo "[sync] ERROR: import failed (exit=${IMPORT_EXIT})"
@@ -582,7 +596,7 @@ jobs:
             echo '--- Network membership ---'
             docker network inspect rsai-debug-net --format '{{range .Containers}}{{.Name}} {{end}}'
             echo '--- MySQL ping ---'
-            docker exec -e MYSQL_PWD="${DEBUG_DB_PASSWORD}" rsai-mysql-debug mysqladmin ping -uroot --silent 2>&1 || true
+            docker exec rsai-mysql-debug mysqladmin --defaults-extra-file=/root/.my_debug.cnf ping -uroot --silent 2>&1 || true
             echo '--- App logs (last 80 lines) ---'
             docker logs --tail 80 rsai-debug
             exit 1
