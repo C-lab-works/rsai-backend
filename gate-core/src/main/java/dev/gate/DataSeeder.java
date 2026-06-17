@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 15) {
-                logger.info("Seed data v15 already present — skipping");
+            if (v >= 16) {
+                logger.info("Seed data v16 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -79,9 +79,11 @@ public class DataSeeder {
                 migrateV11(conn);
                 setSeedVersion(conn, 12);
             }
-            logger.info("Migrating schema v12 -> v13");
-            migrateV12(conn);
-            setSeedVersion(conn, 13);
+            if (v <= 12) {
+                logger.info("Migrating schema v12 -> v13");
+                migrateV12(conn);
+                setSeedVersion(conn, 13);
+            }
             if (v <= 13) {
                 logger.info("Migrating schema v13 -> v14");
                 migrateV13(conn);
@@ -92,7 +94,12 @@ public class DataSeeder {
                 migrateV14(conn);
                 setSeedVersion(conn, 15);
             }
-            logger.info("Seed data v15 ready");
+            if (v <= 15) {
+                logger.info("Migrating schema v15 -> v16");
+                migrateV15(conn);
+                setSeedVersion(conn, 16);
+            }
+            logger.info("Seed data v16 ready");
         }
     }
 
@@ -308,10 +315,11 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foodtruck (" +
-            "  id   INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  name VARCHAR(255) NOT NULL," +
-            "  info TEXT         NOT NULL," +
-            "  icon VARCHAR(255) NOT NULL" +
+            "  id      INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name    VARCHAR(255) NOT NULL," +
+            "  info    TEXT         NOT NULL," +
+            "  icon    VARCHAR(255) NOT NULL," +
+            "  subicon VARCHAR(255)" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS menus (" +
@@ -478,6 +486,11 @@ public class DataSeeder {
             "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
             ")");
         logger.info("Created foodtruck and menus tables");
+    }
+
+    private static void migrateV15(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "foodtruck", "subicon", "VARCHAR(255)");
+        logger.info("Added subicon column to foodtruck");
     }
 
     // ── util ──────────────────────────────────────────────────
