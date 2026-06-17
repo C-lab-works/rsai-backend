@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 16) {
-                logger.info("Seed data v16 already present — skipping");
+            if (v >= 17) {
+                logger.info("Seed data v17 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -99,7 +99,12 @@ public class DataSeeder {
                 migrateV15(conn);
                 setSeedVersion(conn, 16);
             }
-            logger.info("Seed data v16 ready");
+            if (v <= 16) {
+                logger.info("Migrating schema v16 -> v17");
+                migrateV16(conn);
+                setSeedVersion(conn, 17);
+            }
+            logger.info("Seed data v17 ready");
         }
     }
 
@@ -315,11 +320,12 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foodtruck (" +
-            "  id      INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  name    VARCHAR(255) NOT NULL," +
-            "  info    TEXT         NOT NULL," +
-            "  icon    VARCHAR(255) NOT NULL," +
-            "  subicon VARCHAR(255)" +
+            "  id            INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name          VARCHAR(255) NOT NULL," +
+            "  info          TEXT         NOT NULL," +
+            "  icon          VARCHAR(255) NOT NULL," +
+            "  subicon       VARCHAR(255)," +
+            "  location_code VARCHAR(50)" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS menus (" +
@@ -491,6 +497,11 @@ public class DataSeeder {
     private static void migrateV15(Connection conn) throws Exception {
         addColumnIfMissing(conn, "foodtruck", "subicon", "VARCHAR(255)");
         logger.info("Added subicon column to foodtruck");
+    }
+
+    private static void migrateV16(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "foodtruck", "location_code", "VARCHAR(50)");
+        logger.info("Added location_code column to foodtruck");
     }
 
     // ── util ──────────────────────────────────────────────────
