@@ -458,12 +458,14 @@ jobs:
       - name: Deploy container
         env:
           DEPLOY_IMAGE: ${{ env.GHCR_BASE }}:debug
-          DEBUG_DB_PASSWORD: ${{ secrets.DEBUG_DB_PASSWORD }}
-          PROD_DB_HOST:     "100.102.67.64"
-          PROD_DB_PORT:     ${{ secrets.DB_PORT }}
-          PROD_DB_NAME:     ${{ secrets.DB_NAME }}
-          PROD_DB_USER:     ${{ secrets.DB_USER }}
-          PROD_DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DEBUG_DB_PASSWORD:    ${{ secrets.DEBUG_DB_PASSWORD }}
+          PROD_DB_HOST:         "100.102.67.64"
+          PROD_DB_PORT:         ${{ secrets.DB_PORT }}
+          PROD_DB_NAME:         ${{ secrets.DB_NAME }}
+          PROD_DB_USER:         ${{ secrets.DB_USER }}
+          PROD_DB_PASSWORD:     ${{ secrets.DB_PASSWORD }}
+          ORIGIN_SHARED_SECRET: ${{ secrets.ORIGIN_SHARED_SECRET }}
+          READ_ONLY_KEY:        ${{ secrets.READ_ONLY_KEY }}
         run: |
           set -e
 
@@ -585,6 +587,27 @@ jobs:
             docker logs --tail 80 rsai-debug
             exit 1
           fi
+
+          echo '=== Endpoint smoke test ==='
+          FAIL=0
+          for path in /events /food /map /announcements /api/locations /api/categories /api/projects /api/credit /api/bus; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "X-Origin-Secret: ${ORIGIN_SHARED_SECRET}" \
+              -H "X-Api-Key: ${READ_ONLY_KEY}" \
+              "http://localhost:8082${path}" 2>/dev/null || echo '000')
+            if [ "$CODE" = "200" ]; then
+              echo "[OK]   ${path} -> ${CODE}"
+            else
+              echo "[FAIL] ${path} -> ${CODE}"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" != "0" ]; then
+            echo '--- App logs (last 40 lines) ---'
+            docker logs --tail 40 rsai-debug
+            exit 1
+          fi
+          echo 'All endpoints OK'
 
           echo '=== Pruning unused images ==='
           docker image prune -f
