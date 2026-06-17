@@ -79,9 +79,11 @@ public class DataSeeder {
                 migrateV11(conn);
                 setSeedVersion(conn, 12);
             }
-            logger.info("Migrating schema v12 -> v13");
-            migrateV12(conn);
-            setSeedVersion(conn, 13);
+            if (v <= 12) {
+                logger.info("Migrating schema v12 -> v13");
+                migrateV12(conn);
+                setSeedVersion(conn, 13);
+            }
             if (v <= 13) {
                 logger.info("Migrating schema v13 -> v14");
                 migrateV13(conn);
