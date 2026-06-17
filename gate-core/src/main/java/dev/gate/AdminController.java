@@ -520,7 +520,7 @@ public class AdminController {
             Set<String> pks = new HashSet<>();
             // KEY_SEQ 昇順で並ぶため、最初に追加されたものが KEY_SEQ 最小（= 主キー代表列）
             String firstPkCol = null;
-            try (ResultSet rs = meta.getPrimaryKeys(null, null, resolvedTable)) {
+            try (ResultSet rs = meta.getPrimaryKeys(conn.getCatalog(), null, resolvedTable)) {
                 // KEY_SEQ でソートされた順に読む
                 java.util.TreeMap<Short, String> pkBySeq = new java.util.TreeMap<>();
                 while (rs.next()) {
@@ -531,7 +531,7 @@ public class AdminController {
             }
 
             ArrayNode cols = root.putArray("cols");
-            try (ResultSet rs = meta.getColumns(null, null, resolvedTable, null)) {
+            try (ResultSet rs = meta.getColumns(conn.getCatalog(), null, resolvedTable, null)) {
                 while (rs.next()) {
                     ObjectNode col = cols.addObject();
                     String name = rs.getString("COLUMN_NAME");
@@ -1273,7 +1273,7 @@ public class AdminController {
     }
 
     private String getPkColumn(Connection conn, String table) throws SQLException {
-        try (ResultSet rs = conn.getMetaData().getPrimaryKeys(null, null, table)) {
+        try (ResultSet rs = conn.getMetaData().getPrimaryKeys(conn.getCatalog(), null, table)) {
             if (rs.next()) return rs.getString("COLUMN_NAME");
         }
         return null;
@@ -1292,7 +1292,7 @@ public class AdminController {
 
     private List<String> getColumnNames(Connection conn, String table) throws SQLException {
         List<String> cols = new ArrayList<>();
-        try (ResultSet rs = conn.getMetaData().getColumns(null, null, table, null)) {
+        try (ResultSet rs = conn.getMetaData().getColumns(conn.getCatalog(), null, table, null)) {
             while (rs.next()) cols.add(rs.getString("COLUMN_NAME"));
         }
         return cols;
