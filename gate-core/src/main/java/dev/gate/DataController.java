@@ -179,7 +179,7 @@ public class DataController {
         ArrayNode items = root.putArray("items");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, info, icon FROM foodtruck ORDER BY id")) {
+               "SELECT id, name, info, icon, subicon FROM foodtruck ORDER BY id")) {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 ObjectNode ft = items.addObject();
@@ -187,6 +187,7 @@ public class DataController {
                 ft.put("name", rs.getString("name"));
                 ft.put("info", rs.getString("info"));
                 ft.put("icon", rs.getString("icon"));
+                putStringOrNull(ft, "subicon", rs.getString("subicon"));
                 ArrayNode menus = ft.putArray("menus");
                 menuMap.getOrDefault(id, List.of()).forEach(menus::add);
             }
