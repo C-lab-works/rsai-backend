@@ -17,9 +17,6 @@ env:
   AR_BASE:      ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rsai-backend/rsai-backend
 
 jobs:
-  # ── Spot VMを起動してrunnerがオンラインになるまで待機
-  # （master→debug の自動同期pushは sync-debug が [skip ci] を付けるため
-  #   そもそもこのワークフロー自体が起動しない。通常の debug push では起動する）
   start-runner:
     runs-on: ubuntu-latest
     permissions:
@@ -103,8 +100,6 @@ jobs:
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
-          # 標準フロー (debug 検証 → master push) ではソースツリーが debug ビルドと一致するため、
-          # debug 側のキャッシュも参照して nativeCompile レイヤーを再利用する (build ~5分 → 1-2分)
           cache-from: |
             type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
             type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
@@ -170,12 +165,6 @@ jobs:
             ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
             ${{ env.GHCR_BASE }}:debug
             ${{ env.GHCR_BASE }}:${{ github.sha }}
-          # build ジョブと同じく debug 側キャッシュも参照する
-          cache-from: |
-            type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache
-            type=registry,ref=${{ env.GHCR_BASE }}:buildcache-debug
-          cache-to:   type=registry,ref=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:buildcache,mode=max
-
       - name: Build and push to GHCR (debug)
         if: github.ref_name == 'debug'
         uses: docker/build-push-action@v7
@@ -227,16 +216,11 @@ jobs:
               metadata:
                 annotations:
                   autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
-                  # リージョンの CPU クォータ 60 vCPU ÷ 4 vCPU = 15 が上限
-                  # (4vCPU 化でインスタンスを大きく少なくする方針。同時容量 15×600=9,000)
-                  autoscaling.knative.dev/maxScale: "15"
+                  autoscaling.knative.dev/maxScale: "22"
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
               spec:
-                # 公開GETはメモリキャッシュ配信(CPU軽量)なので高めに設定。
-                # インスタンスあたりの同時処理数を上げ、バースト時のスケールアウト
-                # (=コールドスタート・DB接続増・コスト増)を抑える。
                 containerConcurrency: 600
                 timeoutSeconds: 60
                 containers:
@@ -269,8 +253,6 @@ jobs:
                         value: "${{ secrets.DB_PASSWORD }}"
                       - name: DB_SSL
                         value: "${{ secrets.DB_SSL }}"
-                      # maxScale × プールが MySQL の max_connections を超えないよう
-                      # インスタンスあたりの HikariCP 上限を絞る(15×5=75)。
                       - name: DB_POOL_SIZE
                         value: "5"
                       - name: API_KEY
