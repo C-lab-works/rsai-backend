@@ -11,8 +11,8 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 14) {
-                logger.info("Seed data v14 already present — skipping");
+            if (v >= 15) {
+                logger.info("Seed data v15 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -87,7 +87,12 @@ public class DataSeeder {
                 migrateV13(conn);
                 setSeedVersion(conn, 14);
             }
-            logger.info("Seed data v14 ready");
+            if (v <= 14) {
+                logger.info("Migrating schema v14 -> v15");
+                migrateV14(conn);
+                setSeedVersion(conn, 15);
+            }
+            logger.info("Seed data v15 ready");
         }
     }
 
@@ -301,6 +306,23 @@ public class DataSeeder {
             "  Ooasa                TIME," +
             "  Atubetu              TIME" +
             ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck (" +
+            "  id   INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name VARCHAR(255) NOT NULL," +
+            "  info TEXT         NOT NULL," +
+            "  icon VARCHAR(255) NOT NULL" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS menus (" +
+            "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  name         VARCHAR(255) NOT NULL," +
+            "  price        INT          NOT NULL," +
+            "  imageURL     VARCHAR(255)," +
+            "  allergen     VARCHAR(255)," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
     }
 
     // ── seed data ─────────────────────────────────────────────
@@ -435,6 +457,27 @@ public class DataSeeder {
             "  Atubetu              TIME" +
             ")");
         logger.info("Created bus table");
+    }
+
+    private static void migrateV14(Connection conn) throws Exception {
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck (" +
+            "  id   INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name VARCHAR(255) NOT NULL," +
+            "  info TEXT         NOT NULL," +
+            "  icon VARCHAR(255) NOT NULL" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS menus (" +
+            "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  name         VARCHAR(255) NOT NULL," +
+            "  price        INT          NOT NULL," +
+            "  imageURL     VARCHAR(255)," +
+            "  allergen     VARCHAR(255)," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
+        logger.info("Created foodtruck and menus tables");
     }
 
     // ── util ──────────────────────────────────────────────────
