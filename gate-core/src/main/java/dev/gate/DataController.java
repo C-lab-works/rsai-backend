@@ -160,7 +160,38 @@ public class DataController {
 
     private Object buildFood(Connection conn) throws Exception {
         ObjectNode root = MAPPER.createObjectNode();
-        root.putArray("items");
+
+        Map<Integer, List<ObjectNode>> menuMap = new HashMap<>();
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+               "SELECT id, foodtruck_id, name, price, imageURL, allergen FROM menus ORDER BY foodtruck_id, id")) {
+            while (rs.next()) {
+                ObjectNode m = MAPPER.createObjectNode();
+                m.put("id",    rs.getInt("id"));
+                m.put("name",  rs.getString("name"));
+                m.put("price", rs.getInt("price"));
+                putStringOrNull(m, "image_url", rs.getString("imageURL"));
+                putStringOrNull(m, "allergen",  rs.getString("allergen"));
+                menuMap.computeIfAbsent(rs.getInt("foodtruck_id"), k -> new ArrayList<>()).add(m);
+            }
+        }
+
+        ArrayNode items = root.putArray("items");
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+               "SELECT id, name, info, icon FROM foodtruck ORDER BY id")) {
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                ObjectNode ft = items.addObject();
+                ft.put("id",   id);
+                ft.put("name", rs.getString("name"));
+                ft.put("info", rs.getString("info"));
+                ft.put("icon", rs.getString("icon"));
+                ArrayNode menus = ft.putArray("menus");
+                menuMap.getOrDefault(id, List.of()).forEach(menus::add);
+            }
+        }
+
         return root;
     }
 
