@@ -11,6 +11,7 @@ env:
   SERVICE_NAME: rsai-backend
   REPOSITORY:   rsai-backend
   MIN_SCALE:    ${{ vars.MIN_SCALE }}
+  MAX_SCALE:    ${{ vars.MAX_SCALE }}
   RUNNER_VM:    github-runner
   RUNNER_ZONE:  asia-northeast1-a
   GHCR_BASE:    ghcr.io/c-lab-works/rsai-backend
@@ -216,7 +217,7 @@ jobs:
               metadata:
                 annotations:
                   autoscaling.knative.dev/minScale: "${{ env.MIN_SCALE }}"
-                  autoscaling.knative.dev/maxScale: "22"
+                  autoscaling.knative.dev/maxScale: "${{ env.MAX_SCALE }}"
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
