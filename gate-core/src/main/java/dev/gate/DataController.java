@@ -176,10 +176,35 @@ public class DataController {
             }
         }
 
+        Map<Integer, List<ObjectNode>> snsMap = new HashMap<>();
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+               "SELECT id, foodtruck_id, platform, url FROM foodtruck_sns ORDER BY foodtruck_id, id")) {
+            while (rs.next()) {
+                ObjectNode sn = MAPPER.createObjectNode();
+                sn.put("id",  rs.getInt("id"));
+                putStringOrNull(sn, "platform", rs.getString("platform"));
+                sn.put("url", rs.getString("url"));
+                snsMap.computeIfAbsent(rs.getInt("foodtruck_id"), k -> new ArrayList<>()).add(sn);
+            }
+        }
+
+        Map<Integer, List<ObjectNode>> subiconMap = new HashMap<>();
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+               "SELECT id, foodtruck_id, url FROM foodtruck_subicon ORDER BY foodtruck_id, id")) {
+            while (rs.next()) {
+                ObjectNode si = MAPPER.createObjectNode();
+                si.put("id",  rs.getInt("id"));
+                si.put("url", rs.getString("url"));
+                subiconMap.computeIfAbsent(rs.getInt("foodtruck_id"), k -> new ArrayList<>()).add(si);
+            }
+        }
+
         ArrayNode items = root.putArray("items");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, info, icon, subicon, location_code FROM foodtruck ORDER BY id")) {
+               "SELECT id, name, info, icon, location_code FROM foodtruck ORDER BY id")) {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 ObjectNode ft = items.addObject();
@@ -187,8 +212,11 @@ public class DataController {
                 ft.put("name", rs.getString("name"));
                 ft.put("info", rs.getString("info"));
                 ft.put("icon", rs.getString("icon"));
-                putStringOrNull(ft, "subicon", rs.getString("subicon"));
                 putStringOrNull(ft, "location_code", rs.getString("location_code"));
+                ArrayNode subicons = ft.putArray("subicons");
+                subiconMap.getOrDefault(id, List.of()).forEach(subicons::add);
+                ArrayNode sns = ft.putArray("sns");
+                snsMap.getOrDefault(id, List.of()).forEach(sns::add);
                 ArrayNode menus = ft.putArray("menus");
                 menuMap.getOrDefault(id, List.of()).forEach(menus::add);
             }

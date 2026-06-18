@@ -128,7 +128,6 @@ public class FirestoreRest {
     public void set(String path, Map<String, Object> data) throws Exception {
         assertOk("SET " + path, http("PATCH", docBase + path, MAPPER.writeValueAsString(toDoc(data))));
     }
-
     public void update(String path, Map<String, Object> fields) throws Exception {
         StringBuilder url = new StringBuilder(docBase + path + "?");
         for (String key : fields.keySet()) {

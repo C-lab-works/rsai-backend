@@ -11,8 +11,12 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
-            if (v >= 17) {
-                logger.info("Seed data v17 already present — skipping");
+            if (!tableExists(conn, "locations") || !tableExists(conn, "categories") || !tableExists(conn, "projects")) {
+                logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
+                v = 0;
+            }
+            if (v >= 19) {
+                logger.info("Seed data v19 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -104,7 +108,17 @@ public class DataSeeder {
                 migrateV16(conn);
                 setSeedVersion(conn, 17);
             }
-            logger.info("Seed data v17 ready");
+            if (v <= 17) {
+                logger.info("Migrating schema v17 -> v18");
+                migrateV17(conn);
+                setSeedVersion(conn, 18);
+            }
+            if (v <= 18) {
+                logger.info("Migrating schema v18 -> v19");
+                migrateV18(conn);
+                setSeedVersion(conn, 19);
+            }
+            logger.info("Seed data v19 ready");
         }
     }
 
@@ -324,7 +338,6 @@ public class DataSeeder {
             "  name          VARCHAR(255) NOT NULL," +
             "  info          TEXT         NOT NULL," +
             "  icon          VARCHAR(255) NOT NULL," +
-            "  subicon       VARCHAR(255)," +
             "  location_code VARCHAR(50)" +
             ")");
         exec(conn,
@@ -335,6 +348,21 @@ public class DataSeeder {
             "  price        INT          NOT NULL," +
             "  imageURL     VARCHAR(255)," +
             "  allergen     VARCHAR(255)," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck_sns (" +
+            "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  platform     VARCHAR(50)," +
+            "  url          VARCHAR(255) NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck_subicon (" +
+            "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  url          VARCHAR(255) NOT NULL," +
             "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
             ")");
     }
@@ -504,6 +532,36 @@ public class DataSeeder {
         logger.info("Added location_code column to foodtruck");
     }
 
+    private static void migrateV17(Connection conn) throws Exception {
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck_sns (" +
+            "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  platform     VARCHAR(50)," +
+            "  url          VARCHAR(255) NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
+        logger.info("Created foodtruck_sns table");
+    }
+
+    private static void migrateV18(Connection conn) throws Exception {
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck_subicon (" +
+            "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  url          VARCHAR(255) NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
+        // 既存 subicon データを新テーブルに移行
+        if (columnExists(conn, "foodtruck", "subicon")) {
+            exec(conn,
+                "INSERT INTO foodtruck_subicon (foodtruck_id, url) " +
+                "SELECT id, subicon FROM foodtruck WHERE subicon IS NOT NULL");
+            dropColumnIfExists(conn, "foodtruck", "subicon");
+        }
+        logger.info("Created foodtruck_subicon table and migrated subicon data");
+    }
+
     // ── util ──────────────────────────────────────────────────
 
     private static boolean columnExists(Connection conn, String table, String column) throws Exception {
@@ -528,6 +586,17 @@ public class DataSeeder {
     private static void exec(Connection conn, String sql) throws Exception {
         try (Statement s = conn.createStatement()) {
             s.execute(sql);
+        }
+    }
+
+    private static boolean tableExists(Connection conn, String table) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.TABLES " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 }
