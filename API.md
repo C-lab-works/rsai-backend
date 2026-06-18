@@ -68,19 +68,32 @@ Base URL: `https://v2.r-sai2026.site`
 **レスポンス**
 ```json
 {
-  "foods": [
-    { "id": 1, "name": "保護者会", "description": "店舗の説明", "image_url": "https://example.com/image.jpg" },
-    { "id": 2, "name": "test商店" }
-  ],
-  "menus": [
-    { "id": 1, "food_id": 1, "name": "フランクフルト", "price": 200, "description": "美味しい", "is_sold_out": false },
-    { "id": 3, "food_id": 2, "name": "いろはす", "price": 700, "is_sold_out": false }
+  "items": [
+    {
+      "id": 1,
+      "name": "店舗名",
+      "info": "店舗の説明",
+      "icon": "https://example.com/icon.jpg",
+      "location_code": "02",
+      "subicons": [
+        { "id": 1, "url": "https://example.com/subicon1.png" }
+      ],
+      "sns": [
+        { "id": 1, "platform": "x", "url": "https://x.com/username" }
+      ],
+      "menus": [
+        { "id": 1, "name": "フランクフルト", "price": 200, "image_url": "https://example.com/menu.jpg", "allergen": "卵,小麦" }
+      ]
+    }
   ]
 }
 ```
 
-> `foods[].description` / `.image_url` — 設定されている場合のみ含まれる。  
-> `menus[].price` / `.description` / `.is_sold_out` — 設定されている場合のみ含まれる。
+> `location_code` — 設定されている場合のみ含まれる。  
+> `subicons` — 複数登録可能なサブアイコンの配列。  
+> `sns` — 複数登録可能なSNSアカウント情報の配列。`platform` は設定されている場合のみ含まれる。  
+> `menus[].image_url` / `.allergen` — 設定されている場合のみ含まれる。  
+
 
 ---
 
