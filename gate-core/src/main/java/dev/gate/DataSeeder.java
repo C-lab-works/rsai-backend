@@ -11,6 +11,10 @@ public class DataSeeder {
     public static void seed() throws Exception {
         try (Connection conn = Database.getConnection()) {
             int v = getSeedVersion(conn);
+            if (!tableExists(conn, "locations") || !tableExists(conn, "categories") || !tableExists(conn, "projects")) {
+                logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
+                v = 0;
+            }
             if (v >= 19) {
                 logger.info("Seed data v19 already present — skipping");
                 return;
@@ -582,6 +586,17 @@ public class DataSeeder {
     private static void exec(Connection conn, String sql) throws Exception {
         try (Statement s = conn.createStatement()) {
             s.execute(sql);
+        }
+    }
+
+    private static boolean tableExists(Connection conn, String table) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.TABLES " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?")) {
+            ps.setString(1, table);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 }
