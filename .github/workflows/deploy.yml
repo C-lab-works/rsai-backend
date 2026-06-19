@@ -553,6 +553,9 @@ jobs:
           docker stop rsai-debug 2>/dev/null || true
           docker rm   rsai-debug 2>/dev/null || true
 
+          echo '=== Waiting 1s for DB to settle ==='
+          sleep 1
+
           echo '=== Starting container ==='
           docker run -d \
             --name rsai-debug \
