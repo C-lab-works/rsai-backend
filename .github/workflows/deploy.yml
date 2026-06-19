@@ -280,6 +280,10 @@ jobs:
                         value: "${APP_VERSION}"
                       - name: GITHUB_PAT
                         value: "${{ secrets.GH_PAT }}"
+                      - name: FIREBASE_PROJECT_ID
+                        value: "${{ secrets.FIREBASE_PROJECT_ID }}"
+                      - name: FIREBASE_PROJECT_NUMBER
+                        value: "${{ secrets.FIREBASE_PROJECT_NUMBER }}"
                       - name: GITHUB_OWNER
                         value: "${{ vars.GH_OWNER }}"
                       - name: GITHUB_REPO
@@ -410,6 +414,8 @@ jobs:
           ORIGIN_SHARED_SECRET:  ${{ secrets.ORIGIN_SHARED_SECRET }}
           GH_PAT:                ${{ secrets.GH_PAT }}
           GH_SHA:                ${{ github.sha }}
+          FIREBASE_PROJECT_ID:     ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
         run: |
           {
             printf 'DB_HOST=%s\n'               'rsai-mysql-debug'
@@ -428,6 +434,8 @@ jobs:
             printf 'CF_ZONE_ID=%s\n'            "${CF_ZONE_ID}"
             printf 'ORIGIN_SHARED_SECRET=%s\n'  "${ORIGIN_SHARED_SECRET}"
             printf 'GITHUB_PAT=%s\n'            "${GH_PAT}"
+            printf 'FIREBASE_PROJECT_ID=%s\n'     "${FIREBASE_PROJECT_ID}"
+            printf 'FIREBASE_PROJECT_NUMBER=%s\n' "${FIREBASE_PROJECT_NUMBER}"
             printf 'GITHUB_OWNER=C-lab-works\n'
             printf 'GITHUB_REPO=rsai-backend\n'
             printf 'GITHUB_BRANCH=debug\n'

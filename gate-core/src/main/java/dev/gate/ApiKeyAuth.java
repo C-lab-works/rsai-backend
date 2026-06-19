@@ -42,6 +42,9 @@ public class ApiKeyAuth implements Handler {
                 ctx.status(403).json(Map.of("error", "Forbidden: admin access requires admin key")).halt();
                 return;
             }
+            if ("POST".equalsIgnoreCase(ctx.method()) && "/stars".equals(ctx.path())) {
+                return;
+            }
             if (!"GET".equalsIgnoreCase(ctx.method())) {
                 ctx.status(403).json(Map.of("error", "Forbidden: read-only access")).halt();
             }

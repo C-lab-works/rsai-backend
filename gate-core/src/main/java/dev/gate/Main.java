@@ -72,6 +72,7 @@ public class Main {
         gate.register(new CongestionController());
         gate.register(new AnnouncementsController());
         gate.register(new AdminController());
+        gate.register(new StarsController());
         gate.register(new CfMetricsController());
         if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
             gate.register(new GcpMetricsController());

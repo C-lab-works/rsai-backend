@@ -119,7 +119,7 @@ public class DataController {
         ArrayNode projects = root.putArray("projects");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, title, organizer, description, image_url, location_id " +
+               "SELECT id, title, organizer, description, image_url, location_id, bookmark_count " +
                "FROM projects ORDER BY id")) {
             while (rs.next()) {
                 ObjectNode p = projects.addObject();
@@ -131,6 +131,7 @@ public class DataController {
                 putStringOrNull(p, "image_url",   rs.getString("image_url"));
                 int locId = rs.getInt("location_id");
                 if (!rs.wasNull()) p.put("location_id", locId);
+                p.put("bookmark_count", rs.getInt("bookmark_count"));
             }
         }
 
@@ -204,7 +205,7 @@ public class DataController {
         ArrayNode items = root.putArray("items");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, info, icon, location_code FROM foodtruck ORDER BY id")) {
+               "SELECT id, name, info, icon, location_code, bookmark_count FROM foodtruck ORDER BY id")) {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 ObjectNode ft = items.addObject();
@@ -213,6 +214,7 @@ public class DataController {
                 ft.put("info", rs.getString("info"));
                 ft.put("icon", rs.getString("icon"));
                 putStringOrNull(ft, "location_code", rs.getString("location_code"));
+                ft.put("bookmark_count", rs.getInt("bookmark_count"));
                 ArrayNode subicons = ft.putArray("subicons");
                 subiconMap.getOrDefault(id, List.of()).forEach(subicons::add);
                 ArrayNode sns = ft.putArray("sns");
