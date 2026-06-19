@@ -12,25 +12,14 @@ public class RequestIdMiddleware implements Handler {
     private static final Logger logger = new Logger(RequestIdMiddleware.class);
     private static final long TTL_MS = 30L * 60 * 1000;
     private static final int UUID_LENGTH = 36;
-
+    // uuid → expiry timestamp
     private static final ConcurrentHashMap<String, Long> seen = new ConcurrentHashMap<>();
-
-    private final boolean devMode;
-
-    public RequestIdMiddleware() {
-        this.devMode = "true".equalsIgnoreCase(System.getenv("APP_INTEGRITY_DEV_MODE"));
-        if (this.devMode) {
-            logger.warn("APP_INTEGRITY_DEV_MODE is enabled — X-Request-Id check bypassed for debug requests");
-        }
-    }
 
     @Override
     public void handle(Context ctx) {
         boolean isStarsMutation = "/stars".equals(ctx.path())
                 && ("POST".equalsIgnoreCase(ctx.method()) || "DELETE".equalsIgnoreCase(ctx.method()));
         if (!isStarsMutation) return;
-
-        if (devMode && "true".equals(ctx.requestHeader("X-Debug-Bypass"))) return;
 
         String requestId = ctx.requestHeader("X-Request-Id");
         if (requestId == null || requestId.length() != UUID_LENGTH) {

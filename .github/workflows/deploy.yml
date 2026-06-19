@@ -441,7 +441,6 @@ jobs:
             printf 'GITHUB_BRANCH=debug\n'
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
-            printf 'APP_INTEGRITY_DEV_MODE=true\n'
             printf 'BUILD_SHA=%s\n'            "${GH_SHA}"
             printf 'APP_VERSION=%s\n'          "${GH_SHA:0:7}"
           } > /opt/rsai-debug.env
@@ -553,6 +552,9 @@ jobs:
           echo '=== Stopping existing container ==='
           docker stop rsai-debug 2>/dev/null || true
           docker rm   rsai-debug 2>/dev/null || true
+
+          echo '=== Waiting 1s for DB to settle ==='
+          sleep 1
 
           echo '=== Starting container ==='
           docker run -d \
