@@ -23,6 +23,10 @@ import java.util.Map;
 public class StarsController {
     private static final Logger logger = new Logger(StarsController.class);
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int MAX_BOOKMARK_COUNT = 50_000;
+    private static final int STAR_ALERT_THRESHOLD = 500;
+    private static final java.util.concurrent.atomic.AtomicLong starCountInWindow =
+            new java.util.concurrent.atomic.AtomicLong(0);
 
     @PostMapping("/stars")
     public void postStar(Context ctx) {
@@ -53,15 +57,21 @@ public class StarsController {
         try (Connection conn = Database.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                // 対象の存在チェック
+                // 対象の存在確認と現在の bookmark_count を同時取得
                 String checkTargetSql = "project".equals(type)
-                    ? "SELECT 1 FROM projects WHERE id = ?"
-                    : "SELECT 1 FROM foodtruck WHERE id = ?";
+                    ? "SELECT bookmark_count FROM projects WHERE id = ?"
+                    : "SELECT bookmark_count FROM foodtruck WHERE id = ?";
                 try (PreparedStatement ps = conn.prepareStatement(checkTargetSql)) {
                     ps.setInt(1, targetId);
                     try (ResultSet rs = ps.executeQuery()) {
                         if (!rs.next()) {
                             ctx.status(404).json(Map.of("error", type + " with id " + targetId + " not found"));
+                            conn.rollback();
+                            return;
+                        }
+                        int currentCount = rs.getInt(1);
+                        if (currentCount >= MAX_BOOKMARK_COUNT) {
+                            ctx.status(429).json(Map.of("error", "Bookmark limit reached"));
                             conn.rollback();
                             return;
                         }
@@ -92,6 +102,11 @@ public class StarsController {
 
                 conn.commit();
                 ctx.json(Map.of("ok", true));
+                long count = starCountInWindow.incrementAndGet();
+                if (count == STAR_ALERT_THRESHOLD) {
+                    DiscordWebhook.sendError("STARS", "/stars", 429,
+                            "Anomaly: " + count + " POST /stars in current 1-minute window");
+                }
             } catch (Exception e) {
                 conn.rollback();
                 throw e;
@@ -194,6 +209,10 @@ public class StarsController {
             logger.error("Failed to delete star", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
         }
+    }
+
+    public static void resetStarCounter() {
+        starCountInWindow.set(0);
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)

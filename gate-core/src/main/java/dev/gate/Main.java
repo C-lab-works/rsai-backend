@@ -51,6 +51,7 @@ public class Main {
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
         gate.before(cfAccessAuth);
+        gate.before(new RequestIdMiddleware());
 
         RequestMetrics metrics = RequestMetrics.get();
         metrics.init();
@@ -190,6 +191,12 @@ public class Main {
         bg.scheduleAtFixedRate(
                 () -> InstanceManager.get().recordMetrics(),
                 30, 30, TimeUnit.SECONDS);
+
+        // 1分ごとに /stars 異常検知カウンターをリセット
+        bg.scheduleAtFixedRate(StarsController::resetStarCounter, 1, 1, TimeUnit.MINUTES);
+
+        // 30分ごとに期限切れ X-Request-Id エントリを削除
+        bg.scheduleAtFixedRate(RequestIdMiddleware::cleanup, 30, 30, TimeUnit.MINUTES);
     }
 
     private static String loadVersion() {
