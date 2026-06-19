@@ -1,6 +1,5 @@
 package dev.gate;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
@@ -8,8 +7,6 @@ import dev.gate.core.Logger;
 import dev.gate.mapping.DeleteMapping;
 import dev.gate.mapping.PostMapping;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -20,36 +17,17 @@ import java.util.Map;
 
 /**
  * スター（お気に入り・ブックマーク）の追加・削除エンドポイントコントローラー。
+ * 認証は ApiKeyAuth ミドルウェアで処理済み。
  */
 @GateController
 public class StarsController {
     private static final Logger logger = new Logger(StarsController.class);
-    private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
-    private final FirebaseAppCheckAuth appCheckAuth;
-    private final byte[] adminKeyBytes;
-
-    public StarsController() {
-        this.appCheckAuth = new FirebaseAppCheckAuth();
-        String key = System.getenv("API_KEY");
-        this.adminKeyBytes = key != null ? key.getBytes(StandardCharsets.UTF_8) : new byte[0];
-    }
 
     @PostMapping("/stars")
     public void postStar(Context ctx) {
-        // 1. 認証チェック
-        String apiKey = ctx.requestHeader("X-API-Key");
-        boolean isAdmin = apiKey != null && MessageDigest.isEqual(apiKey.getBytes(StandardCharsets.UTF_8), adminKeyBytes);
-
-        if (!isAdmin) {
-            if (!appCheckAuth.verify(ctx)) {
-                ctx.status(401).json(Map.of("error", "Firebase App Check verification failed")).halt();
-                return;
-            }
-        }
-
-        // 2. リクエストボディ解析とバリデーション
+        // 認証は ApiKeyAuth で処理済み
+        // 1. リクエストボディ解析とバリデーション
         StarRequest req;
         try {
             req = ctx.bodyAs(StarRequest.class);
@@ -126,18 +104,8 @@ public class StarsController {
 
     @DeleteMapping("/stars")
     public void deleteStar(Context ctx) {
-        // 1. 認証チェック
-        String apiKey = ctx.requestHeader("X-API-Key");
-        boolean isAdmin = apiKey != null && MessageDigest.isEqual(apiKey.getBytes(StandardCharsets.UTF_8), adminKeyBytes);
-
-        if (!isAdmin) {
-            if (!appCheckAuth.verify(ctx)) {
-                ctx.status(401).json(Map.of("error", "Firebase App Check verification failed")).halt();
-                return;
-            }
-        }
-
-        // 2. リクエストボディ解析とバリデーション
+        // 認証は ApiKeyAuth で処理済み
+        // 1. リクエストボディ解析とバリデーション
         StarRequest req;
         try {
             req = ctx.bodyAs(StarRequest.class);
