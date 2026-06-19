@@ -441,7 +441,6 @@ jobs:
             printf 'GITHUB_BRANCH=debug\n'
             printf 'LOG_LEVEL=DEBUG\n'
             printf 'RUNMODE=debug\n'
-            printf 'APP_INTEGRITY_DEV_MODE=true\n'
             printf 'BUILD_SHA=%s\n'            "${GH_SHA}"
             printf 'APP_VERSION=%s\n'          "${GH_SHA:0:7}"
           } > /opt/rsai-debug.env
