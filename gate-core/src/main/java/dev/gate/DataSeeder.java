@@ -130,6 +130,7 @@ public class DataSeeder {
     // ── version ───────────────────────────────────────────────
 
     private static int getSeedVersion(Connection conn) throws Exception {
+        exec(conn, "CREATE TABLE IF NOT EXISTS seed_version (id INT PRIMARY KEY, version INT NOT NULL DEFAULT 0)");
         exec(conn, "INSERT IGNORE INTO seed_version (id, version) VALUES (1, 0)");
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT version FROM seed_version WHERE id = 1");
