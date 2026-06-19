@@ -374,21 +374,17 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS project_stars (" +
-            "  id         BIGINT       AUTO_INCREMENT PRIMARY KEY," +
-            "  project_id INT          NOT NULL," +
-            "  device_id  VARCHAR(255) NOT NULL," +
-            "  created_at DATETIME     NOT NULL," +
-            "  FOREIGN KEY (project_id) REFERENCES projects(id)," +
-            "  UNIQUE INDEX ux_project_stars_device (project_id, device_id)" +
+            "  id         BIGINT   AUTO_INCREMENT PRIMARY KEY," +
+            "  project_id INT      NOT NULL," +
+            "  created_at DATETIME NOT NULL," +
+            "  FOREIGN KEY (project_id) REFERENCES projects(id)" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foodtruck_stars (" +
-            "  id           BIGINT       AUTO_INCREMENT PRIMARY KEY," +
-            "  foodtruck_id INT          NOT NULL," +
-            "  device_id    VARCHAR(255) NOT NULL," +
-            "  created_at   DATETIME     NOT NULL," +
-            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)," +
-            "  UNIQUE INDEX ux_foodtruck_stars_device (foodtruck_id, device_id)" +
+            "  id           BIGINT   AUTO_INCREMENT PRIMARY KEY," +
+            "  foodtruck_id INT      NOT NULL," +
+            "  created_at   DATETIME NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
             ")");
     }
 
@@ -593,22 +589,18 @@ public class DataSeeder {
 
         exec(conn,
             "CREATE TABLE IF NOT EXISTS project_stars (" +
-            "  id         BIGINT       AUTO_INCREMENT PRIMARY KEY," +
-            "  project_id INT          NOT NULL," +
-            "  device_id  VARCHAR(255) NOT NULL," +
-            "  created_at DATETIME     NOT NULL," +
-            "  FOREIGN KEY (project_id) REFERENCES projects(id)," +
-            "  UNIQUE INDEX ux_project_stars_device (project_id, device_id)" +
+            "  id         BIGINT   AUTO_INCREMENT PRIMARY KEY," +
+            "  project_id INT      NOT NULL," +
+            "  created_at DATETIME NOT NULL," +
+            "  FOREIGN KEY (project_id) REFERENCES projects(id)" +
             ")");
 
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foodtruck_stars (" +
-            "  id           BIGINT       AUTO_INCREMENT PRIMARY KEY," +
-            "  foodtruck_id INT          NOT NULL," +
-            "  device_id    VARCHAR(255) NOT NULL," +
-            "  created_at   DATETIME     NOT NULL," +
-            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)," +
-            "  UNIQUE INDEX ux_foodtruck_stars_device (foodtruck_id, device_id)" +
+            "  id           BIGINT   AUTO_INCREMENT PRIMARY KEY," +
+            "  foodtruck_id INT      NOT NULL," +
+            "  created_at   DATETIME NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
             ")");
         logger.info("Created project_stars and foodtruck_stars tables, added bookmark_count columns");
     }
