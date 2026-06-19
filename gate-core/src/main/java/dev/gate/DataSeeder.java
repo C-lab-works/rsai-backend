@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 19) {
-                logger.info("Seed data v19 already present — skipping");
+            if (v >= 20) {
+                logger.info("Seed data v20 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -118,7 +118,12 @@ public class DataSeeder {
                 migrateV18(conn);
                 setSeedVersion(conn, 19);
             }
-            logger.info("Seed data v19 ready");
+            if (v <= 19) {
+                logger.info("Migrating schema v19 -> v20");
+                migrateV19(conn);
+                setSeedVersion(conn, 20);
+            }
+            logger.info("Seed data v20 ready");
         }
     }
 
@@ -284,12 +289,13 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS projects (" +
-            "  id          INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  title       VARCHAR(255) NOT NULL," +
-            "  organizer   VARCHAR(255)," +
-            "  description TEXT," +
-            "  image_url   VARCHAR(255)," +
-            "  location_id INT," +
+            "  id             INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  title          VARCHAR(255) NOT NULL," +
+            "  organizer      VARCHAR(255)," +
+            "  description    TEXT," +
+            "  image_url      VARCHAR(255)," +
+            "  location_id    INT," +
+            "  bookmark_count INT          NOT NULL DEFAULT 0," +
             "  FOREIGN KEY (location_id) REFERENCES locations(id)" +
             ")");
         exec(conn,
@@ -334,11 +340,12 @@ public class DataSeeder {
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foodtruck (" +
-            "  id            INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  name          VARCHAR(255) NOT NULL," +
-            "  info          TEXT         NOT NULL," +
-            "  icon          VARCHAR(255) NOT NULL," +
-            "  location_code VARCHAR(50)" +
+            "  id             INT          PRIMARY KEY AUTO_INCREMENT," +
+            "  name           VARCHAR(255) NOT NULL," +
+            "  info           TEXT         NOT NULL," +
+            "  icon           VARCHAR(255) NOT NULL," +
+            "  location_code  VARCHAR(50)," +
+            "  bookmark_count INT          NOT NULL DEFAULT 0" +
             ")");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS menus (" +
@@ -364,6 +371,24 @@ public class DataSeeder {
             "  foodtruck_id INT          NOT NULL," +
             "  url          VARCHAR(255) NOT NULL," +
             "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS project_stars (" +
+            "  id         BIGINT       AUTO_INCREMENT PRIMARY KEY," +
+            "  project_id INT          NOT NULL," +
+            "  device_id  VARCHAR(255) NOT NULL," +
+            "  created_at DATETIME     NOT NULL," +
+            "  FOREIGN KEY (project_id) REFERENCES projects(id)," +
+            "  UNIQUE INDEX ux_project_stars_device (project_id, device_id)" +
+            ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck_stars (" +
+            "  id           BIGINT       AUTO_INCREMENT PRIMARY KEY," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  device_id    VARCHAR(255) NOT NULL," +
+            "  created_at   DATETIME     NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)," +
+            "  UNIQUE INDEX ux_foodtruck_stars_device (foodtruck_id, device_id)" +
             ")");
     }
 
@@ -560,6 +585,32 @@ public class DataSeeder {
             dropColumnIfExists(conn, "foodtruck", "subicon");
         }
         logger.info("Created foodtruck_subicon table and migrated subicon data");
+    }
+
+    private static void migrateV19(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "projects", "bookmark_count", "INT NOT NULL DEFAULT 0");
+        addColumnIfMissing(conn, "foodtruck", "bookmark_count", "INT NOT NULL DEFAULT 0");
+
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS project_stars (" +
+            "  id         BIGINT       AUTO_INCREMENT PRIMARY KEY," +
+            "  project_id INT          NOT NULL," +
+            "  device_id  VARCHAR(255) NOT NULL," +
+            "  created_at DATETIME     NOT NULL," +
+            "  FOREIGN KEY (project_id) REFERENCES projects(id)," +
+            "  UNIQUE INDEX ux_project_stars_device (project_id, device_id)" +
+            ")");
+
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS foodtruck_stars (" +
+            "  id           BIGINT       AUTO_INCREMENT PRIMARY KEY," +
+            "  foodtruck_id INT          NOT NULL," +
+            "  device_id    VARCHAR(255) NOT NULL," +
+            "  created_at   DATETIME     NOT NULL," +
+            "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)," +
+            "  UNIQUE INDEX ux_foodtruck_stars_device (foodtruck_id, device_id)" +
+            ")");
+        logger.info("Created project_stars and foodtruck_stars tables, added bookmark_count columns");
     }
 
     // ── util ──────────────────────────────────────────────────
