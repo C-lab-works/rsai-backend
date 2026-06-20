@@ -634,13 +634,75 @@ public class DataSeeder {
     }
 
     private static void migrateV22(Connection conn) throws Exception {
-        if (columnExists(conn, "project_stars", "device_id")) {
-            exec(conn, "ALTER TABLE project_stars DROP COLUMN device_id");
-            logger.info("Dropped device_id from project_stars");
+        migrateV22Stars(conn, "project_stars",  "project_id",   "idx_project_id",
+                        "project_stars_ibfk_1",  "projects",     "ux_project_stars_device");
+        migrateV22Stars(conn, "foodtruck_stars", "foodtruck_id", "idx_foodtruck_id",
+                        "foodtruck_stars_ibfk_1", "foodtruck",    "ux_foodtruck_stars_device");
+    }
+
+    private static void migrateV22Stars(Connection conn,
+            String table, String fkCol, String idxName,
+            String fkName, String refTable, String uniqueIdxName) throws Exception {
+        if (columnExists(conn, table, "device_id")) {
+            // FK を先に DROP しないと device_id を含む UNIQUE index を削除できない
+            dropFkIfExists(conn, table, fkName);
+            dropColumnIfExists(conn, table, "device_id");
+            // device_id DROP 後も UNIQUE index が残る場合（MySQL が自動削除しない場合）に備える
+            dropIndexIfExists(conn, table, uniqueIdxName);
+        } else {
+            // device_id は既に消えているが UNIQUE index が orphan で残っている可能性
+            dropFkIfExists(conn, table, fkName);
+            dropIndexIfExists(conn, table, uniqueIdxName);
         }
-        if (columnExists(conn, "foodtruck_stars", "device_id")) {
-            exec(conn, "ALTER TABLE foodtruck_stars DROP COLUMN device_id");
-            logger.info("Dropped device_id from foodtruck_stars");
+        // 非 UNIQUE index を保証（FK backing + クエリ性能）
+        if (!indexExists(conn, table, idxName)) {
+            exec(conn, "ALTER TABLE `" + table + "` ADD INDEX `" + idxName + "` (`" + fkCol + "`)");
+            logger.info("Added {} on {}", idxName, table);
+        }
+        // FK を再作成
+        if (!fkExists(conn, table, fkName)) {
+            exec(conn, "ALTER TABLE `" + table + "` ADD CONSTRAINT `" + fkName + "` " +
+                       "FOREIGN KEY (`" + fkCol + "`) REFERENCES `" + refTable + "` (id)");
+            logger.info("Re-added FK {} on {}", fkName, table);
+        }
+    }
+
+    private static void dropFkIfExists(Connection conn, String table, String fkName) throws Exception {
+        if (fkExists(conn, table, fkName)) {
+            exec(conn, "ALTER TABLE `" + table + "` DROP FOREIGN KEY `" + fkName + "`");
+            logger.info("Dropped FK {} from {}", fkName, table);
+        }
+    }
+
+    private static void dropIndexIfExists(Connection conn, String table, String idxName) throws Exception {
+        if (indexExists(conn, table, idxName)) {
+            exec(conn, "ALTER TABLE `" + table + "` DROP INDEX `" + idxName + "`");
+            logger.info("Dropped index {} from {}", idxName, table);
+        }
+    }
+
+    private static boolean indexExists(Connection conn, String table, String idxName) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.STATISTICS " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?")) {
+            ps.setString(1, table);
+            ps.setString(2, idxName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private static boolean fkExists(Connection conn, String table, String fkName) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.TABLE_CONSTRAINTS " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? " +
+                "AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'")) {
+            ps.setString(1, table);
+            ps.setString(2, fkName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 
