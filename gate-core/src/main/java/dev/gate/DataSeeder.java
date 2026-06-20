@@ -643,6 +643,9 @@ public class DataSeeder {
     private static void migrateV22Stars(Connection conn,
             String table, String fkCol, String idxName,
             String fkName, String refTable, String uniqueIdxName) throws Exception {
+        // 識別子はハードコード値のみ想定。万一将来 refactor で外部値が混入した場合の防御バリデーション。
+        validateIdentifier(table); validateIdentifier(fkCol); validateIdentifier(idxName);
+        validateIdentifier(fkName); validateIdentifier(refTable); validateIdentifier(uniqueIdxName);
         if (columnExists(conn, table, "device_id")) {
             // FK を先に DROP しないと device_id を含む UNIQUE index を削除できない
             dropFkIfExists(conn, table, fkName);
@@ -690,6 +693,12 @@ public class DataSeeder {
             try (ResultSet rs = ps.executeQuery()) {
                 return rs.next();
             }
+        }
+    }
+
+    private static void validateIdentifier(String name) {
+        if (name == null || !name.matches("^[a-zA-Z0-9_]+$")) {
+            throw new IllegalArgumentException("Invalid SQL identifier: " + name);
         }
     }
 
