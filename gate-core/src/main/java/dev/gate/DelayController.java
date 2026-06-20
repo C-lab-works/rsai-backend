@@ -3,74 +3,24 @@ package dev.gate;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
-import dev.gate.core.HttpCache;
 import dev.gate.core.Logger;
-import dev.gate.mapping.GetMapping;
 import dev.gate.mapping.PostMapping;
 
-// 遅延管理システム（CongestionController と同パターン）
+// 遅延管理（POST のみ。GET は /events に埋め込み）
 @GateController
 public class DelayController {
 
     private static final Logger logger = new Logger(DelayController.class);
-    private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final String CACHE_CONTROL = "public, max-age=30, s-maxage=300, stale-while-revalidate=600";
-    private static final AtomicReference<HttpCache.Entry> cachedData = new AtomicReference<>();
-
-    // ── GET /delays ───────────────────────────────────────────────────────────
-    // Public エンドポイント: project_delays 全行を返す
-    @GetMapping("/delays")
-    public void getDelays(Context ctx) {
-        HttpCache.Entry entry = cachedData.get();
-        if (entry == null) {
-            ctx.status(503).json(Map.of("error", "warming up"));
-            return;
-        }
-        HttpCache.serveJson(ctx, entry, CACHE_CONTROL);
-    }
-
-    // ── キャッシュ再構築 ──────────────────────────────────────────────────────
-    public static void refreshCache() throws Exception {
-        byte[] json = fetchDelaysFromDb();
-        cachedData.set(HttpCache.entryOf(json));
-    }
-
-    private static byte[] fetchDelaysFromDb() throws Exception {
-        try (Connection conn = Database.getConnection();
-             Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-                 "SELECT project_id, delay_minutes, note, updated_at " +
-                 "FROM project_delays ORDER BY project_id")) {
-            ArrayNode arr = MAPPER.createArrayNode();
-            while (rs.next()) {
-                ObjectNode n = arr.addObject();
-                n.put("project_id", rs.getInt("project_id"));
-                int dm = rs.getInt("delay_minutes");
-                if (rs.wasNull()) n.putNull("delay_minutes");
-                else              n.put("delay_minutes", dm);
-                String note = rs.getString("note");
-                if (note != null) n.put("note", note); else n.putNull("note");
-                n.put("updated_at", rs.getString("updated_at"));
-            }
-            return MAPPER.writeValueAsBytes(arr);
-        }
-    }
 
     // ── POST /events/delays/{projectId} ──────────────────────────────────────
     // mod/admin 認証（CfAccessAuth.ATTR_VERIFIED_EMAIL が必須）
@@ -171,17 +121,11 @@ public class DelayController {
             final String finalUpdatedBy  = updatedBy;
 
             Main.bg.execute(() -> {
-                try {
-                    // a. delays キャッシュ再構築
-                    refreshCache();
-                } catch (Exception e) {
-                    logger.warn("delays refresh failed: {}", e.getMessage());
-                }
-                // b. /events キャッシュ再構築
+                // /events キャッシュ再構築
                 DataController.refreshEventsAsync();
-                // c. CF purge
-                CfPurge.purgeUrlsAsync("/delays", "/events");
-                Main.bg.schedule(() -> CfPurge.purgeUrlsAsync("/delays", "/events"), 10, TimeUnit.SECONDS);
+                // CF purge
+                CfPurge.purgeUrlsAsync("/events");
+                Main.bg.schedule(() -> CfPurge.purgeUrlsAsync("/events"), 10, TimeUnit.SECONDS);
                 // d. 監査ログ & Discord
                 try {
                     String detail = "delay_minutes=" + finalDelay + ", note=" + finalNote;
