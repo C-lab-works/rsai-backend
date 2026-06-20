@@ -133,7 +133,12 @@ public class DataSeeder {
                 migrateV21(conn);
                 setSeedVersion(conn, 22);
             }
-            logger.info("Seed data v22 ready");
+            if (v <= 22) {
+                logger.info("Migrating schema v22 -> v23");
+                migrateV22(conn);
+                setSeedVersion(conn, 23);
+            }
+            logger.info("Seed data v23 ready");
         }
     }
 
@@ -626,6 +631,17 @@ public class DataSeeder {
             "  updated_by    VARCHAR(255) NOT NULL" +
             ")");
         logger.info("Created project_delays table");
+    }
+
+    private static void migrateV22(Connection conn) throws Exception {
+        if (columnExists(conn, "project_stars", "device_id")) {
+            exec(conn, "ALTER TABLE project_stars DROP COLUMN device_id");
+            logger.info("Dropped device_id from project_stars");
+        }
+        if (columnExists(conn, "foodtruck_stars", "device_id")) {
+            exec(conn, "ALTER TABLE foodtruck_stars DROP COLUMN device_id");
+            logger.info("Dropped device_id from foodtruck_stars");
+        }
     }
 
     private static void migrateV21(Connection conn) throws Exception {
