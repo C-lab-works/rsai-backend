@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 21) {
-                logger.info("Seed data v21 already present — skipping");
+            if (v >= 23) {
+                logger.info("Seed data v23 already present — skipping");
                 return;
             }
             if (v == 1) {
