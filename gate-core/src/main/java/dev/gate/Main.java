@@ -110,6 +110,7 @@ public class Main {
                     List<Future<?>> initFutures = new ArrayList<>();
                     initFutures.add(bg.submit((Callable<Void>) () -> { new DataController().refreshAll(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { CongestionController.refreshCache(); return null; }));
+                    initFutures.add(bg.submit((Callable<Void>) () -> { DelayController.refreshCache(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { AnnouncementsController.refreshCache(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { YamlRouteLoader.refreshAll(); return null; }));
                     initFutures.add(bg.submit((Callable<Void>) () -> { cfAccessAuth.prefetchJwks(); return null; }));
