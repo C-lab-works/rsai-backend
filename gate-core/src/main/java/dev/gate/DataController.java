@@ -7,6 +7,7 @@ import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
 import dev.gate.core.HttpCache;
+import dev.gate.core.Logger;
 import dev.gate.mapping.GetMapping;
 
 import java.sql.Connection;
@@ -24,9 +25,15 @@ import java.util.concurrent.Future;
 @GateController
 public class DataController {
 
+    private static final Logger logger = new Logger(DataController.class);
     private static final ObjectMapper MAPPER = dev.gate.core.Json.MAPPER;
     private static final String CACHE_CONTROL = "public, max-age=60, s-maxage=300, stale-while-revalidate=600";
     private static final ConcurrentHashMap<String, HttpCache.Entry> cache = new ConcurrentHashMap<>();
+    private static volatile DataController INSTANCE;
+
+    public DataController() {
+        INSTANCE = this;
+    }
 
     public static Map<String, String> getCacheEtags() {
         Map<String, String> result = new java.util.LinkedHashMap<>();
@@ -119,8 +126,11 @@ public class DataController {
         ArrayNode projects = root.putArray("projects");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, title, organizer, description, image_url, location_id, bookmark_count " +
-               "FROM projects ORDER BY id")) {
+               "SELECT p.id, p.title, p.organizer, p.description, p.image_url, p.location_id, p.bookmark_count," +
+               "       pd.delay_minutes, pd.note AS delay_note, pd.updated_at AS delay_updated_at" +
+               " FROM projects p" +
+               " LEFT JOIN project_delays pd ON pd.project_id = p.id" +
+               " ORDER BY p.id")) {
             while (rs.next()) {
                 ObjectNode p = projects.addObject();
                 int id = rs.getInt("id");
@@ -132,6 +142,17 @@ public class DataController {
                 int locId = rs.getInt("location_id");
                 if (!rs.wasNull()) p.put("location_id", locId);
                 p.put("bookmark_count", rs.getInt("bookmark_count"));
+                // delay フィールド（delay_minutes / delay_note / delay_updated_at のいずれかが非NULLなら付与）
+                int dm = rs.getInt("delay_minutes");
+                boolean dmNull = rs.wasNull();
+                String dn = rs.getString("delay_note");
+                String du = rs.getString("delay_updated_at");
+                if (!dmNull || dn != null || du != null) {
+                    ObjectNode delay = p.putObject("delay");
+                    if (!dmNull) delay.put("delay_minutes", dm); else delay.putNull("delay_minutes");
+                    if (dn != null) delay.put("note", dn);
+                    if (du != null) delay.put("updated_at", du);
+                }
             }
         }
 
@@ -269,5 +290,14 @@ public class DataController {
     private void putDoubleOrNull(ObjectNode node, String key, ResultSet rs) throws Exception {
         double v = rs.getDouble(key);
         if (!rs.wasNull()) node.put(key, v);
+    }
+
+    public static void refreshEventsAsync() {
+        DataController inst = INSTANCE;
+        if (inst == null) return;
+        Main.bg.submit(() -> {
+            try { inst.refreshKey("events", inst::buildEvents); }
+            catch (Exception e) { logger.info("events async refresh failed: {}", e.getMessage()); }
+        });
     }
 }

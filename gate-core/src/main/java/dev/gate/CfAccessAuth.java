@@ -144,7 +144,8 @@ public class CfAccessAuth implements Handler {
     private static boolean needsJwtVerification(Context ctx) {
         String path = ctx.path();
         if (path.startsWith("/admin")) return true;
-        if ("POST".equalsIgnoreCase(ctx.method()) && path.startsWith("/congestion/")) return true;
+        if ("POST".equalsIgnoreCase(ctx.method()) &&
+                (path.startsWith("/congestion/") || path.startsWith("/events/delays/"))) return true;
         return false;
     }
 

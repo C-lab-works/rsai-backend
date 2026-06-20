@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 20) {
-                logger.info("Seed data v20 already present — skipping");
+            if (v >= 21) {
+                logger.info("Seed data v21 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -123,7 +123,12 @@ public class DataSeeder {
                 migrateV19(conn);
                 setSeedVersion(conn, 20);
             }
-            logger.info("Seed data v20 ready");
+            if (v <= 20) {
+                logger.info("Migrating schema v20 -> v21");
+                migrateV20(conn);
+                setSeedVersion(conn, 21);
+            }
+            logger.info("Seed data v21 ready");
         }
     }
 
@@ -604,6 +609,18 @@ public class DataSeeder {
             "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
             ")");
         logger.info("Created project_stars and foodtruck_stars tables, added bookmark_count columns");
+    }
+
+    private static void migrateV20(Connection conn) throws Exception {
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS project_delays (" +
+            "  project_id    INT          NOT NULL PRIMARY KEY," +
+            "  delay_minutes SMALLINT     NULL," +
+            "  note          VARCHAR(255) NULL," +
+            "  updated_at    DATETIME     NOT NULL," +
+            "  updated_by    VARCHAR(255) NOT NULL" +
+            ")");
+        logger.info("Created project_delays table");
     }
 
     // ── util ──────────────────────────────────────────────────
