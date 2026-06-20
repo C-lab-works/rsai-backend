@@ -128,7 +128,12 @@ public class DataSeeder {
                 migrateV20(conn);
                 setSeedVersion(conn, 21);
             }
-            logger.info("Seed data v21 ready");
+            if (v <= 21) {
+                logger.info("Migrating schema v21 -> v22");
+                migrateV21(conn);
+                setSeedVersion(conn, 22);
+            }
+            logger.info("Seed data v22 ready");
         }
     }
 
@@ -621,6 +626,22 @@ public class DataSeeder {
             "  updated_by    VARCHAR(255) NOT NULL" +
             ")");
         logger.info("Created project_delays table");
+    }
+
+    private static void migrateV21(Connection conn) throws Exception {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM information_schema.STATISTICS " +
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_stars' " +
+                "AND INDEX_NAME = 'idx_project_id'")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    exec(conn, "ALTER TABLE project_stars ADD INDEX idx_project_id (project_id)");
+                    logger.info("Added idx_project_id on project_stars");
+                } else {
+                    logger.info("idx_project_id on project_stars already exists, skipping");
+                }
+            }
+        }
     }
 
     // ── util ──────────────────────────────────────────────────

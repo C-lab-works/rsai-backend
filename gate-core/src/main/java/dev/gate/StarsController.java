@@ -13,25 +13,29 @@ import java.sql.ResultSet;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * スター（お気に入り・ブックマーク）の追加・削除エンドポイントコントローラー。
- * 認証は ApiKeyAuth ミドルウェアで処理済み。
- */
 @GateController
 public class StarsController {
     private static final Logger logger = new Logger(StarsController.class);
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final int MAX_BOOKMARK_COUNT = 50_000;
     private static final int STAR_ALERT_THRESHOLD = 500;
-    private static final java.util.concurrent.atomic.AtomicLong starCountInWindow =
-            new java.util.concurrent.atomic.AtomicLong(0);
+
+    private record StarOp(String type, int id, boolean add) {}
+
+    private static final ConcurrentLinkedQueue<StarOp> pendingOps = new ConcurrentLinkedQueue<>();
+    private static final AtomicLong starCountInWindow = new AtomicLong(0);
+    private static final AtomicBoolean alertSentInWindow = new AtomicBoolean(false);
+    private static final AtomicBoolean flushing = new AtomicBoolean(false);
 
     @PostMapping("/stars")
     public void postStar(Context ctx) {
-        // 認証は ApiKeyAuth で処理済み
-        // 1. リクエストボディ解析とバリデーション
         StarRequest req;
         try {
             req = ctx.bodyAs(StarRequest.class);
@@ -46,81 +50,23 @@ public class StarsController {
         }
 
         String type = req.type.trim();
-        int targetId = req.id;
-
         if (!"project".equals(type) && !"foodtruck".equals(type)) {
             ctx.status(400).json(Map.of("error", "type must be either 'project' or 'foodtruck'"));
             return;
         }
 
-        // 3. トランザクション処理
-        try (Connection conn = Database.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                // 対象の存在確認と現在の bookmark_count を同時取得
-                String checkTargetSql = "project".equals(type)
-                    ? "SELECT bookmark_count FROM projects WHERE id = ?"
-                    : "SELECT bookmark_count FROM foodtruck WHERE id = ?";
-                try (PreparedStatement ps = conn.prepareStatement(checkTargetSql)) {
-                    ps.setInt(1, targetId);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (!rs.next()) {
-                            ctx.status(404).json(Map.of("error", type + " with id " + targetId + " not found"));
-                            conn.rollback();
-                            return;
-                        }
-                        int currentCount = rs.getInt(1);
-                        if (currentCount >= MAX_BOOKMARK_COUNT) {
-                            ctx.status(429).json(Map.of("error", "Bookmark limit reached"));
-                            conn.rollback();
-                            return;
-                        }
-                    }
-                }
+        pendingOps.add(new StarOp(type, req.id, true));
+        ctx.json(Map.of("ok", true));
 
-                // スター新規登録処理
-                String insertStarSql = "project".equals(type)
-                    ? "INSERT INTO project_stars (project_id, created_at) VALUES (?, ?)"
-                    : "INSERT INTO foodtruck_stars (foodtruck_id, created_at) VALUES (?, ?)";
-
-                String now = LocalDateTime.now(ZoneId.of("Asia/Tokyo")).format(FMT);
-                try (PreparedStatement ps = conn.prepareStatement(insertStarSql)) {
-                    ps.setInt(1, targetId);
-                    ps.setString(2, now);
-                    ps.executeUpdate();
-                }
-
-                // 親テーブルのブックマーク数カウントアップ
-                String updateCountSql = "project".equals(type)
-                    ? "UPDATE projects SET bookmark_count = bookmark_count + 1 WHERE id = ?"
-                    : "UPDATE foodtruck SET bookmark_count = bookmark_count + 1 WHERE id = ?";
-
-                try (PreparedStatement ps = conn.prepareStatement(updateCountSql)) {
-                    ps.setInt(1, targetId);
-                    ps.executeUpdate();
-                }
-
-                conn.commit();
-                ctx.json(Map.of("ok", true));
-                long count = starCountInWindow.incrementAndGet();
-                if (count == STAR_ALERT_THRESHOLD) {
-                    DiscordWebhook.sendError("STARS", "/stars", 429,
-                            "Anomaly: " + count + " POST /stars in current 1-minute window");
-                }
-            } catch (Exception e) {
-                conn.rollback();
-                throw e;
-            }
-        } catch (Exception e) {
-            logger.error("Failed to post star", e);
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
+        long count = starCountInWindow.incrementAndGet();
+        if (count >= STAR_ALERT_THRESHOLD && alertSentInWindow.compareAndSet(false, true)) {
+            DiscordWebhook.sendError("STARS", "/stars", 429,
+                    "Anomaly: " + count + " POST /stars in current 1-minute window");
         }
     }
 
     @DeleteMapping("/stars")
     public void deleteStar(Context ctx) {
-        // 認証は ApiKeyAuth で処理済み
-        // 1. リクエストボディ解析とバリデーション
         StarRequest req;
         try {
             req = ctx.bodyAs(StarRequest.class);
@@ -135,84 +81,147 @@ public class StarsController {
         }
 
         String type = req.type.trim();
-        int targetId = req.id;
-
         if (!"project".equals(type) && !"foodtruck".equals(type)) {
             ctx.status(400).json(Map.of("error", "type must be either 'project' or 'foodtruck'"));
             return;
         }
 
-        // 3. トランザクション処理
-        try (Connection conn = Database.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                // 対象の存在チェック
-                String checkTargetSql = "project".equals(type)
-                    ? "SELECT 1 FROM projects WHERE id = ?"
-                    : "SELECT 1 FROM foodtruck WHERE id = ?";
-                try (PreparedStatement ps = conn.prepareStatement(checkTargetSql)) {
-                    ps.setInt(1, targetId);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (!rs.next()) {
-                            ctx.status(404).json(Map.of("error", type + " with id " + targetId + " not found"));
-                            conn.rollback();
-                            return;
+        pendingOps.add(new StarOp(type, req.id, false));
+        ctx.json(Map.of("ok", true));
+    }
+
+    public static void flushPending() {
+        if (!flushing.compareAndSet(false, true)) return;
+        try {
+            List<StarOp> ops = new ArrayList<>();
+            StarOp op;
+            while ((op = pendingOps.poll()) != null) ops.add(op);
+            if (ops.isEmpty()) return;
+
+            // net delta per (type:id)
+            LinkedHashMap<String, Integer> deltas = new LinkedHashMap<>();
+            for (StarOp o : ops) {
+                String key = o.type() + ":" + o.id();
+                deltas.merge(key, o.add() ? 1 : -1, Integer::sum);
+            }
+
+            // pre-validate: drop entries for non-existent targets before the main transaction
+            // prevents a single invalid ID from causing FK violation and rolling back the entire flush
+            try (Connection conn = Database.getConnection()) {
+                deltas.entrySet().removeIf(entry -> {
+                    String[] parts = entry.getKey().split(":", 2);
+                    boolean isProject = "project".equals(parts[0]);
+                    int id = Integer.parseInt(parts[1]);
+                    String sql = isProject
+                        ? "SELECT 1 FROM projects WHERE id = ?"
+                        : "SELECT 1 FROM foodtruck WHERE id = ?";
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        ps.setInt(1, id);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next()) return false;
+                            logger.warn("Star target not found, dropping from flush: {}", entry.getKey());
+                            return true;
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Pre-validation failed for {}, dropping", entry.getKey());
+                        return true;
+                    }
+                });
+            } catch (Exception e) {
+                logger.error("Pre-validation DB connection failed, re-queuing {} ops", ops.size(), e);
+                requeue(deltas);
+                return;
+            }
+
+            if (deltas.isEmpty()) return;
+
+            try (Connection conn = Database.getConnection()) {
+                conn.setAutoCommit(false);
+                try {
+                    String now = LocalDateTime.now(ZoneId.of("Asia/Tokyo")).format(FMT);
+                    for (Map.Entry<String, Integer> entry : deltas.entrySet()) {
+                        int delta = entry.getValue();
+                        if (delta == 0) continue;
+
+                        String[] parts = entry.getKey().split(":", 2);
+                        String type = parts[0];
+                        int targetId = Integer.parseInt(parts[1]);
+                        boolean isProject = "project".equals(type);
+
+                        if (delta > 0) {
+                            String insertSql = isProject
+                                ? "INSERT INTO project_stars (project_id, created_at) VALUES (?, ?)"
+                                : "INSERT INTO foodtruck_stars (foodtruck_id, created_at) VALUES (?, ?)";
+                            try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+                                for (int i = 0; i < delta; i++) {
+                                    ps.setInt(1, targetId);
+                                    ps.setString(2, now);
+                                    ps.addBatch();
+                                }
+                                ps.executeBatch();
+                            }
+                            String updateSql = isProject
+                                ? "UPDATE projects SET bookmark_count = bookmark_count + ? WHERE id = ?"
+                                : "UPDATE foodtruck SET bookmark_count = bookmark_count + ? WHERE id = ?";
+                            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                                ps.setInt(1, delta);
+                                ps.setInt(2, targetId);
+                                ps.executeUpdate();
+                            }
+                        } else {
+                            int absCount = -delta;
+                            String deleteSql = isProject
+                                ? "DELETE FROM project_stars WHERE project_id = ? LIMIT ?"
+                                : "DELETE FROM foodtruck_stars WHERE foodtruck_id = ? LIMIT ?";
+                            try (PreparedStatement ps = conn.prepareStatement(deleteSql)) {
+                                ps.setInt(1, targetId);
+                                ps.setInt(2, absCount);
+                                ps.executeUpdate();
+                            }
+                            String updateSql = isProject
+                                ? "UPDATE projects SET bookmark_count = GREATEST(bookmark_count - ?, 0) WHERE id = ?"
+                                : "UPDATE foodtruck SET bookmark_count = GREATEST(bookmark_count - ?, 0) WHERE id = ?";
+                            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                                ps.setInt(1, absCount);
+                                ps.setInt(2, targetId);
+                                ps.executeUpdate();
+                            }
                         }
                     }
-                }
-
-                // スターの存在確認（冪等性）
-                String countSql = "project".equals(type)
-                    ? "SELECT COUNT(*) FROM project_stars WHERE project_id = ?"
-                    : "SELECT COUNT(*) FROM foodtruck_stars WHERE foodtruck_id = ?";
-                int count;
-                try (PreparedStatement ps = conn.prepareStatement(countSql)) {
-                    ps.setInt(1, targetId);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        rs.next();
-                        count = rs.getInt(1);
-                    }
-                }
-
-                if (count == 0) {
-                    // すでに存在しない場合は冪等に 200 OK を返す
+                    conn.commit();
+                    logger.info("Flushed {} star ops, {} distinct targets", ops.size(), deltas.size());
+                } catch (Exception e) {
                     conn.rollback();
-                    ctx.json(Map.of("ok", true));
-                    return;
+                    throw e;
                 }
-
-                // スター削除処理
-                String deleteSql = "project".equals(type)
-                    ? "DELETE FROM project_stars WHERE project_id = ? LIMIT 1"
-                    : "DELETE FROM foodtruck_stars WHERE foodtruck_id = ? LIMIT 1";
-                try (PreparedStatement ps = conn.prepareStatement(deleteSql)) {
-                    ps.setInt(1, targetId);
-                    ps.executeUpdate();
-                }
-
-                // 親テーブルのブックマーク数カウントダウン（0 未満にならないよう GREATEST を使用）
-                String updateCountSql = "project".equals(type)
-                    ? "UPDATE projects SET bookmark_count = GREATEST(bookmark_count - 1, 0) WHERE id = ?"
-                    : "UPDATE foodtruck SET bookmark_count = GREATEST(bookmark_count - 1, 0) WHERE id = ?";
-                try (PreparedStatement ps = conn.prepareStatement(updateCountSql)) {
-                    ps.setInt(1, targetId);
-                    ps.executeUpdate();
-                }
-
-                conn.commit();
-                ctx.json(Map.of("ok", true));
             } catch (Exception e) {
-                conn.rollback();
-                throw e;
+                logger.error("Failed to flush pending stars, re-queuing {} ops", ops.size(), e);
+                requeue(deltas);
             }
-        } catch (Exception e) {
-            logger.error("Failed to delete star", e);
-            ctx.status(503).json(Map.of("error", "Service temporarily unavailable", "detail", "DB error"));
+        } finally {
+            flushing.set(false);
         }
     }
 
-    public static void resetStarCounter() {
+    private static void requeue(LinkedHashMap<String, Integer> deltas) {
+        for (Map.Entry<String, Integer> entry : deltas.entrySet()) {
+            int delta = entry.getValue();
+            if (delta == 0) continue;
+            String[] parts = entry.getKey().split(":", 2);
+            String type = parts[0];
+            int targetId = Integer.parseInt(parts[1]);
+            boolean add = delta > 0;
+            int count = Math.abs(delta);
+            for (int i = 0; i < count; i++) {
+                pendingOps.add(new StarOp(type, targetId, add));
+            }
+        }
+    }
+
+    public static void minuteTick() {
+        flushPending();
         starCountInWindow.set(0);
+        alertSentInWindow.set(false);
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
