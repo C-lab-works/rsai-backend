@@ -192,8 +192,8 @@ public class Main {
                 () -> InstanceManager.get().recordMetrics(),
                 30, 30, TimeUnit.SECONDS);
 
-        // 1分ごとに /stars 異常検知カウンターをリセット
-        bg.scheduleAtFixedRate(StarsController::resetStarCounter, 1, 1, TimeUnit.MINUTES);
+        // 1分ごとにスターをフラッシュ・異常検知カウンターをリセット
+        bg.scheduleAtFixedRate(StarsController::minuteTick, 1, 1, TimeUnit.MINUTES);
 
         // 30分ごとに期限切れ X-Request-Id エントリを削除
         bg.scheduleAtFixedRate(RequestIdMiddleware::cleanup, 30, 30, TimeUnit.MINUTES);
