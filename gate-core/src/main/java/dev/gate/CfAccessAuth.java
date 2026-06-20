@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
+import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.RSAPublicKeySpec;
@@ -64,6 +65,7 @@ public class CfAccessAuth implements Handler {
     private final String certsUrl;
     private final boolean enabled;
     private final Set<String> adminEmails;
+    private final byte[] internalServiceKeyBytes;
 
     // 初期化部分。環境変数が入ってないかつ開発無効化フラグが立ってない場合は例外を出しクラッシュさせる。
     public CfAccessAuth() {
@@ -79,6 +81,14 @@ public class CfAccessAuth implements Handler {
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toUnmodifiableSet())
             : Set.of();
+
+        String sk = System.getenv("INTERNAL_SERVICE_KEY");
+        this.internalServiceKeyBytes = (sk != null && !sk.isBlank())
+            ? sk.getBytes(StandardCharsets.UTF_8)
+            : null;
+        if (internalServiceKeyBytes != null) {
+            logger.info("CfAccessAuth: internal service key enabled (X-Service-Key)");
+        }
 
         if (aud == null || aud.isBlank() || domain == null || domain.isBlank()) {
             if (!"true".equalsIgnoreCase(devFlag)) {
@@ -156,6 +166,15 @@ public class CfAccessAuth implements Handler {
         String token = ctx.requestHeader("CF-Access-Jwt-Assertion");
 
         if (ctx.path().startsWith("/admin")) {
+            // サーバー間 M2M 認証: X-Service-Key が設定済みかつ一致すれば JWT 検証をスキップ。
+            if (internalServiceKeyBytes != null) {
+                String provided = ctx.requestHeader("X-Service-Key");
+                if (provided != null && MessageDigest.isEqual(
+                        provided.getBytes(StandardCharsets.UTF_8), internalServiceKeyBytes)) {
+                    ctx.setAttribute(ATTR_VERIFIED_EMAIL, "service@internal");
+                    return;
+                }
+            }
             if (token == null || token.isBlank()) {
                 ctx.status(401).json(Map.of("error", "Missing CF-Access-Jwt-Assertion header")).halt();
                 return;
