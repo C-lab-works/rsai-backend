@@ -296,6 +296,8 @@ jobs:
                         value: "${{ vars.GH_WORKFLOW_FILE }}"
                       - name: ORIGIN_SHARED_SECRET
                         value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
+                      - name: INTERNAL_SERVICE_KEY
+                        value: "${{ secrets.INTERNAL_SERVICE_KEY }}"
                       # 書き込み起点の CF targeted purge 用 (CfPurge が purge URL を組み立てる)。
                       # debug 環境には設定しない = URL purge 無効。
                       - name: PUBLIC_BASE_URL
@@ -412,6 +414,7 @@ jobs:
           CF_API_TOKEN:          ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID:            ${{ secrets.CF_ZONE_ID }}
           ORIGIN_SHARED_SECRET:  ${{ secrets.ORIGIN_SHARED_SECRET }}
+          INTERNAL_SERVICE_KEY:  ${{ secrets.INTERNAL_SERVICE_KEY }}
           GH_PAT:                ${{ secrets.GH_PAT }}
           GH_SHA:                ${{ github.sha }}
           FIREBASE_PROJECT_ID:     ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -433,6 +436,7 @@ jobs:
             printf 'CF_API_TOKEN=%s\n'          "${CF_API_TOKEN}"
             printf 'CF_ZONE_ID=%s\n'            "${CF_ZONE_ID}"
             printf 'ORIGIN_SHARED_SECRET=%s\n'  "${ORIGIN_SHARED_SECRET}"
+            printf 'INTERNAL_SERVICE_KEY=%s\n'  "${INTERNAL_SERVICE_KEY}"
             printf 'GITHUB_PAT=%s\n'            "${GH_PAT}"
             printf 'FIREBASE_PROJECT_ID=%s\n'     "${FIREBASE_PROJECT_ID}"
             printf 'FIREBASE_PROJECT_NUMBER=%s\n' "${FIREBASE_PROJECT_NUMBER}"
