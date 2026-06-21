@@ -541,6 +541,7 @@ public class AdminController {
                         rs.getInt("COLUMN_SIZE")
                     ));
                     if (pks.contains(name)) col.put("pk", true);
+                    col.put("notNull", rs.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls);
                 }
             }
 
@@ -582,20 +583,48 @@ public class AdminController {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
-            String pkCol = getPkColumn(conn, resolvedTable);
-            if (pkCol == null) { ctx.status(400).json(Map.of("error", "主キーが見つかりません")); return; }
 
-            List<String> updateCols = getColumnNames(conn, resolvedTable).stream()
-                    .filter(c -> body.containsKey(c) && !c.equals(pkCol))
+            @SuppressWarnings("unchecked")
+            Map<String, Object> where = body.containsKey("_where") ? (Map<String, Object>) body.get("_where") : null;
+
+            List<String> allCols = getColumnNames(conn, resolvedTable);
+            Set<String> whereKeys = where != null ? where.keySet() : Set.of();
+
+            List<String> updateCols = allCols.stream()
+                    .filter(c -> body.containsKey(c) && !whereKeys.contains(c))
                     .collect(Collectors.toList());
             if (updateCols.isEmpty()) { ctx.status(400).json(Map.of("error", "更新するカラムがありません")); return; }
 
+            for (String c : updateCols) {
+                if (!isValidColumnName(c)) { ctx.status(400).json(Map.of("error", "不正なカラム名: " + c)); return; }
+            }
+
             String setClauses = updateCols.stream().map(c -> "`" + c + "` = ?").collect(Collectors.joining(", "));
+
+            final String whereSql;
+            final List<Object> whereVals;
+            if (where != null && !where.isEmpty()) {
+                List<String> whereEntries = new ArrayList<>();
+                List<Object> vals = new ArrayList<>();
+                for (Map.Entry<String, Object> e : where.entrySet()) {
+                    if (!isValidColumnName(e.getKey())) { ctx.status(400).json(Map.of("error", "不正なカラム名: " + e.getKey())); return; }
+                    whereEntries.add("`" + e.getKey() + "` = ?");
+                    vals.add(normalizeValue(e.getValue()));
+                }
+                whereSql = String.join(" AND ", whereEntries);
+                whereVals = vals;
+            } else {
+                String pkCol = getPkColumn(conn, resolvedTable);
+                if (pkCol == null) { ctx.status(400).json(Map.of("error", "主キーが見つかりません")); return; }
+                whereSql = "`" + pkCol + "` = ?";
+                whereVals = List.of((Object) pkVal);
+            }
+
             try (PreparedStatement ps = conn.prepareStatement(
-                    "UPDATE `" + resolvedTable + "` SET " + setClauses + " WHERE `" + pkCol + "` = ?")) {
+                    "UPDATE `" + resolvedTable + "` SET " + setClauses + " WHERE " + whereSql)) {
                 int i = 1;
                 for (String col : updateCols) ps.setObject(i++, normalizeValue(body.get(col)));
-                ps.setString(i, pkVal);
+                for (Object v : whereVals) ps.setObject(i++, v);
                 int updated = ps.executeUpdate();
                 AuditLog.write(user, "UPDATE_ROW", table + "/" + pkVal, null, "ok", null);
                 CacheSync.scheduleFullSync("updateRow:" + table);
