@@ -22,9 +22,6 @@ public class Main {
     private static final Logger log = new Logger(Main.class);
     private static final AtomicBoolean APP_READY = new AtomicBoolean(false);
     private static final AtomicInteger BG_COUNTER = new AtomicInteger();
-    // データ更新ポーラ・JWKS prefetch・インスタンスメトリクス・YAML キャッシュ更新など
-    // 複数の周期タスクを捌くためのスケジューラ。YAML キャッシュルートが増えると周期タスクも
-    // 増えるため、DB ストール時のスレッド占有に余裕を持たせて 8 本確保する。
     static final ScheduledExecutorService bg =
             Executors.newScheduledThreadPool(8, r -> {
                 Thread t = new Thread(r, "bg-poller-" + BG_COUNTER.getAndIncrement());
@@ -46,7 +43,6 @@ public class Main {
         // --- Middleware & Auth ---
 
         // セキュリティヘッダは認証より先に付与する。
-        // 認証フィルタが halt した 401/403 応答にもヘッダが確実に乗るようにするため。
         gate.before(SecurityHeaders.get());
         gate.before(new CloudflareIpFilter());
         gate.before(new ApiKeyAuth());
@@ -75,29 +71,21 @@ public class Main {
         gate.register(new AdminController());
         gate.register(new StarsController());
         gate.register(new CfMetricsController());
+        gate.register(new DelayController());
+        if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
+            gate.register(new GcpMetricsController());
+        }
         if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
             gate.register(new GcpMetricsController());
         }
 
-        // routes.yaml から宣言的ルートを登録（DB 非依存。キャッシュ対象ルートを確定させてから
-        // DB 初期化スレッドの初回キャッシュ充填が走るよう、startDatabaseInit より前に呼ぶ）。
         YamlRouteLoader.load(gate);
-
-        // Database init (background thread) — DataSeeder・各種キャッシュ初回充填を含む
         startDatabaseInit(config.getDatabase(), cfAccessAuth);
 
         // --- Startup ---
-
-        // Cloud Run の keepalive タイムアウト（600s）より長く設定し、
-        // Cloud Run 側で接続を切る前に Jetty が先に切ることを防ぐ。
-        // Cloud Run の requestTimeout=60s が暴走リクエストのガードになるため
-        // Jetty のアイドルタイムアウトは長めにしておいてよい。
         gate.timeout(620_000);
         gate.start(config.getPort());
         log.info("rsai-backend is running on port {}", config.getPort());
-
-        // Cloud Run は SIGTERM 後 30s で SIGKILL するため、shutdown hook で pendingOps を flush する。
-        // minScale=0 環境でインスタンスが終了する前にスターデータが失われるのを防ぐ。
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.warn("Shutdown: flushing pending star ops before exit");
             StarsController.flushPending();
