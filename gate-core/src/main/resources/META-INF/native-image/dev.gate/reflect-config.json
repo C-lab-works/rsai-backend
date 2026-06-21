@@ -68,6 +68,8 @@
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.StarsController",
     "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.DelayController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.StarsController$StarRequest",
     "allDeclaredConstructors": true, "allDeclaredFields": true },
 
