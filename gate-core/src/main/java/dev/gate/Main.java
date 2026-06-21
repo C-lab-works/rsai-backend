@@ -95,6 +95,13 @@ public class Main {
         gate.timeout(620_000);
         gate.start(config.getPort());
         log.info("rsai-backend is running on port {}", config.getPort());
+
+        // Cloud Run は SIGTERM 後 30s で SIGKILL するため、shutdown hook で pendingOps を flush する。
+        // minScale=0 環境でインスタンスが終了する前にスターデータが失われるのを防ぐ。
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            log.warn("Shutdown: flushing pending star ops before exit");
+            StarsController.flushPending();
+        }, "shutdown-stars-flush"));
     }
 
     private static void startDatabaseInit(Config.DatabaseConfig dbConfig, CfAccessAuth cfAccessAuth) {
