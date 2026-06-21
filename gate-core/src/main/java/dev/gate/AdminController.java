@@ -591,7 +591,7 @@ public class AdminController {
             Set<String> whereKeys = where != null ? where.keySet() : Set.of();
 
             List<String> updateCols = allCols.stream()
-                    .filter(c -> body.containsKey(c) && !whereKeys.contains(c))
+                    .filter(c -> body.containsKey(c) && !c.equals("_where"))
                     .collect(Collectors.toList());
             if (updateCols.isEmpty()) { ctx.status(400).json(Map.of("error", "更新するカラムがありません")); return; }
 
