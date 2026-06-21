@@ -596,7 +596,7 @@ public class AdminController {
             if (updateCols.isEmpty()) { ctx.status(400).json(Map.of("error", "更新するカラムがありません")); return; }
 
             for (String c : updateCols) {
-                if (!isValidColumnName(c)) { ctx.status(400).json(Map.of("error", "不正なカラム名: " + c)); return; }
+                if (!isValidIdentifier(c)) { ctx.status(400).json(Map.of("error", "不正なカラム名: " + c)); return; }
             }
 
             String setClauses = updateCols.stream().map(c -> "`" + c + "` = ?").collect(Collectors.joining(", "));
@@ -607,7 +607,7 @@ public class AdminController {
                 List<String> whereEntries = new ArrayList<>();
                 List<Object> vals = new ArrayList<>();
                 for (Map.Entry<String, Object> e : where.entrySet()) {
-                    if (!isValidColumnName(e.getKey())) { ctx.status(400).json(Map.of("error", "不正なカラム名: " + e.getKey())); return; }
+                    if (!isValidIdentifier(e.getKey())) { ctx.status(400).json(Map.of("error", "不正なカラム名: " + e.getKey())); return; }
                     whereEntries.add("`" + e.getKey() + "` = ?");
                     vals.add(normalizeValue(e.getValue()));
                 }
@@ -626,7 +626,8 @@ public class AdminController {
                 for (String col : updateCols) ps.setObject(i++, normalizeValue(body.get(col)));
                 for (Object v : whereVals) ps.setObject(i++, v);
                 int updated = ps.executeUpdate();
-                AuditLog.write(user, "UPDATE_ROW", table + "/" + pkVal, null, "ok", null);
+                String logKey = (where != null && !where.isEmpty()) ? table + "/" + where : table + "/" + pkVal;
+                AuditLog.write(user, "UPDATE_ROW", logKey, null, "ok", null);
                 CacheSync.scheduleFullSync("updateRow:" + table);
                 ctx.json(Map.of("updated", updated));
             }
