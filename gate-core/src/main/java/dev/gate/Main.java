@@ -75,9 +75,6 @@ public class Main {
         if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
             gate.register(new GcpMetricsController());
         }
-        if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
-            gate.register(new GcpMetricsController());
-        }
 
         YamlRouteLoader.load(gate);
         startDatabaseInit(config.getDatabase(), cfAccessAuth);
