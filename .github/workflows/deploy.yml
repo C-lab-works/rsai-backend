@@ -232,8 +232,8 @@ jobs:
                         containerPort: 8080
                     resources:
                       limits:
-                        cpu: "4"
-                        memory: 2Gi
+                        cpu: "2"
+                        memory: 1Gi
                     startupProbe:
                       httpGet:
                         path: /health
