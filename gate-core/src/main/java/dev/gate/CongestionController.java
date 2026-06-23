@@ -60,7 +60,7 @@ public class CongestionController {
         try (Connection conn = Database.getConnection();
              Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT l.id AS location_id, l.location_code, l.name, l.floor, l.svg_id, l.x, l.y, " +
+                 "SELECT l.id AS location_id, l.location_code, l.name, l.floor, l.svg_id, l.x, l.y, l.type, " +
                  "  cs.level, " +
                  "  cs.updated_at, " +
                  "  (SELECT p.title FROM timetables t " +
@@ -84,6 +84,7 @@ public class CongestionController {
                 double y = rs.getDouble("y");
                 if (!rs.wasNull()) n.put("y", y);
                 n.put("level", rs.getInt("level"));
+                n.put("type", rs.getString("type"));
                 String updatedAt = rs.getString("updated_at");
                 if (updatedAt != null) n.put("updated_at", updatedAt);
                 String project = rs.getString("project");
@@ -113,7 +114,7 @@ public class CongestionController {
             } catch (NumberFormatException e) {
                 ctx.status(400).json(Map.of("error", "level must be a number")); return;
             }
-            if (level < 0 || level > 2) { ctx.status(400).json(Map.of("error", "level must be 0-2")); return; }
+            if (level < 0 || level > 6) { ctx.status(400).json(Map.of("error", "level must be 0-6")); return; }
 
             // 要件は「CF Access で認証済みであること」。CfAccessAuth が opportunistic に
             // 抽出した email がここに載る。ADMIN_EMAILS 限定ではなく（運用スタッフによる

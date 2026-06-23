@@ -34,3 +34,4 @@ bundle.json
 instdump.json
 /.understand-anything
 start-dashboard.bat
+.rsai.sql
