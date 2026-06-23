@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 23) {
-                logger.info("Seed data v23 already present — skipping");
+            if (v >= 25) {
+                logger.info("Seed data v25 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -138,7 +138,17 @@ public class DataSeeder {
                 migrateV22(conn);
                 setSeedVersion(conn, 23);
             }
-            logger.info("Seed data v23 ready");
+            if (v <= 23) {
+                logger.info("Migrating schema v23 -> v24");
+                migrateV23(conn);
+                setSeedVersion(conn, 24);
+            }
+            if (v <= 24) {
+                logger.info("Migrating schema v24 -> v25");
+                migrateV24(conn);
+                setSeedVersion(conn, 25);
+            }
+            logger.info("Seed data v25 ready");
         }
     }
 
@@ -713,6 +723,88 @@ public class DataSeeder {
                 return rs.next();
             }
         }
+    }
+
+    private static void migrateV23(Connection conn) throws Exception {
+        // Add type column to locations to distinguish rooms from food trucks
+        addColumnIfMissing(conn, "locations", "type", "VARCHAR(20) NOT NULL DEFAULT 'room'");
+
+        // Insert food truck locations (floor=0 means outdoor/foodtruck area)
+        String insertLoc =
+            "INSERT IGNORE INTO locations (id, name, floor, location_code, type) VALUES ";
+        exec(conn, insertLoc +
+            "(100,'Happy Smile',0,'hs','foodtruck')," +
+            "(101,'和氷屋',0,'kg','foodtruck')," +
+            "(102,'ましゅれ①',0,'ms','foodtruck')," +
+            "(103,'鉄板キング',0,'tk','foodtruck')," +
+            "(104,'ましゅれ②',0,'msb','foodtruck')," +
+            "(105,'Potato Friend''s',0,'pf','foodtruck')," +
+            "(106,'ポテタコTANAKA',0,'pt','foodtruck')," +
+            "(107,'カルボ',0,'cb','foodtruck')," +
+            "(108,'kitakitsunekitchen',0,'kk','foodtruck')," +
+            "(109,'Big mam''s pie',0,'bmp','foodtruck')," +
+            "(110,'Kitakara',0,'ktk','foodtruck')," +
+            "(111,'夕張マルシェ',0,'ym','foodtruck')," +
+            "(112,'LUCKY FOOD DELI',0,'lfd','foodtruck')," +
+            "(113,'AGE-MON屋',0,'am','foodtruck')," +
+            "(114,'リトルダイニング',0,'ld','foodtruck')," +
+            "(115,'おやRITS',0,'or','foodtruck')," +
+            "(116,'8A GARAGE COFFEE',0,'8a','foodtruck')"
+        );
+        logger.info("Inserted food truck locations");
+
+        // Seed initial congestion_status for all food trucks (level=0)
+        String insertCs =
+            "INSERT IGNORE INTO congestion_status (location_code, level, updated_at, updated_by) VALUES ";
+        exec(conn, insertCs +
+            "('hs',0,NOW(),'system')," +
+            "('kg',0,NOW(),'system')," +
+            "('ms',0,NOW(),'system')," +
+            "('tk',0,NOW(),'system')," +
+            "('msb',0,NOW(),'system')," +
+            "('pf',0,NOW(),'system')," +
+            "('pt',0,NOW(),'system')," +
+            "('cb',0,NOW(),'system')," +
+            "('kk',0,NOW(),'system')," +
+            "('bmp',0,NOW(),'system')," +
+            "('ktk',0,NOW(),'system')," +
+            "('ym',0,NOW(),'system')," +
+            "('lfd',0,NOW(),'system')," +
+            "('am',0,NOW(),'system')," +
+            "('ld',0,NOW(),'system')," +
+            "('or',0,NOW(),'system')," +
+            "('8a',0,NOW(),'system')"
+        );
+
+        // Seed congestion_status for existing room locations not yet tracked
+        // (食堂, 1F/2F classrooms that were missing)
+        exec(conn, insertCs +
+            "('LR',0,NOW(),'system')," +
+            "('1A',0,NOW(),'system')," +
+            "('1C',0,NOW(),'system')," +
+            "('1F',0,NOW(),'system')," +
+            "('1H',0,NOW(),'system')," +
+            "('1J',0,NOW(),'system')," +
+            "('2C',0,NOW(),'system')," +
+            "('2F',0,NOW(),'system')," +
+            "('2H',0,NOW(),'system')," +
+            "('IR',0,NOW(),'system')," +
+            "('CC',0,NOW(),'system')"
+        );
+        logger.info("Seeded congestion_status for food trucks and additional room locations");
+    }
+
+    private static void migrateV24(Connection conn) throws Exception {
+        // アトリウム会場を追加 (中2企画)
+        exec(conn,
+            "INSERT IGNORE INTO locations (id, name, floor, location_code, type) VALUES " +
+            "(117,'アトリウム',1,'AT','room')"
+        );
+        exec(conn,
+            "INSERT IGNORE INTO congestion_status (location_code, level, updated_at, updated_by) VALUES " +
+            "('AT',0,NOW(),'system')"
+        );
+        logger.info("Added アトリウム location and congestion_status entry");
     }
 
     private static void migrateV21(Connection conn) throws Exception {
