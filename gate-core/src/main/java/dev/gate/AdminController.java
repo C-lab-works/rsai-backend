@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1420,6 +1421,72 @@ public class AdminController {
         String caller = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
         logger.info("device unblocked device_id={} by={}", deviceId.substring(0, 8), caller);
         ctx.json(Map.of("ok", true));
+    }
+
+    @GetMapping("/admin/stars/ranking")
+    public void getStarsRanking(Context ctx) {
+        String view = Objects.requireNonNullElse(ctx.query("view"), "all");
+        ctx.header("Cache-Control", "no-store");
+
+        String sql = buildRankingSql(view);
+        if (sql == null) {
+            ctx.status(400).json(Map.of("error", "invalid view"));
+            return;
+        }
+
+        List<Map<String, Object>> items = new ArrayList<>();
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            int rank = 1;
+            while (rs.next()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("rank", rank++);
+                row.put("id", rs.getInt("id"));
+                row.put("name", rs.getString("name"));
+                row.put("organizer", rs.getString("organizer"));
+                row.put("type", rs.getString("type"));
+                row.put("count", rs.getInt("count"));
+                items.add(row);
+            }
+        } catch (Exception e) {
+            logger.error("Failed to fetch star rankings", e);
+            ctx.status(500).json(Map.of("error", "DB error"));
+            return;
+        }
+        ctx.json(Map.of("items", items));
+    }
+
+    private static String buildRankingSql(String view) {
+        return switch (view) {
+            case "all" -> """
+                SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS count
+                FROM projects
+                UNION ALL
+                SELECT 'foodtruck', id, name, NULL, bookmark_count
+                FROM foodtruck
+                ORDER BY count DESC LIMIT 30
+                """;
+            case "hs"        -> projectRankSql("organizer REGEXP '^[0-9]-[A-Z]$'");
+            case "ms"        -> projectRankSql("organizer REGEXP '^[0-9]-[0-9]$'");
+            case "hs1"       -> projectRankSql("organizer REGEXP '^1-[A-Z]$'");
+            case "hs2"       -> projectRankSql("organizer REGEXP '^2-[A-Z]$'");
+            case "hs3"       -> projectRankSql("organizer REGEXP '^3-[A-Z]$'");
+            case "ms1"       -> projectRankSql("organizer REGEXP '^1-[0-9]$'");
+            case "ms2"       -> projectRankSql("organizer REGEXP '^2-[0-9]$'");
+            case "ms3"       -> projectRankSql("organizer REGEXP '^3-[0-9]$'");
+            case "foodtruck" -> """
+                SELECT 'foodtruck' AS type, id, name, NULL AS organizer, bookmark_count AS count
+                FROM foodtruck
+                ORDER BY count DESC LIMIT 30
+                """;
+            default -> null;
+        };
+    }
+
+    private static String projectRankSql(String where) {
+        return "SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS count " +
+               "FROM projects WHERE " + where + " ORDER BY count DESC LIMIT 30";
     }
 
     private record GitHubPutResult(String commitSha, String newFileSha, boolean shaConflict) {}
