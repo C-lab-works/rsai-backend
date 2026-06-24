@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 25) {
-                logger.info("Seed data v25 already present — skipping");
+            if (v >= 26) {
+                logger.info("Seed data v26 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -148,7 +148,12 @@ public class DataSeeder {
                 migrateV24(conn);
                 setSeedVersion(conn, 25);
             }
-            logger.info("Seed data v25 ready");
+            if (v <= 25) {
+                logger.info("Migrating schema v25 -> v26");
+                migrateV25(conn);
+                setSeedVersion(conn, 26);
+            }
+            logger.info("Seed data v26 ready");
         }
     }
 
@@ -316,14 +321,14 @@ public class DataSeeder {
         exec(conn,
             "CREATE TABLE IF NOT EXISTS projects (" +
             "  id             INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  title          VARCHAR(255) NOT NULL," +
-            "  organizer      VARCHAR(255)," +
-            "  description    TEXT," +
-            "  image_url      VARCHAR(255)," +
+            "  title          VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL," +
+            "  organizer      VARCHAR(255) COLLATE utf8mb4_unicode_ci," +
+            "  description    TEXT COLLATE utf8mb4_unicode_ci," +
+            "  image_url      VARCHAR(255) COLLATE utf8mb4_unicode_ci," +
             "  location_id    INT," +
             "  bookmark_count INT          NOT NULL DEFAULT 0," +
             "  FOREIGN KEY (location_id) REFERENCES locations(id)" +
-            ")");
+            ") COLLATE utf8mb4_unicode_ci");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS project_categories (" +
             "  project_id  INT NOT NULL," +
@@ -367,12 +372,12 @@ public class DataSeeder {
         exec(conn,
             "CREATE TABLE IF NOT EXISTS foodtruck (" +
             "  id             INT          PRIMARY KEY AUTO_INCREMENT," +
-            "  name           VARCHAR(255) NOT NULL," +
-            "  info           TEXT         NOT NULL," +
-            "  icon           VARCHAR(255) NOT NULL," +
-            "  location_code  VARCHAR(50)," +
+            "  name           VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL," +
+            "  info           TEXT COLLATE utf8mb4_unicode_ci NOT NULL," +
+            "  icon           VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL," +
+            "  location_code  VARCHAR(50) COLLATE utf8mb4_unicode_ci," +
             "  bookmark_count INT          NOT NULL DEFAULT 0" +
-            ")");
+            ") COLLATE utf8mb4_unicode_ci");
         exec(conn,
             "CREATE TABLE IF NOT EXISTS menus (" +
             "  id           INT          PRIMARY KEY AUTO_INCREMENT," +
@@ -805,6 +810,27 @@ public class DataSeeder {
             "('AT',0,NOW(),'system')"
         );
         logger.info("Added アトリウム location and congestion_status entry");
+    }
+
+    private static void migrateV25(Connection conn) throws Exception {
+        // すべてのテーブルの照合順序を utf8mb4_unicode_ci に統一
+        // projects, foodtruck, metrics_hourly, metrics_endpoints, operation_logs 等
+        String[] tables = {
+            "projects", "foodtruck", "metrics_hourly", "metrics_endpoints", "operation_logs",
+            "announcements", "bus", "credit", "locations", "categories", "congestion_status",
+            "menus", "timetables", "project_categories", "project_stars", "project_delays",
+            "foodtruck_stars", "foodtruck_sns", "foodtruck_subicon", "metrics_latency_histogram",
+            "static_data", "seed_version"
+        };
+        
+        for (String table : tables) {
+            try {
+                exec(conn, "ALTER TABLE " + table + " CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+                logger.info("Unified collation for table: " + table);
+            } catch (Exception e) {
+                logger.warn("Failed to convert collation for " + table + ": " + e.getMessage());
+            }
+        }
     }
 
     private static void migrateV21(Connection conn) throws Exception {

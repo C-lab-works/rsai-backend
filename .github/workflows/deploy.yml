@@ -524,6 +524,7 @@ jobs:
               -u "${PROD_DB_USER}" \
               --single-transaction --quick --skip-lock-tables \
               --no-tablespaces \
+              --ignore-table="${PROD_DB_NAME}.metrics_hourly" \
               "${PROD_DB_NAME}" \
             > "${DUMP_FILE}" 2>/tmp/dump_stderr_$$
           DUMP_EXIT=$?
