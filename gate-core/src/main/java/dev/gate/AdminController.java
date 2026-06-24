@@ -1459,11 +1459,20 @@ public class AdminController {
 
     private static String buildRankingSql(String view) {
         return switch (view) {
+            // projects は utf8mb4_0900_ai_ci、foodtruck は utf8mb4_unicode_ci のため、
+            // テキスト列に明示 COLLATE を付けないと UNION で
+            // "Illegal mix of collations" (ERROR 1271) となり 500 になる。
             case "all" -> """
-                SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS star_count
+                SELECT 'project' COLLATE utf8mb4_0900_ai_ci AS type, id,
+                       title COLLATE utf8mb4_0900_ai_ci AS name,
+                       organizer COLLATE utf8mb4_0900_ai_ci AS organizer,
+                       bookmark_count AS star_count
                 FROM projects
                 UNION ALL
-                SELECT 'foodtruck' AS type, id, name AS name, NULL AS organizer, bookmark_count AS star_count
+                SELECT 'foodtruck' COLLATE utf8mb4_0900_ai_ci AS type, id,
+                       name COLLATE utf8mb4_0900_ai_ci AS name,
+                       NULL AS organizer,
+                       bookmark_count AS star_count
                 FROM foodtruck
                 ORDER BY star_count DESC LIMIT 30
                 """;
