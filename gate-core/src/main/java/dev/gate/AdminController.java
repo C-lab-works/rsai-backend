@@ -1463,7 +1463,7 @@ public class AdminController {
                 SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS star_count
                 FROM projects
                 UNION ALL
-                SELECT 'foodtruck', id, name, NULL, bookmark_count
+                SELECT 'foodtruck' AS type, id, name AS name, NULL AS organizer, bookmark_count AS star_count
                 FROM foodtruck
                 ORDER BY star_count DESC LIMIT 30
                 """;
