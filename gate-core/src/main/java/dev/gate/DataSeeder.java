@@ -815,11 +815,12 @@ public class DataSeeder {
     private static void migrateV25(Connection conn) throws Exception {
         // すべてのテーブルの照合順序を utf8mb4_unicode_ci に統一
         // projects, foodtruck, metrics_hourly, metrics_endpoints, operation_logs 等
+        // 大量データのメトリクス系テーブルは除外（ALTER TABLE が遅く起動タイムアウトの原因になる）
         String[] tables = {
-            "projects", "foodtruck", "metrics_hourly", "metrics_endpoints", "operation_logs",
+            "projects", "foodtruck",
             "announcements", "bus", "credit", "locations", "categories", "congestion_status",
             "menus", "timetables", "project_categories", "project_stars", "project_delays",
-            "foodtruck_stars", "foodtruck_sns", "foodtruck_subicon", "metrics_latency_histogram",
+            "foodtruck_stars", "foodtruck_sns", "foodtruck_subicon",
             "static_data", "seed_version"
         };
         
