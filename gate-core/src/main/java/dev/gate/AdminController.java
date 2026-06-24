@@ -1446,7 +1446,7 @@ public class AdminController {
                 row.put("name", rs.getString("name"));
                 row.put("organizer", rs.getString("organizer"));
                 row.put("type", rs.getString("type"));
-                row.put("count", rs.getInt("count"));
+                row.put("count", rs.getInt("star_count"));
                 items.add(row);
             }
         } catch (Exception e) {
@@ -1460,12 +1460,12 @@ public class AdminController {
     private static String buildRankingSql(String view) {
         return switch (view) {
             case "all" -> """
-                SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS count
+                SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS star_count
                 FROM projects
                 UNION ALL
                 SELECT 'foodtruck', id, name, NULL, bookmark_count
                 FROM foodtruck
-                ORDER BY count DESC LIMIT 30
+                ORDER BY star_count DESC LIMIT 30
                 """;
             case "hs"        -> projectRankSql("organizer REGEXP '^[0-9]-[A-Z]$'");
             case "ms"        -> projectRankSql("organizer REGEXP '^[0-9]-[0-9]$'");
@@ -1476,17 +1476,17 @@ public class AdminController {
             case "ms2"       -> projectRankSql("organizer REGEXP '^2-[0-9]$'");
             case "ms3"       -> projectRankSql("organizer REGEXP '^3-[0-9]$'");
             case "foodtruck" -> """
-                SELECT 'foodtruck' AS type, id, name, NULL AS organizer, bookmark_count AS count
+                SELECT 'foodtruck' AS type, id, name, NULL AS organizer, bookmark_count AS star_count
                 FROM foodtruck
-                ORDER BY count DESC LIMIT 30
+                ORDER BY star_count DESC LIMIT 30
                 """;
             default -> null;
         };
     }
 
     private static String projectRankSql(String where) {
-        return "SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS count " +
-               "FROM projects WHERE " + where + " ORDER BY count DESC LIMIT 30";
+        return "SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS star_count " +
+               "FROM projects WHERE " + where + " ORDER BY star_count DESC LIMIT 30";
     }
 
     private record GitHubPutResult(String commitSha, String newFileSha, boolean shaConflict) {}
