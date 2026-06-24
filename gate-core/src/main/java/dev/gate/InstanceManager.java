@@ -40,6 +40,7 @@ public class InstanceManager {
 
     private volatile String lastBroadcastRefreshAt = null;
     private volatile String lastCongestionAt       = null;
+    private volatile String lastStarsEnabledAt     = null;
     private volatile String lastCmdRequestId       = null;
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     // metrics サブコレクションのドキュメント数をメモリで追跡して 121-doc クエリを廃止
@@ -113,6 +114,12 @@ public class InstanceManager {
                 if (bDoc != null) {
                     lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
                     lastCongestionAt       = (String) bDoc.get("congestionAt");
+                    lastStarsEnabledAt     = (String) bDoc.get("starsEnabledAt");
+                    Object starsEnabled    = bDoc.get("starsEnabled");
+                    if (starsEnabled instanceof Boolean) {
+                        StarsController.setEnabled((Boolean) starsEnabled);
+                        log.info("stars initial state from Firestore: enabled={}", starsEnabled);
+                    }
                 }
             } catch (Exception ignored) {}
 
@@ -214,6 +221,15 @@ public class InstanceManager {
                 lastCongestionAt = congestionAt;
                 log.info("broadcast congestion refresh received");
                 CongestionController.refreshCache();
+            }
+            String starsEnabledAt = (String) doc.get("starsEnabledAt");
+            if (starsEnabledAt != null && !starsEnabledAt.equals(lastStarsEnabledAt)) {
+                lastStarsEnabledAt = starsEnabledAt;
+                Object starsEnabled = doc.get("starsEnabled");
+                if (starsEnabled instanceof Boolean) {
+                    StarsController.setEnabled((Boolean) starsEnabled);
+                    log.info("broadcast stars {} received", (Boolean) starsEnabled ? "enabled" : "disabled");
+                }
             }
         } catch (Exception e) {
             log.warn("pollBroadcast failed: {}", e.getMessage());
@@ -357,6 +373,19 @@ public class InstanceManager {
             lastCongestionAt = ts;
         } catch (Exception e) {
             log.warn("broadcastCongestionRefresh failed: {}", e.getMessage());
+        }
+    }
+
+    public void broadcastStarsEnabled(boolean enabled) {
+        if (!fs.isAvailable()) return;
+        try {
+            String ts = Instant.now().toString();
+            fs.update("broadcast/cache", Map.of(
+                "starsEnabledAt", ts,
+                "starsEnabled",   enabled
+            ));
+        } catch (Exception e) {
+            log.warn("broadcastStarsEnabled failed: {}", e.getMessage());
         }
     }
 
