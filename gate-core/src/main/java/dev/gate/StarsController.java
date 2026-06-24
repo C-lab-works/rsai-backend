@@ -71,6 +71,10 @@ public class StarsController {
             ctx.status(403).json(Map.of("error", "このデバイスはブロックされています"));
             return;
         }
+        if (!isAllowedClient(ctx)) {
+            ctx.status(403).json(Map.of("error", "Forbidden"));
+            return;
+        }
 
         pendingOps.add(new StarOp(type, req.id, true));
         ctx.json(Map.of("ok", true));
@@ -110,6 +114,10 @@ public class StarsController {
         String deviceId = ctx.requestHeader("X-Device-Id");
         if (deviceId != null && BLOCKED_DEVICE_IDS.contains(deviceId)) {
             ctx.status(403).json(Map.of("error", "このデバイスはブロックされています"));
+            return;
+        }
+        if (!isAllowedClient(ctx)) {
+            ctx.status(403).json(Map.of("error", "Forbidden"));
             return;
         }
 
@@ -259,6 +267,17 @@ public class StarsController {
         return BLOCKED_DEVICE_IDS.add(deviceId);
     }
     public static boolean unblockDevice(String deviceId) { return BLOCKED_DEVICE_IDS.remove(deviceId); }
+
+    private static boolean isAllowedClient(Context ctx) {
+        String ua = ctx.requestHeader("User-Agent");
+        if (ua != null && !ua.isBlank()
+                && !ua.startsWith("okhttp/4.")
+                && !ua.startsWith("CFNetwork/")) {
+            return false;
+        }
+        String appVersion = ctx.requestHeader("X-App-Version");
+        return appVersion != null && !appVersion.isBlank();
+    }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     static class StarRequest {
