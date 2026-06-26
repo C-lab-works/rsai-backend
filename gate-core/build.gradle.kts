@@ -35,6 +35,10 @@ dependencies {
     implementation("com.zaxxer:HikariCP:5.1.0")
     implementation("com.mysql:mysql-connector-j:8.3.0")
 
+    // blurhash 生成
+    implementation("io.trbl:blurhash:1.0.0")
+    implementation("com.twelvemonkeys.imageio:imageio-webp:3.11.0")
+
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
