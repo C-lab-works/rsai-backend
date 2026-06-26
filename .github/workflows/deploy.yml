@@ -300,8 +300,6 @@ jobs:
                         value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
                       - name: INTERNAL_SERVICE_KEY
                         value: "${{ secrets.INTERNAL_SERVICE_KEY }}"
-                      # 書き込み起点の CF targeted purge 用 (CfPurge が purge URL を組み立てる)。
-                      # debug 環境には設定しない = URL purge 無効。
                       - name: PUBLIC_BASE_URL
                         value: "https://v2.r-sai2026.site"
           EOF
