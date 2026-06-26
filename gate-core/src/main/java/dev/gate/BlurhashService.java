@@ -34,7 +34,14 @@ public class BlurhashService {
             String url = row[1];
             try {
                 DiscordWebhook.sendAdminOp("system", "blurhash-try", "id=" + id, url);
-                String hash = generateHash(url);
+                java.util.concurrent.Future<String> future = Main.bg.submit(() -> generateHash(url));
+                String hash;
+                try {
+                    hash = future.get(20, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (java.util.concurrent.TimeoutException te) {
+                    future.cancel(true);
+                    throw new RuntimeException("HTTP timeout (20s) fetching: " + url, te);
+                }
                 if (hash != null) {
                     store(id, hash);
                     count++;
