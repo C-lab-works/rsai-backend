@@ -27,6 +27,7 @@ public class BlurhashService {
     public int generate() throws Exception {
         List<String[]> pending = fetchPending();
         int count = 0;
+        int skip  = 0;
         for (String[] row : pending) {
             int id = Integer.parseInt(row[0]);
             String url = row[1];
@@ -35,12 +36,20 @@ public class BlurhashService {
                 if (hash != null) {
                     store(id, hash);
                     count++;
+                } else {
+                    skip++;
+                    DiscordWebhook.sendAdminOp("system", "blurhash-skip", "id=" + id, "ImageIO decode failed: " + url);
                 }
             } catch (Exception e) {
+                skip++;
                 logger.warn("blurhash skip id={} url={}: {}", id, url, e.getMessage());
+                DiscordWebhook.sendAdminOp("system", "blurhash-skip", "id=" + id, e.getMessage() + " — " + url);
             }
         }
-        logger.info("blurhash generated for {} projects", count);
+        logger.info("blurhash generated for {}/{} projects (skipped={})", count, pending.size(), skip);
+        DiscordWebhook.sendAdminOp("system", "blurhash-generate",
+                count + "/" + pending.size() + " projects",
+                skip > 0 ? skip + " 件スキップ（ログ確認）" : null);
         return count;
     }
 
