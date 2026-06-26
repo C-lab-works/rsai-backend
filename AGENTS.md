@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-01 | Updated: 2026-06-07 -->
+<!-- Generated: 2026-06-01 | Updated: 2026-06-26 -->
 
 # rsai-backend
 
@@ -11,18 +11,21 @@
 |------|-------------|
 | `Dockerfile` | GraalVM native image ビルドと Cloud Run 用コンテナイメージ定義 |
 | `.dockerignore` | Docker ビルドコンテキスト除外設定 |
+| `settings.gradle.kts` | Gradle マルチプロジェクト設定（`gate-core` サブモジュール定義） |
 | `gradlew` / `gradlew.bat` | Gradle Wrapper スクリプト（ビルドのエントリポイント） |
 | `API.md` | 公開 API エンドポイントのリファレンスドキュメント |
+| `README.md` | Gate フレームワーク英語ドキュメント |
+| `README_ja.md` | Gate フレームワーク日本語ドキュメント |
+| `STUDY_GUIDE.md` | コードベース理解のための学習ガイド（プロジェクト参加者向け） |
+| `STUDY_PROBLEMS.md` | メンテナンス習得用の練習問題集（初級→中級→上級） |
 
 ## Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
 | `gate-core/` | メインの Java ソースモジュール（コントローラー・ミドルウェア・独自フレームワーク） (see `gate-core/AGENTS.md`) |
-| `.github/` | CI/CD ワークフローとセキュリティレビュースクリプト (see `.github/AGENTS.md`) |
 | `deploy/` | nginx 等デプロイ設定テンプレート (see `deploy/AGENTS.md`) |
 | `docs/` | 補足ドキュメント（フローダイアグラム等） (see `docs/AGENTS.md`) |
-| `tools/` | 開発・運用補助スクリプト（負荷テスト等） (see `tools/AGENTS.md`) |
 
 ## For AI Agents
 
