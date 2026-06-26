@@ -33,6 +33,7 @@ public class BlurhashService {
             int id = Integer.parseInt(row[0]);
             String url = row[1];
             try {
+                DiscordWebhook.sendAdminOp("system", "blurhash-try", "id=" + id, url);
                 String hash = generateHash(url);
                 if (hash != null) {
                     store(id, hash);
