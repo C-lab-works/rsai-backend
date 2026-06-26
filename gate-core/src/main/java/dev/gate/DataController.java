@@ -226,7 +226,7 @@ public class DataController {
         ArrayNode items = root.putArray("items");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, info, icon, location_code, bookmark_count FROM foodtruck ORDER BY id")) {
+               "SELECT id, name, info, icon, blurhash, location_code, bookmark_count FROM foodtruck ORDER BY id")) {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 ObjectNode ft = items.addObject();
@@ -234,6 +234,7 @@ public class DataController {
                 ft.put("name", rs.getString("name"));
                 ft.put("info", rs.getString("info"));
                 ft.put("icon", rs.getString("icon"));
+                putStringOrNull(ft, "blurhash", rs.getString("blurhash"));
                 putStringOrNull(ft, "location_code", rs.getString("location_code"));
                 ft.put("bookmark_count", rs.getInt("bookmark_count"));
                 ArrayNode subicons = ft.putArray("subicons");
