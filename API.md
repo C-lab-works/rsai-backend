@@ -1,6 +1,6 @@
 # rsai-backend API リファレンス
 
-Base URL: `https://v2.r-sai2026.site`
+Base URL: `https://api.example.com`
 
 ---
 
@@ -38,16 +38,16 @@ Base URL: `https://v2.r-sai2026.site`
     { "id": 1, "name": "ステージ系" }
   ],
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "x": 158.5, "y": 218.0 }
+    { "id": 2, "name": "場所名", "floor": 1, "location_code": "02", "x": 158.5, "y": 218.0 }
   ],
   "projects": [
-    { "id": 1, "title": "中一企画1", "organizer": "1-1", "location_id": 15 }
+    { "id": 1, "title": "企画名", "organizer": "主催者", "location_id": 15 }
   ],
   "project_categories": [
     { "project_id": 1, "category_id": 2 }
   ],
   "timetables": [
-    { "id": 16, "project_id": 30, "location_id": 2, "date": "2026-07-04", "is_all_day": false, "start": "10:00:00", "end": "10:20:00" }
+    { "id": 16, "project_id": 30, "location_id": 2, "date": "YYYY-MM-DD", "is_all_day": false, "start": "10:00:00", "end": "10:20:00" }
   ]
 }
 ```
@@ -79,10 +79,10 @@ Base URL: `https://v2.r-sai2026.site`
         { "id": 1, "url": "https://example.com/subicon1.png" }
       ],
       "sns": [
-        { "id": 1, "platform": "x", "url": "https://x.com/username" }
+        { "id": 1, "platform": "x", "url": "https://x.com/example" }
       ],
       "menus": [
-        { "id": 1, "name": "フランクフルト", "price": 200, "image_url": "https://example.com/menu.jpg", "allergen": "卵,小麦" }
+        { "id": 1, "name": "メニュー名", "price": 200, "image_url": "https://example.com/menu.jpg", "allergen": "卵,小麦" }
       ]
     }
   ]
@@ -105,8 +105,8 @@ Base URL: `https://v2.r-sai2026.site`
 ```json
 {
   "locations": [
-    { "id": 2, "name": "Co-tan", "floor": 1, "location_code": "02", "x": 158.5, "y": 218.0 },
-    { "id": 22, "name": "階段1-中学教室", "floor": 1, "location_code": "S1JH", "svg_id": 2, "x": 249.0, "y": 175.0 }
+    { "id": 2, "name": "場所名A", "floor": 1, "location_code": "02", "x": 158.5, "y": 218.0 },
+    { "id": 22, "name": "場所名B", "floor": 1, "location_code": "S1", "svg_id": 2, "x": 249.0, "y": 175.0 }
   ]
 }
 ```
@@ -145,14 +145,14 @@ Base URL: `https://v2.r-sai2026.site`
   {
     "location_id": 2,
     "location_code": "02",
-    "name": "Co-tan",
+    "name": "場所名",
     "floor": 1,
     "svg_id": 5,
-    "x": 43.02042086431134,
-    "y": 141.52233128287835,
+    "x": 43.0,
+    "y": 141.5,
     "level": 1,
-    "updated_at": "2026-07-04 10:30:00",
-    "project": "高2企画4"
+    "updated_at": "YYYY-MM-DD HH:MM:SS",
+    "project": "企画名"
   }
 ]
 ```

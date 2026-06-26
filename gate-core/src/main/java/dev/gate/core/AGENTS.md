@@ -1,5 +1,5 @@
 <!-- Parent: ../AGENTS.md -->
-<!-- Generated: 2026-06-01 | Updated: 2026-06-01 -->
+<!-- Generated: 2026-06-01 | Updated: 2026-06-26 -->
 
 # core (独自フレームワーク)
 
@@ -20,6 +20,10 @@
 | `YamlRouteLoader.java` | `routes.yaml` を解析して `Gate` に GET ルートを登録。テーブル名・カラム名を allowlist 検証 |
 | `Logger.java` | SLF4J ラッパー。クラスをコンストラクタ引数に取るシンプルなロガー |
 | `ErrorHandler.java` | 未処理例外のハンドラインターフェース |
+| `Http.java` | 共有 `HttpClient` シングルトン。`CfPurge` や `FirebaseAppCheckAuth` 等から参照される |
+| `Json.java` | 共有 `ObjectMapper` シングルトン。全クラスで Jackson 設定を統一するために使用 |
+| `TtlCache.java` | TTL 付きシンプルなインメモリキャッシュ。期限切れエントリを遅延削除する軽量実装 |
+| `ClientErrorException.java` | 400 系クライアントエラーを表すチェック例外。`ErrorHandler` でキャッチして 4xx を返す |
 | `HttpCache.java` | HTTP レスポンスキャッシュユーティリティ |
 | `GateServer.java` | 起動済み Jetty Server のラッパー（停止等） |
 | `WsAdapter.java` / `WsContext.java` / `WsHandler.java` | WebSocket サポート |
