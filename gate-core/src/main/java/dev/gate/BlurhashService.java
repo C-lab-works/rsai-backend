@@ -26,6 +26,7 @@ public class BlurhashService {
     /** blurhash が NULL の projects を処理し、生成できた件数を返す。 */
     public int generate() throws Exception {
         List<String[]> pending = fetchPending();
+        DiscordWebhook.sendAdminOp("system", "blurhash-generate", "開始", pending.size() + " 件処理予定");
         int count = 0;
         int skip  = 0;
         for (String[] row : pending) {
