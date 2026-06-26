@@ -66,7 +66,12 @@ public class BlurhashService {
         return result;
     }
 
+    private static final java.util.concurrent.atomic.AtomicBoolean PLUGINS_SCANNED = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     private String generateHash(String url) throws Exception {
+        if (PLUGINS_SCANNED.compareAndSet(false, true)) {
+            ImageIO.scanForPlugins();
+        }
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(15))
