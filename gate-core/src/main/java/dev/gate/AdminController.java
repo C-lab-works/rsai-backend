@@ -1770,4 +1770,18 @@ public class AdminController {
             ctx.status(502).json(Map.of("error", "GitHub API error"));
         }
     }
+
+    @PostMapping("/admin/generate-blurhash")
+    public void generateBlurhash(Context ctx) {
+        ctx.status(202).json(Map.of("status", "started"));
+        Main.bg.submit((java.util.concurrent.Callable<Void>) () -> {
+            try {
+                int count = new BlurhashService().generate();
+                logger.info("blurhash generation complete: {} projects updated", count);
+            } catch (Exception e) {
+                logger.error("blurhash generation failed", e);
+            }
+            return null;
+        });
+    }
 }

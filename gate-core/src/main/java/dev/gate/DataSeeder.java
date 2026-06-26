@@ -153,7 +153,12 @@ public class DataSeeder {
                 migrateV25(conn);
                 setSeedVersion(conn, 26);
             }
-            logger.info("Seed data v26 ready");
+            if (v <= 26) {
+                logger.info("Migrating schema v26 -> v27");
+                migrateV26(conn);
+                setSeedVersion(conn, 27);
+            }
+            logger.info("Seed data v27 ready");
         }
     }
 
@@ -832,6 +837,10 @@ public class DataSeeder {
                 logger.warn("Failed to convert collation for " + table + ": " + e.getMessage());
             }
         }
+    }
+
+    private static void migrateV26(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "projects", "blurhash", "VARCHAR(100)");
     }
 
     private static void migrateV21(Connection conn) throws Exception {
