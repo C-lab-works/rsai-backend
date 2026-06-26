@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 27) {
-                logger.info("Seed data v27 already present — skipping");
+            if (v >= 29) {
+                logger.info("Seed data v29 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -158,7 +158,17 @@ public class DataSeeder {
                 migrateV26(conn);
                 setSeedVersion(conn, 27);
             }
-            logger.info("Seed data v27 ready");
+            if (v <= 27) {
+                logger.info("Migrating schema v27 -> v28");
+                migrateV27(conn);
+                setSeedVersion(conn, 28);
+            }
+            if (v <= 28) {
+                logger.info("Migrating schema v28 -> v29");
+                migrateV28(conn);
+                setSeedVersion(conn, 29);
+            }
+            logger.info("Seed data v29 ready");
         }
     }
 
@@ -841,6 +851,15 @@ public class DataSeeder {
 
     private static void migrateV26(Connection conn) throws Exception {
         addColumnIfMissing(conn, "projects", "blurhash", "VARCHAR(100)");
+    }
+
+    private static void migrateV27(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "foodtruck", "blurhash", "VARCHAR(100)");
+    }
+
+    private static void migrateV28(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "menus", "blurhash", "VARCHAR(100)");
+        addColumnIfMissing(conn, "foodtruck_subicon", "blurhash", "VARCHAR(100)");
     }
 
     private static void migrateV21(Connection conn) throws Exception {
