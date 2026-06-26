@@ -221,6 +221,8 @@ jobs:
                   run.googleapis.com/cpu-throttling: "false"
                   run.googleapis.com/startup-cpu-boost: "true"
                   run.googleapis.com/execution-environment: gen2
+                  run.googleapis.com/vpc-access-connector: projects/axiomatic-genre-496708-e0/locations/asia-northeast1/connectors/r-saiconnector
+                  run.googleapis.com/vpc-access-egress: all-traffic
               spec:
                 containerConcurrency: 600
                 timeoutSeconds: 60
@@ -522,6 +524,7 @@ jobs:
               -u "${PROD_DB_USER}" \
               --single-transaction --quick --skip-lock-tables \
               --no-tablespaces \
+              --ignore-table="${PROD_DB_NAME}.metrics_hourly" \
               "${PROD_DB_NAME}" \
             > "${DUMP_FILE}" 2>/tmp/dump_stderr_$$
           DUMP_EXIT=$?

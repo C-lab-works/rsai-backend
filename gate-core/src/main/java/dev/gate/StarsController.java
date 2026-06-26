@@ -17,6 +17,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -33,6 +36,10 @@ public class StarsController {
     private static final AtomicLong starCountInWindow = new AtomicLong(0);
     private static final AtomicBoolean alertSentInWindow = new AtomicBoolean(false);
     private static final AtomicBoolean flushing = new AtomicBoolean(false);
+
+    private static final AtomicBoolean STARS_ENABLED = new AtomicBoolean(true);
+    private static final Set<String> BLOCKED_DEVICE_IDS = ConcurrentHashMap.newKeySet();
+    private static final int MAX_BLOCKED_DEVICES = 100;
 
     @PostMapping("/stars")
     public void postStar(Context ctx) {
@@ -52,6 +59,20 @@ public class StarsController {
         String type = req.type.trim();
         if (!"project".equals(type) && !"foodtruck".equals(type)) {
             ctx.status(400).json(Map.of("error", "type must be either 'project' or 'foodtruck'"));
+            return;
+        }
+
+        if (!STARS_ENABLED.get()) {
+            ctx.status(503).json(Map.of("error", "Stars受付を停止中です"));
+            return;
+        }
+        String deviceId = ctx.requestHeader("X-Device-Id");
+        if (deviceId != null && BLOCKED_DEVICE_IDS.contains(deviceId)) {
+            ctx.status(403).json(Map.of("error", "このデバイスはブロックされています"));
+            return;
+        }
+        if (!isAllowedClient(ctx)) {
+            ctx.status(403).json(Map.of("error", "Forbidden"));
             return;
         }
 
@@ -83,6 +104,20 @@ public class StarsController {
         String type = req.type.trim();
         if (!"project".equals(type) && !"foodtruck".equals(type)) {
             ctx.status(400).json(Map.of("error", "type must be either 'project' or 'foodtruck'"));
+            return;
+        }
+
+        if (!STARS_ENABLED.get()) {
+            ctx.status(503).json(Map.of("error", "Stars受付を停止中です"));
+            return;
+        }
+        String deviceId = ctx.requestHeader("X-Device-Id");
+        if (deviceId != null && BLOCKED_DEVICE_IDS.contains(deviceId)) {
+            ctx.status(403).json(Map.of("error", "このデバイスはブロックされています"));
+            return;
+        }
+        if (!isAllowedClient(ctx)) {
+            ctx.status(403).json(Map.of("error", "Forbidden"));
             return;
         }
 
@@ -222,6 +257,26 @@ public class StarsController {
         flushPending();
         starCountInWindow.set(0);
         alertSentInWindow.set(false);
+    }
+
+    public static boolean isEnabled() { return STARS_ENABLED.get(); }
+    public static void setEnabled(boolean enabled) { STARS_ENABLED.set(enabled); }
+    public static Set<String> getBlockedDevices() { return Collections.unmodifiableSet(BLOCKED_DEVICE_IDS); }
+    public static boolean blockDevice(String deviceId) {
+        if (BLOCKED_DEVICE_IDS.size() >= MAX_BLOCKED_DEVICES) return false;
+        return BLOCKED_DEVICE_IDS.add(deviceId);
+    }
+    public static boolean unblockDevice(String deviceId) { return BLOCKED_DEVICE_IDS.remove(deviceId); }
+
+    private static boolean isAllowedClient(Context ctx) {
+        String ua = ctx.requestHeader("User-Agent");
+        if (ua != null && !ua.isBlank()
+                && !ua.startsWith("okhttp/4.")
+                && !ua.startsWith("CFNetwork/")) {
+            return false;
+        }
+        String appVersion = ctx.requestHeader("X-App-Version");
+        return appVersion != null && !appVersion.isBlank();
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
