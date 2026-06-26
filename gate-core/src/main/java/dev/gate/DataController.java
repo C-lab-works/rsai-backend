@@ -186,13 +186,14 @@ public class DataController {
         Map<Integer, List<ObjectNode>> menuMap = new HashMap<>();
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, foodtruck_id, name, price, imageURL, allergen FROM menus ORDER BY foodtruck_id, id")) {
+               "SELECT id, foodtruck_id, name, price, imageURL, blurhash, allergen FROM menus ORDER BY foodtruck_id, id")) {
             while (rs.next()) {
                 ObjectNode m = MAPPER.createObjectNode();
                 m.put("id",    rs.getInt("id"));
                 m.put("name",  rs.getString("name"));
                 m.put("price", rs.getInt("price"));
                 putStringOrNull(m, "image_url", rs.getString("imageURL"));
+                putStringOrNull(m, "blurhash",  rs.getString("blurhash"));
                 putStringOrNull(m, "allergen",  rs.getString("allergen"));
                 menuMap.computeIfAbsent(rs.getInt("foodtruck_id"), k -> new ArrayList<>()).add(m);
             }
@@ -214,11 +215,12 @@ public class DataController {
         Map<Integer, List<ObjectNode>> subiconMap = new HashMap<>();
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, foodtruck_id, url FROM foodtruck_subicon ORDER BY foodtruck_id, id")) {
+               "SELECT id, foodtruck_id, url, blurhash FROM foodtruck_subicon ORDER BY foodtruck_id, id")) {
             while (rs.next()) {
                 ObjectNode si = MAPPER.createObjectNode();
                 si.put("id",  rs.getInt("id"));
                 si.put("url", rs.getString("url"));
+                putStringOrNull(si, "blurhash", rs.getString("blurhash"));
                 subiconMap.computeIfAbsent(rs.getInt("foodtruck_id"), k -> new ArrayList<>()).add(si);
             }
         }
