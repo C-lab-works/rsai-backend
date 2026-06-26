@@ -37,20 +37,22 @@ public class BlurhashService {
                 if (hash != null) {
                     store(id, hash);
                     count++;
+                    DiscordWebhook.sendAdminOp("system", "blurhash-ok", "id=" + id, hash + "\n" + url);
                 } else {
                     skip++;
-                    DiscordWebhook.sendAdminOp("system", "blurhash-skip", "id=" + id, "ImageIO decode failed: " + url);
+                    DiscordWebhook.sendAdminOp("system", "blurhash-skip", "id=" + id, "ImageIO.read() returned null\n" + url);
                 }
             } catch (Exception e) {
                 skip++;
                 logger.warn("blurhash skip id={} url={}: {}", id, url, e.getMessage());
-                DiscordWebhook.sendAdminOp("system", "blurhash-skip", "id=" + id, e.getMessage() + " — " + url);
+                DiscordWebhook.sendAdminOp("system", "blurhash-error", "id=" + id,
+                        e.getClass().getSimpleName() + ": " + e.getMessage() + "\n" + url);
             }
         }
         logger.info("blurhash generated for {}/{} projects (skipped={})", count, pending.size(), skip);
         DiscordWebhook.sendAdminOp("system", "blurhash-generate",
-                count + "/" + pending.size() + " projects",
-                skip > 0 ? skip + " 件スキップ（ログ確認）" : null);
+                "完了 " + count + "/" + pending.size() + " projects",
+                skip > 0 ? skip + " 件スキップ" : "全件成功");
         return count;
     }
 
