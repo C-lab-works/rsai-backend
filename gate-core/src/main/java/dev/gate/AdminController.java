@@ -1109,7 +1109,9 @@ public class AdminController {
 
         // Database — 接続取得の成否で疎通確認（HikariがgetConnection()時にisValid検証済みのためSELECT 1は不要）
         String dbStatus = "ok", dbValue = "Connected";
-        try { Database.getConnection().close(); } catch (Exception e) {
+        try (Connection _ = Database.getConnection()) {
+            // 取得成功 = 疎通OK。try-with-resources で確実にclose()する
+        } catch (Exception e) {
             dbStatus = "err"; dbValue = "Unreachable";
         }
         addStatus(system, "Database", dbStatus, dbValue);
