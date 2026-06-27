@@ -1407,8 +1407,8 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
     public void getStarsStatus(Context ctx) {
         ObjectNode res = mapper.createObjectNode();
         res.put("enabled", StarsController.isEnabled());
-        ArrayNode blocked = res.putArray("blocked_devices");
-        StarsController.getBlockedDevices().forEach(blocked::add);
+        ArrayNode blocked = res.putArray("blocked_subs");
+        StarsController.getBlockedSubs().forEach(blocked::add);
         ctx.json(res);
     }
 
@@ -1436,62 +1436,62 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
     }
 
     @PostMapping("/admin/stars/block")
-    public void blockDevice(Context ctx) {
-        String deviceId;
+    public void blockSub(Context ctx) {
+        String sub;
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = mapper.readValue(ctx.body(), Map.class);
-            Object val = body.get("device_id");
+            Object val = body.get("sub");
             if (!(val instanceof String)) {
-                ctx.status(400).json(Map.of("error", "device_id フィールドは string 必須"));
+                ctx.status(400).json(Map.of("error", "sub フィールドは string 必須"));
                 return;
             }
-            deviceId = ((String) val).trim();
+            sub = ((String) val).trim();
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", "Invalid JSON body"));
             return;
         }
-        if (!UUID_PATTERN.matcher(deviceId).matches()) {
-            ctx.status(400).json(Map.of("error", "device_id は UUID 形式必須"));
+        if (sub.isEmpty() || sub.length() > 200 || sub.contains(" ")) {
+            ctx.status(400).json(Map.of("error", "sub は空白なし・200文字以内の文字列必須"));
             return;
         }
-        boolean added = StarsController.blockDevice(deviceId);
+        boolean added = StarsController.blockSub(sub);
         if (!added) {
             ctx.status(409).json(Map.of("error", "既にブロック済みまたは上限(100件)に達しています"));
             return;
         }
         String caller = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
-        logger.info("device blocked device_id={} by={}", deviceId.substring(0, 8), caller);
+        logger.info("sub blocked sub={} by={}", sub.substring(0, Math.min(8, sub.length())), caller);
         ctx.json(Map.of("ok", true));
     }
 
     @DeleteMapping("/admin/stars/block")
-    public void unblockDevice(Context ctx) {
-        String deviceId;
+    public void unblockSub(Context ctx) {
+        String sub;
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = mapper.readValue(ctx.body(), Map.class);
-            Object val = body.get("device_id");
+            Object val = body.get("sub");
             if (!(val instanceof String)) {
-                ctx.status(400).json(Map.of("error", "device_id フィールドは string 必須"));
+                ctx.status(400).json(Map.of("error", "sub フィールドは string 必須"));
                 return;
             }
-            deviceId = ((String) val).trim();
+            sub = ((String) val).trim();
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", "Invalid JSON body"));
             return;
         }
-        if (!UUID_PATTERN.matcher(deviceId).matches()) {
-            ctx.status(400).json(Map.of("error", "device_id は UUID 形式必須"));
+        if (sub.isEmpty() || sub.length() > 200 || sub.contains(" ")) {
+            ctx.status(400).json(Map.of("error", "sub は空白なし・200文字以内の文字列必須"));
             return;
         }
-        boolean removed = StarsController.unblockDevice(deviceId);
+        boolean removed = StarsController.unblockSub(sub);
         if (!removed) {
-            ctx.status(404).json(Map.of("error", "指定された device_id はブロックリストに存在しません"));
+            ctx.status(404).json(Map.of("error", "指定された sub はブロックリストに存在しません"));
             return;
         }
         String caller = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
-        logger.info("device unblocked device_id={} by={}", deviceId.substring(0, 8), caller);
+        logger.info("sub unblocked sub={} by={}", sub.substring(0, Math.min(8, sub.length())), caller);
         ctx.json(Map.of("ok", true));
     }
 
