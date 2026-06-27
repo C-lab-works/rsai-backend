@@ -158,12 +158,22 @@ public class FirebaseAppCheckAuth {
             throw new SecurityException("JWT issuer mismatch: " + iss);
         }
 
-        // aud: 通常 projects/<project_id> もしくは projects/<project_number>
-        String aud = payload.path("aud").asText("");
+        // aud: Firebase App Check JWT は配列 ["projects/<number>"] で送る
+        JsonNode audNode = payload.path("aud");
         String expectedAudId = "projects/" + projectId;
         String expectedAudNumber = "projects/" + projectNumber;
-        if (!expectedAudId.equals(aud) && !expectedAudNumber.equals(aud)) {
-            throw new SecurityException("JWT audience mismatch: " + aud);
+        boolean audMatched = false;
+        if (audNode.isArray()) {
+            for (JsonNode a : audNode) {
+                String v = a.asText("");
+                if (expectedAudId.equals(v) || expectedAudNumber.equals(v)) { audMatched = true; break; }
+            }
+        } else {
+            String v = audNode.asText("");
+            audMatched = expectedAudId.equals(v) || expectedAudNumber.equals(v);
+        }
+        if (!audMatched) {
+            throw new SecurityException("JWT audience mismatch: " + audNode);
         }
 
         String sub = payload.path("sub").asText(null);
