@@ -22,18 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PushTokenController {
     private static final Logger logger = new Logger(PushTokenController.class);
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final FirebaseAppCheckAuth APP_CHECK = new FirebaseAppCheckAuth();
 
     private static final ConcurrentLinkedQueue<String> pendingTokens = new ConcurrentLinkedQueue<>();
     private static final AtomicBoolean flushing = new AtomicBoolean(false);
 
     @PostMapping("/push-token")
     public void register(Context ctx) {
-        if (!APP_CHECK.verify(ctx)) {
-            ctx.status(401).json(Map.of("error", "Unauthorized"));
-            return;
-        }
-
         PushTokenRequest req;
         try {
             req = ctx.bodyAs(PushTokenRequest.class);
