@@ -27,7 +27,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -337,7 +336,7 @@ public class AdminController {
             // Firestore 書き込みを非同期実行してハンドラを即座に返す。
             // 同期実行では Jetty の IdleTimeout (30s) が発動して 504 になる。
             final Map<String, Object> cmdAsync = Map.copyOf(cmd);
-            CompletableFuture.runAsync(() -> {
+            Main.bg.submit(() -> {
                 try {
                     FirestoreRest.get().update("instances/" + instanceId, Map.of("cmd", cmdAsync));
                 } catch (Exception e) {
@@ -896,15 +895,15 @@ public class AdminController {
             // MySQL の DDL は暗黙コミットされるためロールバック不可。
             if (!hasDdl) conn.setAutoCommit(false);
             try {
-                ObjectNode lastResult = null;
+                ArrayNode results = mapper.createArrayNode();
                 for (String stmt : stmts) {
                     logger.info("execSql by={} len={}", executor, stmt.length());
                     try (Statement s = conn.createStatement()) {
                         s.setQueryTimeout(30);
                         boolean hasRs = s.execute(stmt);
-                        lastResult = mapper.createObjectNode();
-                        ArrayNode colsNode = lastResult.putArray("cols");
-                        ArrayNode rowsNode = lastResult.putArray("rows");
+                        ObjectNode stmtResult = mapper.createObjectNode();
+                        ArrayNode colsNode = stmtResult.putArray("cols");
+                        ArrayNode rowsNode = stmtResult.putArray("rows");
                         if (hasRs) {
                             try (ResultSet rs = s.getResultSet()) {
                                 ResultSetMetaData meta = rs.getMetaData();
@@ -927,11 +926,12 @@ public class AdminController {
                                     }
                                     rowCount++;
                                 }
-                                if (truncated) lastResult.put("truncated", true);
+                                if (truncated) stmtResult.put("truncated", true);
                             }
                         } else {
-                            lastResult.put("affected", s.getUpdateCount());
+                            stmtResult.put("affected", s.getUpdateCount());
                         }
+                        results.add(stmtResult);
                     }
                 }
                 if (!hasDdl) conn.commit();
@@ -940,7 +940,8 @@ public class AdminController {
                 AuditLog.write(executor, "EXECUTE_SQL", sqlTarget, sqlDetail, "ok", null);
                 if (hasWrite) DiscordWebhook.sendAdminOp(executor, "EXECUTE_SQL", sqlTarget, sqlDetail);
                 if (hasWrite || hasDdl) CacheSync.scheduleFullSync("execSql");
-                ctx.json(lastResult != null ? lastResult : mapper.createObjectNode());
+                // 単一ステートメントは後方互換のためオブジェクト、複数は配列で返す
+                ctx.json(stmts.size() == 1 ? results.get(0) : results);
             } catch (Exception e) {
                 if (!hasDdl) {
                     try { conn.rollback(); } catch (Exception re) { logger.warn("execSql rollback failed", re); }
@@ -1080,7 +1081,13 @@ public class AdminController {
         root.put("error_rate",     errRate);
         root.put("p50_ms",         perc[0]);
         root.put("p95_ms",         perc[1]);
-        root.put("instances",      countRunningInstances());
+        int instanceCount = 0;
+        if (FirestoreRest.get().isAvailable()) {
+            try { instanceCount = (int) deriveInstanceViews(Instant.now()).stream()
+                .filter(v -> !"stopped".equals(v.status())).count();
+            } catch (Exception ignored) {}
+        }
+        root.put("instances",      instanceCount);
         root.put("max_instances",  30);
 
         try {
@@ -1161,28 +1168,7 @@ public class AdminController {
         ctx.json(root);
     }
 
-    // Firestore の lastSeen を見て 30s 以内のインスタンス数を返す
-    private int countRunningInstances() {
-        if (!FirestoreRest.get().isAvailable()) return 0;
-        try {
-            Instant cutoff = Instant.now().minusSeconds(30);
-            int count = 0;
-            for (FirestoreRest.Entry e : FirestoreRest.get().list("instances")) {
-                String ls = (String) e.data().get("lastSeen");
-                String st = (String) e.data().get("status");
-                if ("stopped".equals(st)) continue;
-                if (ls != null && Instant.parse(ls).isAfter(cutoff)) {
-                    count++;
-                }
-            }
-            return count;
-        } catch (Exception e) {
-            logger.debug("countRunningInstances failed: {}", e.getMessage());
-            return 0;
-        }
-    }
-
-    private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throws SQLException {
+private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throws SQLException {
         int type = meta.getColumnType(i);
         if (type == Types.TINYINT || type == Types.BIT) {
             int v = rs.getInt(i);
