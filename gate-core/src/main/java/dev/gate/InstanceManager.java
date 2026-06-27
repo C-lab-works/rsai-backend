@@ -131,9 +131,8 @@ public class InstanceManager {
                 metricsCount.set(0);
             }
 
-            poller.scheduleAtFixedRate(this::heartbeat,      10, 10, TimeUnit.SECONDS);
-            poller.scheduleAtFixedRate(this::pollBroadcast,  2,  2, TimeUnit.SECONDS);
-            poller.scheduleAtFixedRate(this::pollCommand,    2,  2, TimeUnit.SECONDS);
+            poller.scheduleAtFixedRate(this::heartbeat, 10, 10, TimeUnit.SECONDS);
+            poller.scheduleAtFixedRate(this::pollTick,   2,  2, TimeUnit.SECONDS);
             registerShutdownHook();
             log.info("InstanceManager initialized: instanceId={}", instanceId);
         } catch (Exception e) {
@@ -195,6 +194,13 @@ public class InstanceManager {
         } catch (Exception e) {
             log.warn("heartbeat failed: {}", e.getMessage());
         }
+    }
+
+    // pollBroadcast と pollCommand を1ポーラーにまとめて Firestore 呼び出しを削減
+    private void pollTick() {
+        if (stopped.get()) return;
+        pollBroadcast();
+        pollCommand();
     }
 
     // キャッシュリフレッシュ要求ポーリング

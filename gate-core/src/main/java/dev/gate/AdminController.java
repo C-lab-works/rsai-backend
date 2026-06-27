@@ -1069,7 +1069,6 @@ public class AdminController {
     public void stats(Context ctx) {
         ctx.header("Cache-Control", "no-store");
         RequestMetrics m = RequestMetrics.get();
-        m.refreshSnapshot();
         long   total    = m.getTotalRequests();
         long   errors   = m.getErrorCount();
         double errRate  = total == 0 ? 0.0 : Math.round((errors * 100.0 / total) * 100.0) / 100.0;
@@ -1108,12 +1107,9 @@ public class AdminController {
 
         ArrayNode system = root.putArray("system");
 
-        // Database — 実接続テスト
+        // Database — 接続取得の成否で疎通確認（HikariがgetConnection()時にisValid検証済みのためSELECT 1は不要）
         String dbStatus = "ok", dbValue = "Connected";
-        try (Connection dbConn = Database.getConnection();
-             Statement dbSt = dbConn.createStatement()) {
-            dbSt.execute("SELECT 1");
-        } catch (Exception e) {
+        try { Database.getConnection().close(); } catch (Exception e) {
             dbStatus = "err"; dbValue = "Unreachable";
         }
         addStatus(system, "Database", dbStatus, dbValue);
