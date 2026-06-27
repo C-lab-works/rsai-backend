@@ -1313,6 +1313,94 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
         return cols;
     }
 
+    // ── Push 通知 ────────────────────────────────────────────────────────────────
+
+    private static final String EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+    private static final int PUSH_BATCH_SIZE = 100;
+
+    // 緊急アナウンスをプッシュ通知で全端末に送信する
+    @PostMapping("/admin/push/send")
+    public void sendPushNotification(Context ctx) {
+        String caller = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
+
+        String title, bodyText;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = ctx.bodyAs(Map.class);
+            if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
+            title    = body.get("title") instanceof String s ? s.trim() : null;
+            bodyText = body.get("body")  instanceof String s ? s.trim() : null;
+        } catch (Exception e) {
+            ctx.status(400).json(Map.of("error", "Invalid JSON body"));
+            return;
+        }
+        if (title == null || title.isBlank() || bodyText == null || bodyText.isBlank()) {
+            ctx.status(400).json(Map.of("error", "title と body は必須です"));
+            return;
+        }
+
+        List<String> tokens = new ArrayList<>();
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT token FROM push_tokens");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) tokens.add(rs.getString("token"));
+        } catch (Exception e) {
+            logger.error("sendPushNotification: failed to load tokens", e);
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
+            return;
+        }
+
+        int sent = 0;
+        int errors = 0;
+        for (int start = 0; start < tokens.size(); start += PUSH_BATCH_SIZE) {
+            List<String> batch = tokens.subList(start, Math.min(start + PUSH_BATCH_SIZE, tokens.size()));
+            ArrayNode payload = mapper.createArrayNode();
+            for (String token : batch) {
+                ObjectNode msg = payload.addObject();
+                msg.put("to", token);
+                msg.put("title", title);
+                msg.put("body", bodyText);
+                msg.put("sound", "default");
+                msg.put("channelId", "emergency");
+                msg.put("priority", "high");
+            }
+            try {
+                String bodyStr = mapper.writeValueAsString(payload);
+                HttpRequest req = HttpRequest.newBuilder(URI.create(EXPO_PUSH_URL))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .timeout(Duration.ofSeconds(20))
+                    .POST(HttpRequest.BodyPublishers.ofString(bodyStr))
+                    .build();
+                HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
+                if (res.statusCode() != 200) {
+                    logger.warn("Expo push batch failed: status={}", res.statusCode());
+                    errors += batch.size();
+                    continue;
+                }
+                Map<?,?> parsed = mapper.readValue(res.body(), Map.class);
+                Object dataRaw = parsed.get("data");
+                if (dataRaw instanceof List<?> data) {
+                    for (Object ticketRaw : data) {
+                        if (ticketRaw instanceof Map<?,?> ticket && "error".equals(ticket.get("status"))) {
+                            errors++;
+                        } else {
+                            sent++;
+                        }
+                    }
+                } else {
+                    errors += batch.size();
+                }
+            } catch (Exception e) {
+                logger.warn("Expo push batch error: {}", e.getMessage());
+                errors += batch.size();
+            }
+        }
+
+        logger.info("push sent by={} total={} sent={} errors={}", caller, tokens.size(), sent, errors);
+        ctx.json(Map.of("ok", true, "sent", sent, "errors", errors));
+    }
+
     // ── Stars 管理 ────────────────────────────────────────────────────────────────
 
     @GetMapping("/admin/stars/status")

@@ -70,6 +70,7 @@ public class Main {
         gate.register(new AnnouncementsController());
         gate.register(new AdminController());
         gate.register(new StarsController());
+        gate.register(new PushTokenController());
         gate.register(new CfMetricsController());
         gate.register(new DelayController());
         if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
@@ -87,6 +88,10 @@ public class Main {
             log.warn("Shutdown: flushing pending star ops before exit");
             StarsController.flushPending();
         }, "shutdown-stars-flush"));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            log.warn("Shutdown: flushing pending push tokens before exit");
+            PushTokenController.flushPending();
+        }, "shutdown-pushtokens-flush"));
     }
 
     private static void startDatabaseInit(Config.DatabaseConfig dbConfig, CfAccessAuth cfAccessAuth) {
@@ -186,6 +191,9 @@ public class Main {
 
         // 1分ごとにスターをフラッシュ・異常検知カウンターをリセット
         bg.scheduleAtFixedRate(StarsController::minuteTick, 1, 1, TimeUnit.MINUTES);
+
+        // 1分ごとにプッシュトークンをフラッシュ
+        bg.scheduleAtFixedRate(PushTokenController::minuteTick, 1, 1, TimeUnit.MINUTES);
 
         // 30分ごとに期限切れ X-Request-Id エントリを削除
         bg.scheduleAtFixedRate(RequestIdMiddleware::cleanup, 30, 30, TimeUnit.MINUTES);

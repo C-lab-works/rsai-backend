@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 29) {
-                logger.info("Seed data v29 already present — skipping");
+            if (v >= 30) {
+                logger.info("Seed data v30 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -168,7 +168,12 @@ public class DataSeeder {
                 migrateV28(conn);
                 setSeedVersion(conn, 29);
             }
-            logger.info("Seed data v29 ready");
+            if (v <= 29) {
+                logger.info("Migrating schema v29 -> v30");
+                migrateV29(conn);
+                setSeedVersion(conn, 30);
+            }
+            logger.info("Seed data v30 ready");
         }
     }
 
@@ -860,6 +865,18 @@ public class DataSeeder {
     private static void migrateV28(Connection conn) throws Exception {
         addColumnIfMissing(conn, "menus", "blurhash", "VARCHAR(100)");
         addColumnIfMissing(conn, "foodtruck_subicon", "blurhash", "VARCHAR(100)");
+    }
+
+    private static void migrateV29(Connection conn) throws Exception {
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS push_tokens (" +
+            "  id         BIGINT       AUTO_INCREMENT PRIMARY KEY," +
+            "  token      VARCHAR(500) NOT NULL," +
+            "  platform   VARCHAR(10)," +
+            "  created_at DATETIME     NOT NULL," +
+            "  UNIQUE KEY uq_token (token(255))" +
+            ")");
+        logger.info("Created push_tokens table");
     }
 
     private static void migrateV21(Connection conn) throws Exception {
