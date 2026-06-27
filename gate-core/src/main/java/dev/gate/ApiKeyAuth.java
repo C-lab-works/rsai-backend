@@ -48,6 +48,9 @@ public class ApiKeyAuth implements Handler {
             if ("DELETE".equalsIgnoreCase(ctx.method()) && "/stars".equals(ctx.path())) {
                 return;
             }
+            if ("POST".equalsIgnoreCase(ctx.method()) && "/push-token".equals(ctx.path())) {
+                return;
+            }
             if (!"GET".equalsIgnoreCase(ctx.method())) {
                 ctx.status(403).json(Map.of("error", "Forbidden: read-only access")).halt();
             }
