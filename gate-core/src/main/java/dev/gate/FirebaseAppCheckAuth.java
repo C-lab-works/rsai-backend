@@ -76,40 +76,49 @@ public class FirebaseAppCheckAuth {
     }
 
     public boolean verify(Context ctx) {
+        return verifyAndGetSubject(ctx) != null;
+    }
+
+    // sub クレーム（アプリインスタンス識別子）を返す。検証失敗時は null。
+    // devDisable 時は "dev" を返す。
+    public String verifyAndGetSubject(Context ctx) {
         if (devDisable) {
             logger.debug("Firebase App Check bypassed (dev mode)");
-            return true;
+            return "dev";
         }
 
         if (!enabled) {
             logger.warn("Firebase App Check is disabled or misconfigured");
-            return false;
+            return null;
         }
 
         String token = ctx.requestHeader("X-Firebase-AppCheck");
         if (token == null || token.isBlank()) {
             logger.warn("Missing X-Firebase-AppCheck header");
-            return false;
+            return null;
         }
 
         Boolean cachedResult = tokenVerificationCache.getIfPresent(token);
         if (cachedResult != null) {
-            return cachedResult;
+            if (!cachedResult) return null;
+            // キャッシュヒット(true)でも sub が必要なため token から再取得
+            try { return extractSub(token); } catch (Exception e) { return null; }
         }
 
         try {
-            verifyToken(token);
+            String sub = verifyToken(token);
             tokenVerificationCache.put(token, true);
-            return true;
+            return sub;
         } catch (Exception e) {
             logger.warn("Firebase App Check token validation failed");
             logger.debug("Firebase App Check token validation failed: {}", e.getMessage());
             tokenVerificationCache.put(token, false);
-            return false;
+            return null;
         }
     }
 
-    private void verifyToken(String token) throws Exception {
+    // 署名・クレーム検証を行い sub クレームを返す
+    private String verifyToken(String token) throws Exception {
         String[] parts = token.split("\\.");
         if (parts.length != 3) throw new IllegalArgumentException("JWT must have 3 parts");
 
@@ -136,7 +145,7 @@ public class FirebaseAppCheckAuth {
         long now = Instant.now().getEpochSecond();
         long exp = payload.path("exp").asLong(0);
         long iat = payload.path("iat").asLong(0);
-        
+
         if (exp <= 0) throw new SecurityException("JWT missing required exp claim");
         if (now > exp + CLOCK_SKEW_LEEWAY_SECS) throw new SecurityException("JWT has expired");
         if (iat > 0 && now + CLOCK_SKEW_LEEWAY_SECS < iat) throw new SecurityException("JWT iat in future");
@@ -156,6 +165,20 @@ public class FirebaseAppCheckAuth {
         if (!expectedAudId.equals(aud) && !expectedAudNumber.equals(aud)) {
             throw new SecurityException("JWT audience mismatch: " + aud);
         }
+
+        String sub = payload.path("sub").asText(null);
+        if (sub == null || sub.isBlank()) throw new SecurityException("JWT missing sub claim");
+        return sub;
+    }
+
+    // キャッシュヒット時に sub だけ取り出す（署名検証なし）
+    private static String extractSub(String token) throws Exception {
+        String[] parts = token.split("\\.");
+        if (parts.length != 3) throw new IllegalArgumentException("JWT must have 3 parts");
+        JsonNode payload = mapper.readTree(decodeBase64Url(parts[1]));
+        String sub = payload.path("sub").asText(null);
+        if (sub == null || sub.isBlank()) throw new SecurityException("JWT missing sub claim");
+        return sub;
     }
 
     private PublicKey getPublicKey(String kid) throws Exception {

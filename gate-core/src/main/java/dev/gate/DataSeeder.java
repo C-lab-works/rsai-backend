@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 30) {
-                logger.info("Seed data v30 already present — skipping");
+            if (v >= 31) {
+                logger.info("Seed data v31 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -173,7 +173,12 @@ public class DataSeeder {
                 migrateV29(conn);
                 setSeedVersion(conn, 30);
             }
-            logger.info("Seed data v30 ready");
+            if (v <= 30) {
+                logger.info("Migrating schema v30 -> v31");
+                migrateV30(conn);
+                setSeedVersion(conn, 31);
+            }
+            logger.info("Seed data v31 ready");
         }
     }
 
@@ -877,6 +882,23 @@ public class DataSeeder {
             "  UNIQUE KEY uq_token (token(255))" +
             ")");
         logger.info("Created push_tokens table");
+    }
+
+    private static void migrateV30(Connection conn) throws Exception {
+        // App Check sub クレームを使った重複スター防止
+        // NULL は UNIQUE 制約の対象外なので既存レコードに影響なし
+        addColumnIfMissing(conn, "project_stars",  "app_check_sub", "VARCHAR(128)");
+        addColumnIfMissing(conn, "foodtruck_stars", "app_check_sub", "VARCHAR(128)");
+
+        if (!indexExists(conn, "project_stars", "uq_project_sub")) {
+            exec(conn, "ALTER TABLE project_stars ADD UNIQUE KEY uq_project_sub (project_id, app_check_sub)");
+            logger.info("Added uq_project_sub on project_stars");
+        }
+        if (!indexExists(conn, "foodtruck_stars", "uq_foodtruck_sub")) {
+            exec(conn, "ALTER TABLE foodtruck_stars ADD UNIQUE KEY uq_foodtruck_sub (foodtruck_id, app_check_sub)");
+            logger.info("Added uq_foodtruck_sub on foodtruck_stars");
+        }
+        logger.info("Added app_check_sub column and UNIQUE constraints to stars tables");
     }
 
     private static void migrateV21(Connection conn) throws Exception {

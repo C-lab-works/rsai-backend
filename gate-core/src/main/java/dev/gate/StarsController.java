@@ -30,7 +30,9 @@ public class StarsController {
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int STAR_ALERT_THRESHOLD = 500;
 
-    private record StarOp(String type, int id, boolean add) {}
+    private static final FirebaseAppCheckAuth APP_CHECK = new FirebaseAppCheckAuth();
+
+    private record StarOp(String type, int id, boolean add, String sub) {}
 
     private static final ConcurrentLinkedQueue<StarOp> pendingOps = new ConcurrentLinkedQueue<>();
     private static final AtomicLong starCountInWindow = new AtomicLong(0);
@@ -71,12 +73,13 @@ public class StarsController {
             ctx.status(403).json(Map.of("error", "このデバイスはブロックされています"));
             return;
         }
-        if (!isAllowedClient(ctx)) {
+        String sub = APP_CHECK.verifyAndGetSubject(ctx);
+        if (sub == null) {
             ctx.status(403).json(Map.of("error", "Forbidden"));
             return;
         }
 
-        pendingOps.add(new StarOp(type, req.id, true));
+        pendingOps.add(new StarOp(type, req.id, true, sub));
         ctx.json(Map.of("ok", true));
 
         long count = starCountInWindow.incrementAndGet();
@@ -116,12 +119,13 @@ public class StarsController {
             ctx.status(403).json(Map.of("error", "このデバイスはブロックされています"));
             return;
         }
-        if (!isAllowedClient(ctx)) {
+        String sub = APP_CHECK.verifyAndGetSubject(ctx);
+        if (sub == null) {
             ctx.status(403).json(Map.of("error", "Forbidden"));
             return;
         }
 
-        pendingOps.add(new StarOp(type, req.id, false));
+        pendingOps.add(new StarOp(type, req.id, false, sub));
         ctx.json(Map.of("ok", true));
     }
 
@@ -133,10 +137,10 @@ public class StarsController {
             while ((op = pendingOps.poll()) != null) ops.add(op);
             if (ops.isEmpty()) return;
 
-            // net delta per (type:id)
+            // net delta per (type:id:sub) — last-write-wins for same user+item
             LinkedHashMap<String, Integer> deltas = new LinkedHashMap<>();
             for (StarOp o : ops) {
-                String key = o.type() + ":" + o.id();
+                String key = o.type() + ":" + o.id() + ":" + o.sub();
                 deltas.merge(key, o.add() ? 1 : -1, Integer::sum);
             }
 
@@ -145,7 +149,7 @@ public class StarsController {
                 // pre-validate: autoCommit=true のまま SELECT で存在しない target を drop
                 // （単一の無効 ID による FK 違反でバッチ全体がロールバックされるのを防ぐ）
                 deltas.entrySet().removeIf(entry -> {
-                    String[] parts = entry.getKey().split(":", 2);
+                    String[] parts = entry.getKey().split(":", 3);
                     boolean isProject = "project".equals(parts[0]);
                     int id = Integer.parseInt(parts[1]);
                     String sql = isProject
@@ -174,48 +178,52 @@ public class StarsController {
                         int delta = entry.getValue();
                         if (delta == 0) continue;
 
-                        String[] parts = entry.getKey().split(":", 2);
+                        String[] parts = entry.getKey().split(":", 3);
                         String type = parts[0];
                         int targetId = Integer.parseInt(parts[1]);
+                        String sub = parts[2];
                         boolean isProject = "project".equals(type);
 
                         if (delta > 0) {
+                            // UNIQUE(project_id/foodtruck_id, app_check_sub) で重複を防ぐ
                             String insertSql = isProject
-                                ? "INSERT INTO project_stars (project_id, created_at) VALUES (?, ?)"
-                                : "INSERT INTO foodtruck_stars (foodtruck_id, created_at) VALUES (?, ?)";
+                                ? "INSERT IGNORE INTO project_stars (project_id, app_check_sub, created_at) VALUES (?, ?, ?)"
+                                : "INSERT IGNORE INTO foodtruck_stars (foodtruck_id, app_check_sub, created_at) VALUES (?, ?, ?)";
+                            int inserted;
                             try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
-                                for (int i = 0; i < delta; i++) {
-                                    ps.setInt(1, targetId);
-                                    ps.setString(2, now);
-                                    ps.addBatch();
-                                }
-                                ps.executeBatch();
+                                ps.setInt(1, targetId);
+                                ps.setString(2, sub);
+                                ps.setString(3, now);
+                                inserted = ps.executeUpdate();
                             }
-                            String updateSql = isProject
-                                ? "UPDATE projects SET bookmark_count = bookmark_count + ? WHERE id = ?"
-                                : "UPDATE foodtruck SET bookmark_count = bookmark_count + ? WHERE id = ?";
-                            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
-                                ps.setInt(1, delta);
-                                ps.setInt(2, targetId);
-                                ps.executeUpdate();
+                            // 実際に挿入された行数だけカウントを増やす（重複時は 0）
+                            if (inserted > 0) {
+                                String updateSql = isProject
+                                    ? "UPDATE projects SET bookmark_count = bookmark_count + 1 WHERE id = ?"
+                                    : "UPDATE foodtruck SET bookmark_count = bookmark_count + 1 WHERE id = ?";
+                                try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                                    ps.setInt(1, targetId);
+                                    ps.executeUpdate();
+                                }
                             }
                         } else {
-                            int absCount = -delta;
                             String deleteSql = isProject
-                                ? "DELETE FROM project_stars WHERE project_id = ? LIMIT ?"
-                                : "DELETE FROM foodtruck_stars WHERE foodtruck_id = ? LIMIT ?";
+                                ? "DELETE FROM project_stars WHERE project_id = ? AND app_check_sub = ?"
+                                : "DELETE FROM foodtruck_stars WHERE foodtruck_id = ? AND app_check_sub = ?";
+                            int deleted;
                             try (PreparedStatement ps = conn.prepareStatement(deleteSql)) {
                                 ps.setInt(1, targetId);
-                                ps.setInt(2, absCount);
-                                ps.executeUpdate();
+                                ps.setString(2, sub);
+                                deleted = ps.executeUpdate();
                             }
-                            String updateSql = isProject
-                                ? "UPDATE projects SET bookmark_count = GREATEST(bookmark_count - ?, 0) WHERE id = ?"
-                                : "UPDATE foodtruck SET bookmark_count = GREATEST(bookmark_count - ?, 0) WHERE id = ?";
-                            try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
-                                ps.setInt(1, absCount);
-                                ps.setInt(2, targetId);
-                                ps.executeUpdate();
+                            if (deleted > 0) {
+                                String updateSql = isProject
+                                    ? "UPDATE projects SET bookmark_count = GREATEST(bookmark_count - 1, 0) WHERE id = ?"
+                                    : "UPDATE foodtruck SET bookmark_count = GREATEST(bookmark_count - 1, 0) WHERE id = ?";
+                                try (PreparedStatement ps = conn.prepareStatement(updateSql)) {
+                                    ps.setInt(1, targetId);
+                                    ps.executeUpdate();
+                                }
                             }
                         }
                     }
@@ -238,14 +246,11 @@ public class StarsController {
         for (Map.Entry<String, Integer> entry : deltas.entrySet()) {
             int delta = entry.getValue();
             if (delta == 0) continue;
-            String[] parts = entry.getKey().split(":", 2);
+            String[] parts = entry.getKey().split(":", 3);
             String type = parts[0];
             int targetId = Integer.parseInt(parts[1]);
-            boolean add = delta > 0;
-            int count = Math.abs(delta);
-            for (int i = 0; i < count; i++) {
-                pendingOps.add(new StarOp(type, targetId, add));
-            }
+            String sub = parts[2];
+            pendingOps.add(new StarOp(type, targetId, delta > 0, sub));
         }
     }
 
@@ -263,17 +268,6 @@ public class StarsController {
         return BLOCKED_DEVICE_IDS.add(deviceId);
     }
     public static boolean unblockDevice(String deviceId) { return BLOCKED_DEVICE_IDS.remove(deviceId); }
-
-    private static boolean isAllowedClient(Context ctx) {
-        String ua = ctx.requestHeader("User-Agent");
-        if (ua != null && !ua.isBlank()
-                && !ua.startsWith("okhttp/4.")
-                && !ua.startsWith("CFNetwork/")) {
-            return false;
-        }
-        String appVersion = ctx.requestHeader("X-App-Version");
-        return appVersion != null && !appVersion.isBlank();
-    }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     static class StarRequest {
