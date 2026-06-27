@@ -140,9 +140,10 @@ public class StarsController {
                 deltas.merge(key, o.add() ? 1 : -1, Integer::sum);
             }
 
-            // pre-validate: drop entries for non-existent targets before the main transaction
-            // prevents a single invalid ID from causing FK violation and rolling back the entire flush
+            // pre-validate → flush を同一接続で実行（getConnection() の呼び出しを2→1に削減）
             try (Connection conn = Database.getConnection()) {
+                // pre-validate: autoCommit=true のまま SELECT で存在しない target を drop
+                // （単一の無効 ID による FK 違反でバッチ全体がロールバックされるのを防ぐ）
                 deltas.entrySet().removeIf(entry -> {
                     String[] parts = entry.getKey().split(":", 2);
                     boolean isProject = "project".equals(parts[0]);
@@ -162,15 +163,10 @@ public class StarsController {
                         return true;
                     }
                 });
-            } catch (Exception e) {
-                logger.error("Pre-validation DB connection failed, re-queuing {} ops", ops.size(), e);
-                requeue(deltas);
-                return;
-            }
 
-            if (deltas.isEmpty()) return;
+                if (deltas.isEmpty()) return;
 
-            try (Connection conn = Database.getConnection()) {
+                // flush: 同一接続でトランザクション化
                 conn.setAutoCommit(false);
                 try {
                     String now = LocalDateTime.now(ZoneId.of("Asia/Tokyo")).format(FMT);
