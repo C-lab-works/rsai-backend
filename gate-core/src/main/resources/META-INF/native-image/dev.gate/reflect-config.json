@@ -72,6 +72,10 @@
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.StarsController$StarRequest",
     "allDeclaredConstructors": true, "allDeclaredFields": true },
+  { "name": "dev.gate.PushTokenController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.PushTokenController$PushTokenRequest",
+    "allDeclaredConstructors": true, "allDeclaredFields": true },
 
   { "name": "dev.gate.mapping.GetMapping",    "allPublicMethods": true },
   { "name": "dev.gate.mapping.PostMapping",   "allPublicMethods": true },
