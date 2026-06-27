@@ -22,14 +22,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PushTokenController {
     private static final Logger logger = new Logger(PushTokenController.class);
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final FirebaseAppCheckAuth APP_CHECK = new FirebaseAppCheckAuth();
 
     private static final ConcurrentLinkedQueue<String> pendingTokens = new ConcurrentLinkedQueue<>();
     private static final AtomicBoolean flushing = new AtomicBoolean(false);
 
     @PostMapping("/push-token")
     public void register(Context ctx) {
-        if (!isAllowedClient(ctx)) {
-            ctx.status(403).json(Map.of("error", "Forbidden"));
+        if (!APP_CHECK.verify(ctx)) {
+            ctx.status(401).json(Map.of("error", "Unauthorized"));
             return;
         }
 
@@ -86,17 +87,6 @@ public class PushTokenController {
         } finally {
             flushing.set(false);
         }
-    }
-
-    private static boolean isAllowedClient(Context ctx) {
-        String ua = ctx.requestHeader("User-Agent");
-        if (ua != null && !ua.isBlank()
-                && !ua.startsWith("okhttp/4.")
-                && !ua.startsWith("CFNetwork/")) {
-            return false;
-        }
-        String appVersion = ctx.requestHeader("X-App-Version");
-        return appVersion != null && !appVersion.isBlank();
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
