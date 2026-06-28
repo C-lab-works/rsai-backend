@@ -1352,6 +1352,7 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
 
         int sent = 0;
         int errors = 0;
+        List<String> ticketErrors = new ArrayList<>();
         for (int start = 0; start < tokens.size(); start += PUSH_BATCH_SIZE) {
             List<String> batch = tokens.subList(start, Math.min(start + PUSH_BATCH_SIZE, tokens.size()));
             ArrayNode payload = mapper.createArrayNode();
@@ -1374,7 +1375,7 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
                     .build();
                 HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
                 if (res.statusCode() != 200) {
-                    logger.warn("Expo push batch failed: status={}", res.statusCode());
+                    ticketErrors.add("batch HTTP " + res.statusCode());
                     errors += batch.size();
                     continue;
                 }
@@ -1384,22 +1385,25 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
                     for (Object ticketRaw : data) {
                         if (ticketRaw instanceof Map<?,?> ticket && "error".equals(ticket.get("status"))) {
                             errors++;
-                            logger.warn("Expo push ticket error: message={} details={}", ticket.get("message"), ticket.get("details"));
+                            ticketErrors.add(ticket.get("message") + " / " + ticket.get("details"));
                         } else {
                             sent++;
                         }
                     }
                 } else {
+                    ticketErrors.add("unexpected Expo response");
                     errors += batch.size();
                 }
             } catch (Exception e) {
-                logger.warn("Expo push batch error: {}", e.getMessage());
+                ticketErrors.add("exception: " + e.getMessage());
                 errors += batch.size();
             }
         }
 
-        logger.info("push sent by={} total={} sent={} errors={}", caller, tokens.size(), sent, errors);
-        DiscordWebhook.sendAdminOp(caller, "PUSH_SENT", title, "sent=" + sent + " errors=" + errors + " body=" + bodyText);
+        String detail = "sent=" + sent + " errors=" + errors + " body=" + bodyText
+                + (ticketErrors.isEmpty() ? "" : " | err: " + String.join(", ", ticketErrors));
+        logger.info("push sent by={} total={} sent={} errors={} ticketErrors={}", caller, tokens.size(), sent, errors, ticketErrors);
+        DiscordWebhook.sendAdminOp(caller, "PUSH_SENT", title, detail);
         ctx.json(Map.of("ok", true, "sent", sent, "errors", errors));
     }
 
