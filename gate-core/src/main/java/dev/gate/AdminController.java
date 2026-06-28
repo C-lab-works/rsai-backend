@@ -1402,7 +1402,7 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
 
         String detail = "sent=" + sent + " errors=" + errors + " body=" + bodyText
                 + (ticketErrors.isEmpty() ? "" : " | err: " + String.join(", ", ticketErrors));
-        logger.info("push sent by={} total={} sent={} errors={} ticketErrors={}", caller, tokens.size(), sent, errors, ticketErrors);
+        logger.warn("push sent by={} total={} sent={} errors={} ticketErrors={}", caller, tokens.size(), sent, errors, ticketErrors);
         DiscordWebhook.sendAdminOp(caller, "PUSH_SENT", title, detail);
         ctx.json(Map.of("ok", true, "sent", sent, "errors", errors));
     }
