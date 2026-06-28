@@ -1384,6 +1384,7 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
                     for (Object ticketRaw : data) {
                         if (ticketRaw instanceof Map<?,?> ticket && "error".equals(ticket.get("status"))) {
                             errors++;
+                            logger.warn("Expo push ticket error: message={} details={}", ticket.get("message"), ticket.get("details"));
                         } else {
                             sent++;
                         }
@@ -1398,6 +1399,7 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
         }
 
         logger.info("push sent by={} total={} sent={} errors={}", caller, tokens.size(), sent, errors);
+        DiscordWebhook.sendAdminOp(caller, "PUSH_SENT", title, "sent=" + sent + " errors=" + errors + " body=" + bodyText);
         ctx.json(Map.of("ok", true, "sent", sent, "errors", errors));
     }
 
