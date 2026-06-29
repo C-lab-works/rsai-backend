@@ -195,8 +195,6 @@ public class Main {
         // 1分ごとにプッシュトークンをフラッシュ
         bg.scheduleAtFixedRate(PushTokenController::minuteTick, 1, 1, TimeUnit.MINUTES);
 
-        // 30分ごとに期限切れ X-Request-Id エントリを削除
-        bg.scheduleAtFixedRate(RequestIdMiddleware::cleanup, 30, 30, TimeUnit.MINUTES);
     }
 
     private static String loadVersion() {
