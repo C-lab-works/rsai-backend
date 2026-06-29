@@ -1323,13 +1323,15 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
     public void sendPushNotification(Context ctx) {
         String caller = ctx.getAttribute(CfAccessAuth.ATTR_VERIFIED_EMAIL);
 
-        String title, bodyText;
+        String title, bodyText, platform;
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> body = ctx.bodyAs(Map.class);
             if (body == null) { ctx.status(400).json(Map.of("error", "リクエストボディが必要です")); return; }
-            title    = body.get("title") instanceof String s ? s.trim() : null;
-            bodyText = body.get("body")  instanceof String s ? s.trim() : null;
+            title    = body.get("title")    instanceof String s ? s.trim() : null;
+            bodyText = body.get("body")     instanceof String s ? s.trim() : null;
+            String p = body.get("platform") instanceof String s ? s.trim().toLowerCase() : null;
+            platform = ("android".equals(p) || "ios".equals(p)) ? p : null;
         } catch (Exception e) {
             ctx.status(400).json(Map.of("error", "Invalid JSON body"));
             return;
@@ -1340,10 +1342,17 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
         }
 
         List<String> tokens = new ArrayList<>();
-        try (Connection conn = Database.getConnection();
-             PreparedStatement ps = conn.prepareStatement("SELECT token FROM push_tokens");
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) tokens.add(rs.getString("token"));
+        try (Connection conn = Database.getConnection()) {
+            final PreparedStatement ps;
+            if (platform != null) {
+                ps = conn.prepareStatement("SELECT token FROM push_tokens WHERE platform = ?");
+                ps.setString(1, platform);
+            } else {
+                ps = conn.prepareStatement("SELECT token FROM push_tokens");
+            }
+            try (ps; ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) tokens.add(rs.getString("token"));
+            }
         } catch (Exception e) {
             logger.error("sendPushNotification: failed to load tokens", e);
             ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
@@ -1400,9 +1409,10 @@ private Object getColumnValue(ResultSet rs, ResultSetMetaData meta, int i) throw
             }
         }
 
-        String detail = "sent=" + sent + " errors=" + errors + " body=" + bodyText
+        String platformLabel = platform != null ? platform : "all";
+        String detail = "sent=" + sent + " errors=" + errors + " platform=" + platformLabel + " body=" + bodyText
                 + (ticketErrors.isEmpty() ? "" : " | err: " + String.join(", ", ticketErrors));
-        logger.warn("push sent by={} total={} sent={} errors={} ticketErrors={}", caller, tokens.size(), sent, errors, ticketErrors);
+        logger.warn("push sent by={} platform={} total={} sent={} errors={} ticketErrors={}", caller, platformLabel, tokens.size(), sent, errors, ticketErrors);
         DiscordWebhook.sendAdminOp(caller, "PUSH_SENT", title, detail);
         ctx.json(Map.of("ok", true, "sent", sent, "errors", errors));
     }
