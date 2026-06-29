@@ -78,6 +78,12 @@ public class StarsController {
             return;
         }
 
+        String requestId = ctx.requestHeader("X-Request-Id");
+        if (!RequestIdMiddleware.markSeenOrReject(requestId)) {
+            ctx.status(409).json(Map.of("error", "Duplicate request"));
+            return;
+        }
+
         pendingOps.add(new StarOp(type, req.id, true, sub));
         ctx.json(Map.of("ok", true));
 
@@ -120,6 +126,12 @@ public class StarsController {
         }
         if (BLOCKED_SUBS.contains(sub)) {
             ctx.status(403).json(Map.of("error", "このアプリは受付停止されています"));
+            return;
+        }
+
+        String requestId = ctx.requestHeader("X-Request-Id");
+        if (!RequestIdMiddleware.markSeenOrReject(requestId)) {
+            ctx.status(409).json(Map.of("error", "Duplicate request"));
             return;
         }
 
