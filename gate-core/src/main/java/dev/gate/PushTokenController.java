@@ -68,7 +68,8 @@ public class PushTokenController {
 
             try (Connection conn = Database.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
-                     "INSERT IGNORE INTO push_tokens (token, platform, created_at) VALUES (?, ?, ?)")) {
+                     "INSERT INTO push_tokens (token, platform, created_at) VALUES (?, ?, ?)" +
+                     " ON DUPLICATE KEY UPDATE platform = VALUES(platform)")) {
                 String now = LocalDateTime.now(ZoneId.of("Asia/Tokyo")).format(FMT);
                 for (PendingToken entry : entries) {
                     ps.setString(1, entry.token());
