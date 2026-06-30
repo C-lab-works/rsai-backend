@@ -11,7 +11,7 @@
 routes:
   - path: /api/locations
     table: locations
-    columns: [id, name, floor, location_code, svg_id, x, y]
+    columns: [id, name, floor, location_code, svg_id, x, y,  show_tab]
     cache: 5m
 
   - path: /api/categories
@@ -26,10 +26,10 @@ routes:
 
   - path: /api/credit
     table: credit
-    columns: [id, name]
+    columns: [id,name,github]
     cache: 1h
 
   - path: /api/bus
     table: bus
-    columns: [id,bus_id,School,School_Platform,Shinsapporo,Shinsapporo_Platform,Ooyati,Atubetu,Ooasa]
+    columns: [id,bus_id,School,School_Platform,Shinsapporo,Shinsapporo_Platform,Ooyati,Atubetu,Ooasa,date]
     cache: 15m
