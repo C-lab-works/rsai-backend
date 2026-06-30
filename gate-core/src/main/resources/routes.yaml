@@ -21,7 +21,7 @@ routes:
 
   - path: /api/projects
     table: projects
-    columns: [id, title, organizer, description, image_url, blurhash, location_id, bookmark_count]
+    columns: [id, title, organizer, description, image_url, blurhash, location_id, offset]
     cache: 5m
 
   - path: /api/credit

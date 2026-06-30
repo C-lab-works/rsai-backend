@@ -101,7 +101,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, floor, location_code, x, y FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, location_code, x, y, show_tab FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",    rs.getInt("id"));
@@ -110,6 +110,7 @@ public class DataController {
                 putStringOrNull(l, "location_code", rs.getString("location_code"));
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
+                l.put("show_tab", rs.getBoolean("show_tab"));
             }
         }
 
@@ -126,7 +127,7 @@ public class DataController {
         ArrayNode projects = root.putArray("projects");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT p.id, p.title, p.organizer, p.description, p.image_url, p.location_id, p.bookmark_count," +
+               "SELECT p.id, p.title, p.organizer, p.description, p.image_url, p.blurhash, p.location_id, p.offset," +
                "       pd.delay_minutes, pd.note AS delay_note, pd.updated_at AS delay_updated_at" +
                " FROM projects p" +
                " LEFT JOIN project_delays pd ON pd.project_id = p.id" +
@@ -139,9 +140,11 @@ public class DataController {
                 putStringOrNull(p, "organizer",   rs.getString("organizer"));
                 putStringOrNull(p, "description", rs.getString("description"));
                 putStringOrNull(p, "image_url",   rs.getString("image_url"));
+                putStringOrNull(p, "blurhash",    rs.getString("blurhash"));
                 int locId = rs.getInt("location_id");
                 if (!rs.wasNull()) p.put("location_id", locId);
-                p.put("bookmark_count", rs.getInt("bookmark_count"));
+                float offset = rs.getFloat("offset");
+                if (!rs.wasNull()) p.put("offset", offset);
                 // delay フィールド（delay_minutes / delay_note / delay_updated_at のいずれかが非NULLなら付与）
                 int dm = rs.getInt("delay_minutes");
                 boolean dmNull = rs.wasNull();
@@ -228,7 +231,7 @@ public class DataController {
         ArrayNode items = root.putArray("items");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, info, icon, blurhash, location_code, bookmark_count FROM foodtruck ORDER BY id")) {
+               "SELECT id, name, info, icon, blurhash, location_code FROM foodtruck ORDER BY id")) {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 ObjectNode ft = items.addObject();
@@ -238,7 +241,6 @@ public class DataController {
                 ft.put("icon", rs.getString("icon"));
                 putStringOrNull(ft, "blurhash", rs.getString("blurhash"));
                 putStringOrNull(ft, "location_code", rs.getString("location_code"));
-                ft.put("bookmark_count", rs.getInt("bookmark_count"));
                 ArrayNode subicons = ft.putArray("subicons");
                 subiconMap.getOrDefault(id, List.of()).forEach(subicons::add);
                 ArrayNode sns = ft.putArray("sns");
@@ -258,7 +260,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, floor, location_code, svg_id, x, y, type FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, location_code, svg_id, x, y, type, show_tab FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",    rs.getInt("id"));
@@ -270,6 +272,7 @@ public class DataController {
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
                 l.put("type", rs.getString("type"));
+                l.put("show_tab", rs.getBoolean("show_tab"));
             }
         }
 

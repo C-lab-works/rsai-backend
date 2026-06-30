@@ -28,6 +28,7 @@ public class PushTokenController {
 
     private record PendingToken(String token, String platform) {}
 
+    private static final int MAX_PENDING_TOKENS = 500;
     private static final ConcurrentLinkedQueue<PendingToken> pendingTokens = new ConcurrentLinkedQueue<>();
     private static final AtomicBoolean flushing = new AtomicBoolean(false);
 
@@ -55,6 +56,12 @@ public class PushTokenController {
         String sub = APP_CHECK.verifyAndGetSubject(ctx);
         if (sub == null) {
             ctx.status(403).json(Map.of("error", "Forbidden"));
+            return;
+        }
+
+        if (pendingTokens.size() >= MAX_PENDING_TOKENS) {
+            logger.warn("push token queue full ({} pending), rejecting registration", pendingTokens.size());
+            ctx.status(503).json(Map.of("error", "Service temporarily unavailable"));
             return;
         }
 

@@ -112,7 +112,7 @@ public class FirebaseAppCheckAuth {
         } catch (Exception e) {
             logger.warn("Firebase App Check token validation failed");
             logger.debug("Firebase App Check token validation failed: {}", e.getMessage());
-            tokenVerificationCache.put(token, false);
+            // 無効トークンはキャッシュしない（キャッシュ汚染による RSA 検証負荷増大を防ぐ）
             return null;
         }
     }
