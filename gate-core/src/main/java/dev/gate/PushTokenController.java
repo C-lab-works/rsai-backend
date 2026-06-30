@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PushTokenController {
     private static final Logger logger = new Logger(PushTokenController.class);
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final FirebaseAppCheckAuth APP_CHECK = new FirebaseAppCheckAuth();
 
     private record PendingToken(String token, String platform) {}
 
@@ -46,6 +47,12 @@ public class PushTokenController {
         String token = req.token.trim();
         if (!token.startsWith("ExponentPushToken[")) {
             ctx.status(400).json(Map.of("error", "Invalid push token format"));
+            return;
+        }
+
+        String sub = APP_CHECK.verifyAndGetSubject(ctx);
+        if (sub == null) {
+            ctx.status(403).json(Map.of("error", "Forbidden"));
             return;
         }
 

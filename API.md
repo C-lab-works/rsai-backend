@@ -9,7 +9,7 @@ Base URL: `https://api.example.com`
 | ヘッダー | 対象 | 説明 |
 |---|---|---|
 | `X-API-Key` | `/health` を除く全エンドポイント | |
-| `X-Firebase-AppCheck` | `/stars` | Firebase App Check トークン |
+| `X-Firebase-AppCheck` | `/stars`、`/push-token` | Firebase App Check トークン |
 | CF Access JWT | `POST /congestion/{code}`、`POST /events/delays/{projectId}` | Cloudflare Access セッション Cookie または Bearer トークン |
 
 ---
