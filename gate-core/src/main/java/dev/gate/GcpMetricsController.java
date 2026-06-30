@@ -278,7 +278,7 @@ public class GcpMetricsController {
             body.put("orderBy", "timestamp desc");
             body.put("pageSize", 50);
             body.putArray("resourceNames")
-                .add("projects/" + projectId + "/locations/asia-northeast1/buckets/rsai-alerts/views/_AllLogs");
+                .add("projects/" + projectId);
 
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create("https://logging.googleapis.com/v2/entries:list"))
