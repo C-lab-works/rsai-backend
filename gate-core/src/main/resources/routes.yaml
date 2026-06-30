@@ -31,5 +31,5 @@ routes:
 
   - path: /api/bus
     table: bus
-    columns: [id,bus_id,School,School_Platform,Shinsapporo,Shinsapporo_Platform,Ooyati,Atubetu,Ooasa,date]
+    columns: [id,bus_id,School,School_Platform,Shinsapporo,Shinsapporo_Platform,Ooyati,Atubetu,Ooasa,date,type]
     cache: 15m
