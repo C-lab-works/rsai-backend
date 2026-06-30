@@ -5,10 +5,12 @@ import dev.gate.annotation.GateController;
 import dev.gate.core.Context;
 import dev.gate.core.Database;
 import dev.gate.core.Logger;
+import dev.gate.mapping.DeleteMapping;
 import dev.gate.mapping.PostMapping;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -59,6 +61,42 @@ public class PushTokenController {
         String platform = (req.platform != null && !req.platform.isBlank()) ? req.platform.trim().toLowerCase() : null;
         pendingTokens.add(new PendingToken(token, platform));
         ctx.json(Map.of("ok", true));
+    }
+
+    @DeleteMapping("/push-token")
+    public void unregister(Context ctx) {
+        PushTokenRequest req;
+        try {
+            req = ctx.bodyAs(PushTokenRequest.class);
+        } catch (Exception e) {
+            ctx.status(400).json(Map.of("error", "Invalid JSON body"));
+            return;
+        }
+
+        if (req == null || req.token == null || req.token.isBlank()) {
+            ctx.status(400).json(Map.of("error", "token is required"));
+            return;
+        }
+
+        String sub = APP_CHECK.verifyAndGetSubject(ctx);
+        if (sub == null) {
+            ctx.status(403).json(Map.of("error", "Forbidden"));
+            return;
+        }
+
+        String token = req.token.trim();
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "DELETE FROM push_tokens WHERE token = ?")) {
+            ps.setString(1, token);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            logger.error("Failed to delete push token", e);
+            ctx.status(500).json(Map.of("error", "Internal server error"));
+            return;
+        }
+
+        ctx.status(204);
     }
 
     public static void minuteTick() {
