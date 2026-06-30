@@ -258,7 +258,7 @@ public class DataController {
         ArrayNode locs = root.putArray("locations");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, floor, location_code, svg_id, x, y FROM locations ORDER BY floor, id")) {
+               "SELECT id, name, floor, location_code, svg_id, x, y, type FROM locations ORDER BY floor, id")) {
             while (rs.next()) {
                 ObjectNode l = locs.addObject();
                 l.put("id",    rs.getInt("id"));
