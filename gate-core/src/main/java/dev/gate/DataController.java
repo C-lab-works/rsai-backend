@@ -269,6 +269,7 @@ public class DataController {
                 if (!rs.wasNull()) l.put("svg_id", svgId);
                 putDoubleOrNull(l, "x", rs);
                 putDoubleOrNull(l, "y", rs);
+                l.put("type", rs.getString("type"));
             }
         }
 
