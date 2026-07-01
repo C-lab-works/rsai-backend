@@ -28,16 +28,23 @@ public class AnnotationScanner {
     public void scan(Object controller) {
         Class<?> clazz = controller.getClass();
 
+        // native-image では reflect-config.json にコントローラークラスが未登録だと
+        // getMethods() がアノテーションを一切検出できず、ルートが 0 件のまま黙って
+        // 起動が成功してしまう（＝本番で全エンドポイントが 404 になる）。
+        // そのため 1 件もルートを登録できなかった場合は起動時に例外で落とし、
+        // reflect-config.json の登録漏れをその場で検知できるようにする。
+        int registeredCount = 0;
+
         for (Method method : clazz.getMethods()) {
             if (!Modifier.isPublic(method.getModifiers())) continue;
             if (Modifier.isStatic(method.getModifiers())) continue;
             if (method.getDeclaringClass() == Object.class) continue;
 
-            registerHttp(method, controller, GetMapping.class, "GET");
-            registerHttp(method, controller, PostMapping.class, "POST");
-            registerHttp(method, controller, PutMapping.class, "PUT");
-            registerHttp(method, controller, DeleteMapping.class, "DELETE");
-            registerHttp(method, controller, PatchMapping.class, "PATCH");
+            if (registerHttp(method, controller, GetMapping.class, "GET"))       registeredCount++;
+            if (registerHttp(method, controller, PostMapping.class, "POST"))     registeredCount++;
+            if (registerHttp(method, controller, PutMapping.class, "PUT"))       registeredCount++;
+            if (registerHttp(method, controller, DeleteMapping.class, "DELETE")) registeredCount++;
+            if (registerHttp(method, controller, PatchMapping.class, "PATCH"))   registeredCount++;
 
             if (method.isAnnotationPresent(WsMapping.class)) {
                 validateWsSignature(method);
@@ -52,12 +59,17 @@ public class AnnotationScanner {
                         throw new RuntimeException(t);
                     }
                 });
+                registeredCount++;
             }
+        }
+
+        if (registeredCount == 0) {
+            throw new IllegalStateException(clazz.getName() + " registered no routes — missing reflect-config.json entry?");
         }
     }
 
-    private <A extends Annotation> void registerHttp(Method method, Object controller, Class<A> annotationType, String httpMethod) {
-        if (!method.isAnnotationPresent(annotationType)) return;
+    private <A extends Annotation> boolean registerHttp(Method method, Object controller, Class<A> annotationType, String httpMethod) {
+        if (!method.isAnnotationPresent(annotationType)) return false;
         validateHttpSignature(method);
         String path;
         try {
@@ -67,6 +79,7 @@ public class AnnotationScanner {
         }
         MethodHandle mh = bindHandle(method, controller);
         router.register(httpMethod + ":" + path, ctx -> invokeHandle(mh, ctx));
+        return true;
     }
 
     private void validateHttpSignature(Method method) {
