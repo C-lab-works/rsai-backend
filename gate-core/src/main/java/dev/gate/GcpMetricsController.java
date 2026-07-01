@@ -100,7 +100,7 @@ public class GcpMetricsController {
         Future<long[]> instanceFuture = Main.bg.submit(
             () -> queryLongMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/instance_count",
-                "ALIGN_MAX", "REDUCE_MAX", fStart, fEnd, periodStr, fNumBuckets, fPeriodSec));
+                "ALIGN_MAX", "REDUCE_SUM", fStart, fEnd, periodStr, fNumBuckets, fPeriodSec));
         Future<double[]> cpuFuture = Main.bg.submit(
             () -> queryDoubleMetric(accessToken, projectId, service,
                 "run.googleapis.com/container/cpu/utilizations",
