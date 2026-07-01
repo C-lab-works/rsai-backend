@@ -29,7 +29,7 @@ class AdminRouteInventoryTest {
     // 分割リファクタリングが進むにつれてこのリストにクラスが増えていく想定。
     // EXPECTED_ROUTES はそのリファクタリング中も変化してはならない
     // （= ルートの総和が保たれていることを保証する）。
-    private static final List<Class<?>> ADMIN_CONTROLLERS = List.of(AdminController.class);
+    private static final List<Class<?>> ADMIN_CONTROLLERS = List.of(AdminController.class, AdminYamlController.class);
 
     // AdminController.java から grep で洗い出した現行の全ルート一覧（27件）。
     // 内訳: instances 6, cache/debug 2, tables 5, ddl 2, sql 1, stats 2, push 1, stars 5, yaml 3
