@@ -5,6 +5,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -99,6 +101,10 @@ public class RequestMetrics {
 
     private long epochHour() { return System.currentTimeMillis() / 3_600_000L; }
 
+    private static String jstDate() {
+        return ZonedDateTime.now(ZoneId.of("Asia/Tokyo")).toLocalDate().toString();
+    }
+
     // 永続化
 
     public void init() {
@@ -142,15 +148,18 @@ public class RequestMetrics {
                     }
                 }
             }
-            try (Statement st = conn.createStatement();
-                 ResultSet rs = st.executeQuery("SELECT endpoint, hits FROM metrics_endpoints WHERE date = CURDATE()")) {
-                while (rs.next()) {
-                    String ep   = rs.getString("endpoint");
-                    long   hits = rs.getLong("hits");
-                    if (endpointCounts.size() < MAX_KEYS) {
-                        LongAdder la = endpointCounts.computeIfAbsent(ep, k -> new LongAdder());
-                        la.add(hits);
-                        lastFlushedEp.computeIfAbsent(ep, k -> new LongAdder()).add(hits);
+            try (PreparedStatement epPs = conn.prepareStatement(
+                    "SELECT endpoint, hits FROM metrics_endpoints WHERE date = ?")) {
+                epPs.setString(1, jstDate());
+                try (ResultSet rs = epPs.executeQuery()) {
+                    while (rs.next()) {
+                        String ep   = rs.getString("endpoint");
+                        long   hits = rs.getLong("hits");
+                        if (endpointCounts.size() < MAX_KEYS) {
+                            LongAdder la = endpointCounts.computeIfAbsent(ep, k -> new LongAdder());
+                            la.add(hits);
+                            lastFlushedEp.computeIfAbsent(ep, k -> new LongAdder()).add(hits);
+                        }
                     }
                 }
             }
@@ -220,21 +229,27 @@ public class RequestMetrics {
 
     private void flushEndpoints() {
         if (endpointCounts.isEmpty()) return;
+        String today = jstDate();
         try (Connection conn = Database.getConnection();
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO metrics_endpoints(endpoint, date, hits) VALUES(?, CURDATE(), ?) AS new " +
+                     "INSERT INTO metrics_endpoints(endpoint, date, hits) VALUES(?, ?, ?) AS new " +
                      "ON DUPLICATE KEY UPDATE hits = metrics_endpoints.hits + new.hits")) {
+            List<Map.Entry<String, Long>> toCommit = new ArrayList<>();
             for (Map.Entry<String, LongAdder> e : endpointCounts.entrySet()) {
                 long current = e.getValue().sum();
                 long flushed = lastFlushedEp.computeIfAbsent(e.getKey(), k -> new LongAdder()).sum();
                 long diff    = current - flushed;
                 if (diff <= 0) continue;
                 ps.setString(1, e.getKey());
-                ps.setLong(2, diff);
+                ps.setString(2, today);
+                ps.setLong(3, diff);
                 ps.addBatch();
-                lastFlushedEp.get(e.getKey()).add(diff);
+                toCommit.add(Map.entry(e.getKey(), diff));
             }
             ps.executeBatch();
+            for (Map.Entry<String, Long> entry : toCommit) {
+                lastFlushedEp.get(entry.getKey()).add(entry.getValue());
+            }
         } catch (Exception e) {
             logger.warn("metrics endpoints flush failed: {}", e.getMessage());
         }

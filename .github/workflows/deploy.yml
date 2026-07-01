@@ -625,6 +625,43 @@ jobs:
           echo '=== Pruning unused images ==='
           docker image prune -f
 
+      - name: Verify /admin/stars/ranking (debug investigation)
+        if: always()
+        env:
+          API_KEY:              ${{ secrets.API_KEY }}
+          INTERNAL_SERVICE_KEY: ${{ secrets.INTERNAL_SERVICE_KEY }}
+          ORIGIN_SHARED_SECRET: ${{ secrets.ORIGIN_SHARED_SECRET }}
+        run: |
+          echo '================ RANKING ENDPOINT TEST ================'
+          OVERALL_OK=1
+          for view in all hs ms foodtruck hs1 hs2 hs3 ms1 ms2 ms3; do
+            RESP=$(curl -s -m 15 -w '\n%{http_code}' \
+              -H "X-Origin-Secret: ${ORIGIN_SHARED_SECRET}" \
+              -H "X-API-Key: ${API_KEY}" \
+              -H "X-Service-Key: ${INTERNAL_SERVICE_KEY}" \
+              "http://localhost:8082/admin/stars/ranking?view=${view}" 2>/dev/null || printf '\n000')
+            CODE=$(printf '%s' "$RESP" | tail -n1)
+            BODY=$(printf '%s' "$RESP" | sed '$d' | head -c 180)
+            echo "[view=${view}] HTTP=${CODE}  body=${BODY}"
+            [ "$CODE" = "200" ] || OVERALL_OK=0
+          done
+          echo "RANKING_ENDPOINT_ALL_200=${OVERALL_OK}"
+          echo '================ SQL ROOT-CAUSE CHECK ================='
+          DBX() { docker exec rsai-mysql-debug mysql --defaults-extra-file=/root/.my_debug.cnf -uroot rsai_debug "$@"; }
+          echo '--- (A) ORIGINAL count-alias query (commit 6dde7b8) ---'
+          if DBX -e "SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS count FROM projects UNION ALL SELECT 'foodtruck', id, name, NULL, bookmark_count FROM foodtruck ORDER BY count DESC LIMIT 5;" 2>&1; then
+            echo "RESULT_A_COUNT_ALIAS=OK"
+          else
+            echo "RESULT_A_COUNT_ALIAS=ERROR"
+          fi
+          echo '--- (B) CURRENT star_count query (HEAD) ---'
+          if DBX -e "SELECT 'project' AS type, id, title AS name, organizer, bookmark_count AS star_count FROM projects UNION ALL SELECT 'foodtruck' AS type, id, name AS name, NULL AS organizer, bookmark_count AS star_count FROM foodtruck ORDER BY star_count DESC LIMIT 5;" 2>&1; then
+            echo "RESULT_B_STAR_COUNT=OK"
+          else
+            echo "RESULT_B_STAR_COUNT=ERROR"
+          fi
+          echo '======================================================'
+
       - name: Discord通知
         if: always()
         env:
