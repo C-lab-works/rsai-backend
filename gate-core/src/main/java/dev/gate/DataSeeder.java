@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 31) {
-                logger.info("Seed data v31 already present — skipping");
+            if (v >= 32) {
+                logger.info("Seed data v32 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -178,7 +178,12 @@ public class DataSeeder {
                 migrateV30(conn);
                 setSeedVersion(conn, 31);
             }
-            logger.info("Seed data v31 ready");
+            if (v <= 31) {
+                logger.info("Migrating schema v31 -> v32");
+                migrateV31(conn);
+                setSeedVersion(conn, 32);
+            }
+            logger.info("Seed data v32 ready");
         }
     }
 
@@ -899,6 +904,21 @@ public class DataSeeder {
             logger.info("Added uq_foodtruck_sub on foodtruck_stars");
         }
         logger.info("Added app_check_sub column and UNIQUE constraints to stars tables");
+    }
+
+    private static void migrateV31(Connection conn) throws Exception {
+        // インスタンス間のキャッシュ再構築/混雑度/スター機能の通知状態。
+        // Firestore の broadcast/cache ドキュメント（2秒毎に全インスタンスがポーリング）を
+        // 置き換える単一行テーブル。
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS broadcast_state (" +
+            "  id               INT PRIMARY KEY DEFAULT 1," +
+            "  refresh_at       VARCHAR(64) NULL," +
+            "  congestion_at    VARCHAR(64) NULL," +
+            "  stars_enabled_at VARCHAR(64) NULL," +
+            "  stars_enabled    TINYINT(1)  NULL" +
+            ")");
+        logger.info("Created broadcast_state table");
     }
 
     private static void migrateV21(Connection conn) throws Exception {

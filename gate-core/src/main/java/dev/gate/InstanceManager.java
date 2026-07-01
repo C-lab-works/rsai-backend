@@ -110,15 +110,15 @@ public class InstanceManager {
             registerSelf();
             initUptimeTracking();
             try {
-                Map<String, Object> bDoc = fs.get("broadcast/cache");
-                if (bDoc != null) {
+                Map<String, Object> bDoc = BroadcastStateStore.read();
+                if (!bDoc.isEmpty()) {
                     lastBroadcastRefreshAt = (String) bDoc.get("refreshAt");
                     lastCongestionAt       = (String) bDoc.get("congestionAt");
                     lastStarsEnabledAt     = (String) bDoc.get("starsEnabledAt");
                     Object starsEnabled    = bDoc.get("starsEnabled");
                     if (starsEnabled instanceof Boolean) {
                         StarsController.setEnabled((Boolean) starsEnabled);
-                        log.info("stars initial state from Firestore: enabled={}", starsEnabled);
+                        log.info("stars initial state from MySQL: enabled={}", starsEnabled);
                     }
                 }
             } catch (Exception ignored) {}
@@ -207,8 +207,8 @@ public class InstanceManager {
     private void pollBroadcast() {
         if (stopped.get()) return;
         try {
-            Map<String, Object> doc = fs.get("broadcast/cache");
-            if (doc == null) return;
+            Map<String, Object> doc = BroadcastStateStore.read();
+            if (doc.isEmpty()) return;
             String refreshAt    = (String) doc.get("refreshAt");
             String congestionAt = (String) doc.get("congestionAt");
 
@@ -353,10 +353,10 @@ public class InstanceManager {
     // ── broadcast cache refresh to other instances ───────────────────────────
 
     public void broadcastCacheRefresh() {
-        if (!fs.isAvailable()) return;
+        if (!dev.gate.core.Database.isReady()) return;
         try {
             String ts = Instant.now().toString();
-            fs.update("broadcast/cache", Map.of("refreshAt", ts));
+            BroadcastStateStore.upsert(Map.of("refreshAt", ts));
             // 書き込み元インスタンスは次の pollBroadcast で二重実行しないようスキップする
             lastBroadcastRefreshAt = ts;
         } catch (Exception e) {
@@ -371,10 +371,10 @@ public class InstanceManager {
      * その間は既存の 30 秒ポーラーが追従するため許容できる遷移ウィンドウとなる。
      */
     public void broadcastCongestionRefresh() {
-        if (!fs.isAvailable()) return;
+        if (!dev.gate.core.Database.isReady()) return;
         try {
             String ts = Instant.now().toString();
-            fs.update("broadcast/cache", Map.of("congestionAt", ts));
+            BroadcastStateStore.upsert(Map.of("congestionAt", ts));
             // 書き込み元インスタンスは次の pollBroadcast で二重実行しないようスキップする
             lastCongestionAt = ts;
         } catch (Exception e) {
@@ -383,10 +383,10 @@ public class InstanceManager {
     }
 
     public void broadcastStarsEnabled(boolean enabled) {
-        if (!fs.isAvailable()) return;
+        if (!dev.gate.core.Database.isReady()) return;
         try {
             String ts = Instant.now().toString();
-            fs.update("broadcast/cache", Map.of(
+            BroadcastStateStore.upsert(Map.of(
                 "starsEnabledAt", ts,
                 "starsEnabled",   enabled
             ));
