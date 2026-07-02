@@ -64,6 +64,8 @@
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.AdminYamlController",
     "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.AdminPushController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.AnnouncementsController",
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.GcpMetricsController",
