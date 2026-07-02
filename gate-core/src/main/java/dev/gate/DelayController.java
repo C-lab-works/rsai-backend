@@ -45,6 +45,12 @@ public class DelayController {
             ctx.status(401).json(Map.of("error", "Authentication required"));
             return;
         }
+        // 機能別メールACL: owner/admin は常に許可、それ以外は feature_access に
+        // 登録済みのメールのみ許可（本来の防御境界での強制）。
+        if (!FeatureAccessStore.isPrivileged(updatedBy) && !FeatureAccessStore.isAllowed("delays", updatedBy)) {
+            ctx.status(403).json(Map.of("error", "この機能へのアクセス権がありません"));
+            return;
+        }
 
         try {
             @SuppressWarnings("unchecked")

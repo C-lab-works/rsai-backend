@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 32) {
-                logger.info("Seed data v32 already present — skipping");
+            if (v >= 33) {
+                logger.info("Seed data v33 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -183,7 +183,12 @@ public class DataSeeder {
                 migrateV31(conn);
                 setSeedVersion(conn, 32);
             }
-            logger.info("Seed data v32 ready");
+            if (v <= 32) {
+                logger.info("Migrating schema v32 -> v33");
+                migrateV32(conn);
+                setSeedVersion(conn, 33);
+            }
+            logger.info("Seed data v33 ready");
         }
     }
 
@@ -447,6 +452,16 @@ public class DataSeeder {
             "  created_at   DATETIME NOT NULL," +
             "  FOREIGN KEY (foodtruck_id) REFERENCES foodtruck(id)" +
             ")");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS feature_access (" +
+            "  id         INT UNSIGNED  NOT NULL AUTO_INCREMENT," +
+            "  feature    VARCHAR(32)   NOT NULL," +
+            "  email      VARCHAR(255)  NOT NULL," +
+            "  added_by   VARCHAR(255)  NOT NULL DEFAULT ''," +
+            "  created_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+            "  PRIMARY KEY (id)," +
+            "  UNIQUE KEY uq_feature_email (feature, email)" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     }
 
     // ── seed data ─────────────────────────────────────────────
@@ -919,6 +934,22 @@ public class DataSeeder {
             "  stars_enabled    TINYINT(1)  NULL" +
             ")");
         logger.info("Created broadcast_state table");
+    }
+
+    private static void migrateV32(Connection conn) throws Exception {
+        // 機能別メールACL(混雑度/遅延など)。feature は VARCHAR(32) とし、将来の機能追加で
+        // ALTER TABLE 不要（バリデーションはアプリ側）。
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS feature_access (" +
+            "  id         INT UNSIGNED  NOT NULL AUTO_INCREMENT," +
+            "  feature    VARCHAR(32)   NOT NULL," +
+            "  email      VARCHAR(255)  NOT NULL," +
+            "  added_by   VARCHAR(255)  NOT NULL DEFAULT ''," +
+            "  created_at DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP," +
+            "  PRIMARY KEY (id)," +
+            "  UNIQUE KEY uq_feature_email (feature, email)" +
+            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        logger.info("Created feature_access table");
     }
 
     private static void migrateV21(Connection conn) throws Exception {
