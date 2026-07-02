@@ -71,6 +71,7 @@ public class Main {
         gate.register(new AdminController());
         gate.register(new AdminYamlController());
         gate.register(new AdminPushController());
+        gate.register(new AdminStarsController());
         gate.register(new StarsController());
         gate.register(new PushTokenController());
         gate.register(new CfMetricsController());
