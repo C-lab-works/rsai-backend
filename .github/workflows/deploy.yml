@@ -276,6 +276,12 @@ jobs:
                         value: "${{ secrets.CF_API_TOKEN }}"
                       - name: CF_ZONE_ID
                         value: "${{ secrets.CF_ZONE_ID }}"
+                      - name: CF_ACCOUNT_ID
+                        value: "${{ secrets.CF_ACCOUNT_ID }}"
+                      - name: CF_ACCESS_POLICY_ID
+                        value: "${{ secrets.CF_ACCESS_POLICY_ID }}"
+                      - name: OWNER_EMAILS
+                        value: "${{ secrets.OWNER_EMAILS }}"
                       - name: RUNMODE
                         value: "cloudrun"
                       - name: APP_VERSION
@@ -413,6 +419,9 @@ jobs:
           ADMIN_EMAILS:          ${{ secrets.ADMIN_EMAILS }}
           CF_API_TOKEN:          ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID:            ${{ secrets.CF_ZONE_ID }}
+          CF_ACCOUNT_ID:         ${{ secrets.CF_ACCOUNT_ID }}
+          CF_ACCESS_POLICY_ID:   ${{ secrets.CF_ACCESS_POLICY_ID }}
+          OWNER_EMAILS:          ${{ secrets.OWNER_EMAILS }}
           ORIGIN_SHARED_SECRET:  ${{ secrets.ORIGIN_SHARED_SECRET }}
           INTERNAL_SERVICE_KEY:  ${{ secrets.INTERNAL_SERVICE_KEY }}
           GH_PAT:                ${{ secrets.GH_PAT }}
@@ -435,6 +444,9 @@ jobs:
             printf 'ADMIN_EMAILS=%s\n'          "${ADMIN_EMAILS}"
             printf 'CF_API_TOKEN=%s\n'          "${CF_API_TOKEN}"
             printf 'CF_ZONE_ID=%s\n'            "${CF_ZONE_ID}"
+            printf 'CF_ACCOUNT_ID=%s\n'         "${CF_ACCOUNT_ID}"
+            printf 'CF_ACCESS_POLICY_ID=%s\n'   "${CF_ACCESS_POLICY_ID}"
+            printf 'OWNER_EMAILS=%s\n'          "${OWNER_EMAILS}"
             printf 'ORIGIN_SHARED_SECRET=%s\n'  "${ORIGIN_SHARED_SECRET}"
             printf 'INTERNAL_SERVICE_KEY=%s\n'  "${INTERNAL_SERVICE_KEY}"
             printf 'GITHUB_PAT=%s\n'            "${GH_PAT}"

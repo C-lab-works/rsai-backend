@@ -87,6 +87,16 @@ public class FeatureAccessStore {
     public static boolean isPrivileged(String email) {
         if (email == null || email.isBlank()) return false;
         if (SERVICE_IDENTITY.equals(email)) return true;
+        return isAdminOrOwner(email);
+    }
+
+    /**
+     * admin(ADMIN_EMAILS)または owner(OWNER_EMAILS)かどうかのみを判定する。
+     * {@link #isPrivileged} と異なり SERVICE_IDENTITY は含まない
+     * (CF Access ポリシー削除保護など、M2M アイデンティティを除外したい多層防御用)。
+     */
+    public static boolean isAdminOrOwner(String email) {
+        if (email == null || email.isBlank()) return false;
         if (CfAccessAuth.isAdmin(email)) return true;
         return ownerEmailsRef.contains(email.toLowerCase());
     }
