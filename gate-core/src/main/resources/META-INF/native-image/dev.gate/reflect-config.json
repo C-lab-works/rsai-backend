@@ -88,6 +88,10 @@
     "allDeclaredConstructors": true, "allPublicMethods": true },
   { "name": "dev.gate.PushTokenController$PushTokenRequest",
     "allDeclaredConstructors": true, "allDeclaredFields": true },
+  { "name": "dev.gate.FormAccessController",
+    "allDeclaredConstructors": true, "allPublicMethods": true },
+  { "name": "dev.gate.FormAccessController$FormAccessRequest",
+    "allDeclaredConstructors": true, "allDeclaredFields": true },
 
   { "name": "dev.gate.mapping.GetMapping",    "allPublicMethods": true },
   { "name": "dev.gate.mapping.PostMapping",   "allPublicMethods": true },

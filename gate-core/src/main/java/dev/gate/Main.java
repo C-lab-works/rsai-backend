@@ -79,6 +79,7 @@ public class Main {
         gate.register(new PushTokenController());
         gate.register(new CfMetricsController());
         gate.register(new DelayController());
+        gate.register(new FormAccessController());
         if (!"azure".equalsIgnoreCase(System.getenv("RUNMODE"))) {
             gate.register(new GcpMetricsController());
         }

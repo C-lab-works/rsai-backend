@@ -28,6 +28,8 @@ public class ApiKeyAuth implements Handler {
     public void handle(Context ctx) {
         if ("/health".equals(ctx.path())) return;
         if ("OPTIONS".equals(ctx.method())) return;
+        // Google Form(GAS)専用エンドポイント: 認証は FormAccessController 内の FORM_API_KEY チェックに一本化する。
+        if ("POST".equalsIgnoreCase(ctx.method()) && "/form/feature-access".equals(ctx.path())) return;
 
         String provided = ctx.requestHeader(HEADER);
         if (provided == null) {

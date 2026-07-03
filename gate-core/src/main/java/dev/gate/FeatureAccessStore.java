@@ -4,6 +4,7 @@ import dev.gate.core.Database;
 import dev.gate.core.Logger;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -79,6 +80,26 @@ public class FeatureAccessStore {
 
     private static String key(String feature, String email) {
         return feature + "\n" + email.toLowerCase();
+    }
+
+    // ── 書き込み(Google Form 自動登録など) ────────────────────────
+
+    /** UNIQUE(feature,email) のため INSERT IGNORE で冪等に追加し、キャッシュを即時失効させる。 */
+    static void insertIgnore(String feature, String email, String addedBy) throws SQLException {
+        try (Connection conn = Database.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "INSERT IGNORE INTO feature_access (feature, email, added_by) VALUES (?, ?, ?)")) {
+            ps.setString(1, feature);
+            ps.setString(2, email);
+            ps.setString(3, addedBy);
+            ps.executeUpdate();
+        }
+        invalidate();
+    }
+
+    /** キャッシュを即時失効させ、TTL(30秒)を待たず次回 {@link #isAllowed} で再ロードさせる。 */
+    static void invalidate() {
+        cachedKeys = null;
     }
 
     // ── owner / privileged 判定 ──────────────────────────────────

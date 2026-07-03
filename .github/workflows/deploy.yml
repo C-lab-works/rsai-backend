@@ -306,6 +306,8 @@ jobs:
                         value: "${{ secrets.ORIGIN_SHARED_SECRET }}"
                       - name: INTERNAL_SERVICE_KEY
                         value: "${{ secrets.INTERNAL_SERVICE_KEY }}"
+                      - name: FORM_API_KEY
+                        value: "${{ secrets.FORM_API_KEY }}"
                       - name: PUBLIC_BASE_URL
                         value: "https://v2.r-sai2026.site"
           EOF
@@ -424,6 +426,7 @@ jobs:
           OWNER_EMAILS:          ${{ secrets.OWNER_EMAILS }}
           ORIGIN_SHARED_SECRET:  ${{ secrets.ORIGIN_SHARED_SECRET }}
           INTERNAL_SERVICE_KEY:  ${{ secrets.INTERNAL_SERVICE_KEY }}
+          FORM_API_KEY:          ${{ secrets.FORM_API_KEY }}
           GH_PAT:                ${{ secrets.GH_PAT }}
           GH_SHA:                ${{ github.sha }}
           FIREBASE_PROJECT_ID:     ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -449,6 +452,7 @@ jobs:
             printf 'OWNER_EMAILS=%s\n'          "${OWNER_EMAILS}"
             printf 'ORIGIN_SHARED_SECRET=%s\n'  "${ORIGIN_SHARED_SECRET}"
             printf 'INTERNAL_SERVICE_KEY=%s\n'  "${INTERNAL_SERVICE_KEY}"
+            printf 'FORM_API_KEY=%s\n'          "${FORM_API_KEY}"
             printf 'GITHUB_PAT=%s\n'            "${GH_PAT}"
             printf 'FIREBASE_PROJECT_ID=%s\n'     "${FIREBASE_PROJECT_ID}"
             printf 'FIREBASE_PROJECT_NUMBER=%s\n' "${FIREBASE_PROJECT_NUMBER}"
