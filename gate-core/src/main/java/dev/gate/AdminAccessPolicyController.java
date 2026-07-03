@@ -24,7 +24,9 @@ public class AdminAccessPolicyController {
     private static final Logger       logger = new Logger(AdminAccessPolicyController.class);
     private static final ObjectMapper mapper = dev.gate.core.Json.MAPPER;
     // 簡易メール形式検証。厳密な RFC5322 準拠はせず、明らかに不正な入力のみ弾く。
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    // ドメインラベルを `.` で明示的に区切ることで、`[^\s@]+` 同士が `.` の位置を
+    // 奪い合う曖昧性(ReDoS の原因になる多項式バックトラッキング)を排除している。
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@([^\\s@.]+\\.)+[^\\s@.]+$");
 
     @PostMapping("/admin/access-policy/emails")
     public void addEmail(Context ctx) {
