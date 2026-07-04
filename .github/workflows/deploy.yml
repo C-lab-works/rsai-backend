@@ -722,10 +722,7 @@ jobs:
             curl -sS -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD"
           done
 
-  # ── masterのコードをdebugブランチに自動同期（ビルド成功後）
-  # masterをdebugにマージしてpushする（force不要、debug独自コミットも保持）。
-  # 同期コミットに [skip ci] を付けるので、debugへのこのpushでは
-  # ワークフローが起動しない。開発者が通常にdebugへpushしたときは起動する。
+  # ── masterをdebugブランチに同期+skip ci でactions回避
   sync-debug:
     needs: [build, build-fallback]
     if: >-

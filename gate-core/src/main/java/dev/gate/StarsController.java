@@ -43,6 +43,11 @@ public class StarsController {
     private static final Set<String> BLOCKED_SUBS = ConcurrentHashMap.newKeySet();
     private static final int MAX_BLOCKED_SUBS = 100;
 
+    // TEMP: 実機での star 同期検証用。検証完了後にこのメソッドと呼び出し箇所を全て削除すること。
+    private static void tempLog(String action, String target, String detail) {
+        DiscordWebhook.sendAdminOp("client", "STAR-TEMP " + action, target, detail);
+    }
+
     @PostMapping("/stars")
     public void postStar(Context ctx) {
         StarRequest req;
@@ -66,26 +71,31 @@ public class StarsController {
 
         if (!STARS_ENABLED.get()) {
             ctx.status(503).json(Map.of("error", "Stars受付を停止中です"));
+            tempLog("REJECTED disabled", type + ":" + req.id, "POST");
             return;
         }
         String sub = APP_CHECK.verifyAndGetSubject(ctx);
         if (sub == null) {
             ctx.status(403).json(Map.of("error", "Forbidden"));
+            tempLog("REJECTED appcheck-fail", type + ":" + req.id, "POST sub=null");
             return;
         }
         if (BLOCKED_SUBS.contains(sub)) {
             ctx.status(403).json(Map.of("error", "このアプリは受付停止されています"));
+            tempLog("REJECTED blocked", type + ":" + req.id, "POST");
             return;
         }
 
         String requestId = ctx.requestHeader("X-Request-Id");
         if (!RequestIdMiddleware.markSeenOrReject(requestId)) {
             ctx.status(409).json(Map.of("error", "Duplicate request"));
+            tempLog("REJECTED duplicate", type + ":" + req.id, "POST");
             return;
         }
 
         pendingOps.add(new StarOp(type, req.id, true, sub));
         ctx.json(Map.of("ok", true));
+        tempLog("RECEIVED", type + ":" + req.id, "POST sub=" + sub.substring(0, Math.min(8, sub.length())));
 
         long count = starCountInWindow.incrementAndGet();
         if (count >= STAR_ALERT_THRESHOLD && alertSentInWindow.compareAndSet(false, true)) {
@@ -117,26 +127,31 @@ public class StarsController {
 
         if (!STARS_ENABLED.get()) {
             ctx.status(503).json(Map.of("error", "Stars受付を停止中です"));
+            tempLog("REJECTED disabled", type + ":" + req.id, "DELETE");
             return;
         }
         String sub = APP_CHECK.verifyAndGetSubject(ctx);
         if (sub == null) {
             ctx.status(403).json(Map.of("error", "Forbidden"));
+            tempLog("REJECTED appcheck-fail", type + ":" + req.id, "DELETE sub=null");
             return;
         }
         if (BLOCKED_SUBS.contains(sub)) {
             ctx.status(403).json(Map.of("error", "このアプリは受付停止されています"));
+            tempLog("REJECTED blocked", type + ":" + req.id, "DELETE");
             return;
         }
 
         String requestId = ctx.requestHeader("X-Request-Id");
         if (!RequestIdMiddleware.markSeenOrReject(requestId)) {
             ctx.status(409).json(Map.of("error", "Duplicate request"));
+            tempLog("REJECTED duplicate", type + ":" + req.id, "DELETE");
             return;
         }
 
         pendingOps.add(new StarOp(type, req.id, false, sub));
         ctx.json(Map.of("ok", true));
+        tempLog("RECEIVED", type + ":" + req.id, "DELETE sub=" + sub.substring(0, Math.min(8, sub.length())));
     }
 
     public static void flushPending() {
@@ -239,12 +254,15 @@ public class StarsController {
                     }
                     conn.commit();
                     logger.info("Flushed {} star ops, {} distinct targets", ops.size(), deltas.size());
+                    tempLog("FLUSHED", ops.size() + " ops", deltas.size() + " distinct targets committed to DB");
                 } catch (Exception e) {
                     conn.rollback();
                     throw e;
                 }
             } catch (Exception e) {
                 logger.error("Failed to flush pending stars, re-queuing {} ops", ops.size(), e);
+                DiscordWebhook.sendError("STARS-TEMP", "flushPending", 500,
+                        "Failed to flush " + ops.size() + " star ops, re-queued: " + e.getMessage());
                 requeue(deltas);
             }
         } finally {
