@@ -127,11 +127,11 @@ public class DataController {
         ArrayNode projects = root.putArray("projects");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT p.id, p.title, p.organizer, p.description, p.image_url, p.blurhash, p.location_id, p.offset," +
-               "       pd.delay_minutes, pd.note AS delay_note, pd.updated_at AS delay_updated_at" +
-               " FROM projects p" +
-               " LEFT JOIN project_delays pd ON pd.project_id = p.id" +
-               " ORDER BY p.id")) {
+                "SELECT p.id, p.title, p.organizer, p.description, p.image_url, p.blurhash, p.location_id, p.offset, p.afterparty," +
+                "       pd.delay_minutes, pd.note AS delay_note, pd.updated_at AS delay_updated_at" +
+                " FROM projects p" +
+                " LEFT JOIN project_delays pd ON pd.project_id = p.id" +
+                " ORDER BY p.id")) {
             while (rs.next()) {
                 ObjectNode p = projects.addObject();
                 int id = rs.getInt("id");
@@ -141,6 +141,7 @@ public class DataController {
                 putStringOrNull(p, "description", rs.getString("description"));
                 putStringOrNull(p, "image_url",   rs.getString("image_url"));
                 putStringOrNull(p, "blurhash",    rs.getString("blurhash"));
+                p.put("afterparty", rs.getInt("afterparty"));
                 int locId = rs.getInt("location_id");
                 if (!rs.wasNull()) p.put("location_id", locId);
                 float offset = rs.getFloat("offset");
@@ -231,7 +232,7 @@ public class DataController {
         ArrayNode items = root.putArray("items");
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-               "SELECT id, name, info, icon, blurhash, location_code FROM foodtruck ORDER BY id")) {
+                "SELECT id, name, info, icon, blurhash, location_code, afterparty_location FROM foodtruck ORDER BY id")) {
             while (rs.next()) {
                 int id = rs.getInt("id");
                 ObjectNode ft = items.addObject();
@@ -241,6 +242,7 @@ public class DataController {
                 ft.put("icon", rs.getString("icon"));
                 putStringOrNull(ft, "blurhash", rs.getString("blurhash"));
                 putStringOrNull(ft, "location_code", rs.getString("location_code"));
+                putStringOrNull(ft, "afterparty_location", rs.getString("afterparty_location"));
                 ArrayNode subicons = ft.putArray("subicons");
                 subiconMap.getOrDefault(id, List.of()).forEach(subicons::add);
                 ArrayNode sns = ft.putArray("sns");

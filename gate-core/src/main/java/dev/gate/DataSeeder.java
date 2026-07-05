@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 33) {
-                logger.info("Seed data v33 already present — skipping");
+            if (v >= 34) {
+                logger.info("Seed data v34 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -188,7 +188,12 @@ public class DataSeeder {
                 migrateV32(conn);
                 setSeedVersion(conn, 33);
             }
-            logger.info("Seed data v33 ready");
+            if (v <= 33) {
+                logger.info("Migrating schema v33 -> v34");
+                migrateV33(conn);
+                setSeedVersion(conn, 34);
+            }
+            logger.info("Seed data v34 ready");
         }
     }
 
@@ -966,6 +971,11 @@ public class DataSeeder {
                 }
             }
         }
+    }
+
+    private static void migrateV33(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "foodtruck", "afterparty_location", "TEXT");
+        addColumnIfMissing(conn, "projects", "afterparty", "TINYINT(1) NOT NULL DEFAULT 0");
     }
 
     // ── util ──────────────────────────────────────────────────
