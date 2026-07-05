@@ -49,6 +49,7 @@ Base URL: `https://api.example.com`
       "organizer": "主催者",
       "location_id": 15,
       "bookmark_count": 42,
+      "afterparty": 0,
       "delay": { "delay_minutes": 10, "note": "準備中", "updated_at": "2026-06-30 10:00:00" }
     }
   ],
@@ -64,6 +65,7 @@ Base URL: `https://api.example.com`
 > `projects[].location_id` — 拠点が未設定の場合は省略される。  
 > `projects[].organizer` / `.description` / `.image_url` — 設定されている場合のみ含まれる。  
 > `projects[].bookmark_count` — ブックマーク（スター）数。  
+> `projects[].afterparty` — 後夜祭対象企画フラグ（`0` または `1`）。  
 > `projects[].delay` — 遅延情報が登録されている場合のみ含まれる。`delay_minutes` / `note` / `updated_at` は各フィールドが設定されている場合のみ含まれる。  
 > `timetables[].start` / `.end` — `is_all_day` が `true` の場合は省略される。  
 > `project_categories` — project と category の多対多リレーション。  
@@ -88,6 +90,7 @@ Base URL: `https://api.example.com`
       "blurhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH",
       "location_code": "02",
       "bookmark_count": 10,
+      "afterparty_location": "後夜祭場所名",
       "subicons": [
         { "id": 1, "url": "https://example.com/subicon1.png", "blurhash": "..." }
       ],
@@ -104,6 +107,7 @@ Base URL: `https://api.example.com`
 
 > `location_code` — 設定されている場合のみ含まれる。  
 > `blurhash` (店舗 / subicons / menus) — 設定されている場合のみ含まれる。  
+> `afterparty_location` — 後夜祭の配置場所。設定されている場合のみ含まれる。  
 > `subicons` — 複数登録可能なサブアイコンの配列。  
 > `sns` — 複数登録可能なSNSアカウント情報の配列。`platform` は設定されている場合のみ含まれる。  
 > `menus[].image_url` / `.allergen` — 設定されている場合のみ含まれる。  
