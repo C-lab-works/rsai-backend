@@ -1,0 +1,61 @@
+name: Write rsai2026 backend env (one-off)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  write-env:
+    runs-on: [self-hosted, rsai-2026]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Write /root/rsai-backend.env
+        env:
+          READ_ONLY_KEY:         ${{ secrets.READ_ONLY_KEY }}
+          CF_ACCESS_AUD:         ${{ secrets.CF_ACCESS_AUD }}
+          CF_ACCESS_TEAM_DOMAIN: ${{ secrets.CF_ACCESS_TEAM_DOMAIN }}
+          CF_API_TOKEN:          ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID:            ${{ secrets.CF_ZONE_ID }}
+          CF_ACCOUNT_ID:         ${{ secrets.CF_ACCOUNT_ID }}
+          CF_ACCESS_POLICY_ID:   ${{ secrets.CF_ACCESS_POLICY_ID }}
+          DISCORD_WEBHOOK_URL:   ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FORM_API_KEY:          ${{ secrets.FORM_API_KEY }}
+          FIREBASE_PROJECT_ID:     ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
+          ORIGIN_SHARED_SECRET:  ${{ secrets.ORIGIN_SHARED_SECRET }}
+          GH_PAT:                ${{ secrets.GH_PAT }}
+          LOG_LEVEL:             ${{ vars.LOG_LEVEL }}
+          GH_OWNER:              ${{ vars.GH_OWNER }}
+          GH_REPO:               ${{ vars.GH_REPO }}
+          GH_BRANCH:             ${{ vars.GH_BRANCH }}
+          GH_YAML_PATH:          ${{ vars.GH_YAML_PATH }}
+          SHA:                   ${{ github.sha }}
+        run: |
+          set -e
+          # DB / API_KEY / INTERNAL_SERVICE_KEY / ADMIN_EMAILS / OWNER_EMAILS are already
+          # known locally (they must match values already deployed in rsai2026admin's
+          # .env.production) and are filled in on the runner side, not here.
+          {
+            printf 'READ_ONLY_KEY=%s\n'          "${READ_ONLY_KEY}"
+            printf 'CF_ACCESS_AUD=%s\n'          "${CF_ACCESS_AUD}"
+            printf 'CF_ACCESS_TEAM_DOMAIN=%s\n'  "${CF_ACCESS_TEAM_DOMAIN}"
+            printf 'CF_API_TOKEN=%s\n'           "${CF_API_TOKEN}"
+            printf 'CF_ZONE_ID=%s\n'             "${CF_ZONE_ID}"
+            printf 'CF_ACCOUNT_ID=%s\n'          "${CF_ACCOUNT_ID}"
+            printf 'CF_ACCESS_POLICY_ID=%s\n'    "${CF_ACCESS_POLICY_ID}"
+            printf 'DISCORD_WEBHOOK_URL=%s\n'    "${DISCORD_WEBHOOK_URL}"
+            printf 'FORM_API_KEY=%s\n'           "${FORM_API_KEY}"
+            printf 'FIREBASE_PROJECT_ID=%s\n'      "${FIREBASE_PROJECT_ID}"
+            printf 'FIREBASE_PROJECT_NUMBER=%s\n'  "${FIREBASE_PROJECT_NUMBER}"
+            printf 'ORIGIN_SHARED_SECRET=%s\n'   "${ORIGIN_SHARED_SECRET}"
+            printf 'GITHUB_PAT=%s\n'             "${GH_PAT}"
+            printf 'LOG_LEVEL=%s\n'              "${LOG_LEVEL}"
+            printf 'GITHUB_OWNER=%s\n'           "${GH_OWNER}"
+            printf 'GITHUB_REPO=%s\n'            "${GH_REPO}"
+            printf 'GITHUB_BRANCH=%s\n'          "${GH_BRANCH}"
+            printf 'GITHUB_YAML_PATH=%s\n'       "${GH_YAML_PATH}"
+            printf 'APP_VERSION=%s\n'            "${SHA:0:7}"
+          } > /root/rsai-backend.env.secrets
+          chmod 600 /root/rsai-backend.env.secrets
+          echo "Wrote /root/rsai-backend.env.secrets ($(wc -l < /root/rsai-backend.env.secrets) lines)"
