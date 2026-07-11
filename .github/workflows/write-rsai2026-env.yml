@@ -56,6 +56,6 @@ jobs:
             printf 'GITHUB_BRANCH=%s\n'          "${GH_BRANCH}"
             printf 'GITHUB_YAML_PATH=%s\n'       "${GH_YAML_PATH}"
             printf 'APP_VERSION=%s\n'            "${SHA:0:7}"
-          } > /root/rsai-backend.env.secrets
-          chmod 600 /root/rsai-backend.env.secrets
-          echo "Wrote /root/rsai-backend.env.secrets ($(wc -l < /root/rsai-backend.env.secrets) lines)"
+          } > "${HOME}/rsai-backend.env.secrets"
+          chmod 600 "${HOME}/rsai-backend.env.secrets"
+          echo "Wrote ${HOME}/rsai-backend.env.secrets ($(wc -l < "${HOME}/rsai-backend.env.secrets") lines)"
