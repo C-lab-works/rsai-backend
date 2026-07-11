@@ -86,6 +86,8 @@ public class Main {
 
         YamlRouteLoader.load(gate);
         startDatabaseInit(config.getDatabase(), cfAccessAuth);
+        // NOTE: マルチインスタンス構成をやめて単一インスタンス運用に切り替えたため、
+        // Firestoreベースのインスタンス調整(InstanceManager)は無効化している。
 
         // --- Startup ---
         gate.timeout(620_000);
@@ -189,12 +191,13 @@ public class Main {
         YamlRouteLoader.startBackgroundRefreshes(bg);
 
         // Firestore インスタンス管理（自己登録・コマンドリスナー・ブロードキャスト）
-        InstanceManager.get().init(() -> APP_READY.set(false));
+        // 単一インスタンス運用のため無効化(FIREBASE_* env不要)。
+        // InstanceManager.get().init(() -> APP_READY.set(false));
 
         // 30秒ごとにインスタンスメトリクスを記録
-        bg.scheduleAtFixedRate(
-                () -> InstanceManager.get().recordMetrics(),
-                30, 30, TimeUnit.SECONDS);
+        // bg.scheduleAtFixedRate(
+        //         () -> InstanceManager.get().recordMetrics(),
+        //         30, 30, TimeUnit.SECONDS);
 
         // 1分ごとにスターをフラッシュ・異常検知カウンターをリセット
         bg.scheduleAtFixedRate(StarsController::minuteTick, 1, 1, TimeUnit.MINUTES);
