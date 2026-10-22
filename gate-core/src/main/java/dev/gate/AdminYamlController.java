@@ -209,14 +209,17 @@ public class AdminYamlController {
     // routes.yaml のテーブルとカラムのチェック
     private static void validateRoutesYamlDb(List<Map<String,Object>> routes, Connection conn) throws SQLException {
         DatabaseMetaData meta = conn.getMetaData();
+        String escape = meta.getSearchStringEscape();
         for (Map<String,Object> entry : routes) {
             String path  = (String) entry.get("path");
             String table = (String) entry.get("table");
             @SuppressWarnings("unchecked")
             List<String> columns = (List<String>) entry.get("columns");
+            // メタデータ API の表名は LIKE パターンなので '_' をエスケープして完全一致にする
+            String tablePattern = escape == null ? table : table.replace("_", escape + "_");
 
             // テーブル存在チェック
-            try (ResultSet rs = meta.getTables(null, null, table, new String[]{"TABLE", "VIEW"})) {
+            try (ResultSet rs = meta.getTables(null, null, tablePattern, new String[]{"TABLE", "VIEW"})) {
                 if (!rs.next())
                     throw new IllegalArgumentException(
                         "Route '" + path + "': table '" + table + "' does not exist in database");
@@ -224,7 +227,7 @@ public class AdminYamlController {
 
             // カラム存在チェック
             Set<String> existingCols = new java.util.LinkedHashSet<>();
-            try (ResultSet rs = meta.getColumns(null, null, table, null)) {
+            try (ResultSet rs = meta.getColumns(null, null, tablePattern, null)) {
                 while (rs.next()) existingCols.add(rs.getString("COLUMN_NAME").toLowerCase());
             }
             for (String col : columns) {
