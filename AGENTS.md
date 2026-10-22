@@ -3,7 +3,7 @@
 # rsai-backend
 
 ## Purpose
-学祭用の公開 API・管理パネル向けバックエンドサービス。Java 25 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
+学祭用の公開 API・管理パネル向けバックエンドサービス。Java 25 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化し、rsai-2026（tatsunote2 上の LXC）で Docker Compose により稼働する。master への push で GitHub Actions が本番へ自動デプロイする。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
 
 ## Key Files
 
@@ -36,7 +36,8 @@
 - Cloudflare IP フィルタをスキップするには `SKIP_CF_IP_CHECK=true` を設定
 
 ## Working with debug branch
-- ビルド: debugブランチにpushしたら(ssh root@tatsunote2)にデプロイされます。(tailscale、コンテナ名:rsai-debug)
+- debug への push では、ビルド・テスト・GHCR への push・成果物の保管だけを行い、tatsunote2 へのデプロイはしません。
+- tatsunote2 へのデプロイ(tailscale、コンテナ名:rsai-debug)は、workflow_dispatch で `deploy_debug=true` を指定したときだけ動きます。self-hosted runner(ラベル tatsunote2)が必要です。
 - CFあり、debugv2.tatsut.jp (本番環境になるべく寄せています。)
 - 環境変数は、 /opt/rsai-debug.env で、そこに書かれていないものは本番環境と同じgithub secretsの内容が使われます。
 - 管理者ページのテストは不可能です。(代用手段を検討中)

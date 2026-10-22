@@ -44,7 +44,7 @@
 ## Dependencies
 
 ### External
-- Jetty 11.0.20 — HTTP サーバー基盤
+- Jetty 12.1.14 (ee10) — HTTP サーバー基盤
 - HikariCP 5.1.0 — コネクションプール
 - SnakeYAML 2.2 — routes.yaml パース
 - Jackson 2.17.0 — JSON レスポンス生成
