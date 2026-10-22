@@ -11,7 +11,7 @@ application {
 group = "dev.gate"
 version = "1.0-SNAPSHOT"
 
-val jettyVersion = "11.0.26"
+val jettyVersion = "12.1.14"
 
 java {
     toolchain {
@@ -21,13 +21,13 @@ java {
 
 dependencies {
     implementation("org.eclipse.jetty:jetty-server:$jettyVersion")
+    implementation("org.eclipse.jetty.ee10:jetty-ee10-servlet:$jettyVersion")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0") {
         exclude(group = "net.bytebuddy")
     }
     implementation("org.yaml:snakeyaml:2.2")
-    implementation("org.eclipse.jetty.websocket:websocket-jetty-server:$jettyVersion")
-    implementation("org.eclipse.jetty.websocket:websocket-jetty-api:$jettyVersion")
-    implementation("org.eclipse.jetty.websocket:websocket-servlet:$jettyVersion")
+    implementation("org.eclipse.jetty.ee10.websocket:jetty-ee10-websocket-jetty-server:$jettyVersion")
+    implementation("org.eclipse.jetty.websocket:jetty-websocket-jetty-api:$jettyVersion")
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.5.13")
 

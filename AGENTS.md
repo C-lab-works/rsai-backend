@@ -3,7 +3,7 @@
 # rsai-backend
 
 ## Purpose
-学祭用の公開 API・管理パネル向けバックエンドサービス。Java 21 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
+学祭用の公開 API・管理パネル向けバックエンドサービス。Java 25 + Jetty HTTP サーバーで構築され、GraalVM native image としてパッケージ化して Cloud Run 上で稼働する。MySQL でイベントデータを管理し、Firestore でインスタンスのリアルタイム状態を保持する。
 
 ## Key Files
 
@@ -54,8 +54,8 @@
 ## Dependencies
 
 ### External
-- Java 21 (GraalVM) — 言語・ランタイム
-- Jetty 11.0.20 — HTTP サーバー（+ WebSocket）
+- Java 25 (GraalVM) — 言語・ランタイム
+- Jetty 12.1.14 (ee10 / Servlet 6) — HTTP サーバー（+ WebSocket）
 - Jackson 2.17.0 — JSON シリアライゼーション
 - SnakeYAML 2.2 — YAML パース
 - HikariCP 5.1.0 + mysql-connector-j 8.3.0 — MySQL 接続プール
