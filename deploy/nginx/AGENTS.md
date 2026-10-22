@@ -4,7 +4,7 @@
 # nginx
 
 ## Purpose
-debug 環境（tatsunote2）向けの nginx リバースプロキシ設定テンプレート。Cloud Run と同等のヘッダー構成を再現し、debugv2.tatsut.jp に HTTPS でアクセスできるようにする。
+debug 環境（tatsunote2）向けの nginx リバースプロキシ設定テンプレート。本番と同等のヘッダー構成を再現し、debugv2.tatsut.jp に HTTPS でアクセスできるようにする。
 
 ## Key Files
 

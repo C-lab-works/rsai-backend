@@ -23,7 +23,7 @@
 
 ### Working In This Directory
 - 依存追加は `build.gradle.kts` の `dependencies {}` ブロックに追加し、GraalVM reflect-config も必要に応じて更新
-- `--gc=G1` と `-R:MaxHeapSize=1536m` は Cloud Run 環境（2 GiB コンテナ）に合わせた設定。変更時は慎重に
+- `--gc=G1` と `-R:MaxHeapSize=1536m` は Cloud Run 時代（2 GiB コンテナ）に決めた値。現在の本番 rsai-2026 の LXC はメモリ 1.5 GiB なので、変更時は実メモリとの兼ね合いに注意
 - native image でリフレクションが必要なクラスは `src/main/resources/META-INF/native-image/dev.gate/reflect-config.json` に登録
 
 ### Testing Requirements

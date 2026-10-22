@@ -13,7 +13,7 @@
 | `config.yml` | アプリ設定（ポート・DB接続・CORS等）。`ConfigLoader` が起動時に読み込む |
 | `routes.yaml` | 宣言的 GET ルート定義。`YamlRouteLoader` が `Gate` に自動登録する |
 | `schema.sql` | MySQL テーブル定義。`DataSeeder` が初回起動時に適用 |
-| `logback.xml` | Logback ロギング設定（Cloud Run の Cloud Logging 向けフォーマット） |
+| `logback.xml` | Logback ロギング設定（標準出力へ `%d{HH:mm:ss} [%level] %logger{20} - %msg%n` 形式で出力） |
 
 ## Subdirectories
 

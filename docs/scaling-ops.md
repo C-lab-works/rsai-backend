@@ -1,5 +1,7 @@
 # スケール運用手順(学園祭当日向け)
 
+> この手順は Cloud Run 運用時のもの。現在は rsai-2026(単一インスタンス、Docker Compose)で稼働しており、gcloud・MIN_SCALE の手順は使えない。キャッシュと Cloudflare に関する記述は今も有効。
+
 高トラフィック(同時1万人以上)を捌くための運用メモ。
 アーキテクチャ前提: 公開 GET は全てメモリキャッシュ + ETag/304/gzip 配信で、
 Cloudflare の Cache Rule(設定済み)がオリジン到達リクエストを大幅に削減する。
@@ -35,7 +37,7 @@ variable の値に上書きされる**。当日中にデプロイする可能性
 | cpu / memory | 4 / 2Gi | startup-cpu-boost + always-allocated |
 | DB_POOL_SIZE | 5 | HikariCP 上限/インスタンス(15×5=75 ≦ MySQL max_connections 151) |
 | acceptQueueSize | 512 | Jetty TCP accept キュー(コード側デフォルト) |
-| PUBLIC_BASE_URL | https://v2.r-sai2026.site | 書き込み起点 purge の URL 構築用(cloudrun のみ) |
+| PUBLIC_BASE_URL | https://v2.r-sai2026.site | 書き込み起点 purge の URL 構築用(未設定なら URL purge は無効) |
 
 ## 書き込み起点の自動 purge(エッジ TTL 5 分の前提)
 
@@ -81,4 +83,4 @@ hey -z 30s -c 200 \
 
 - 計測対象: RPS / p99 / 転送量。`-H "If-None-Match: <ETag>"` を付ければ 304 経路を計測できる
 - hey が無い場合: `curl -Lo /usr/local/bin/hey https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 && chmod +x /usr/local/bin/hey`
-- 本番(Cloud Run)への負荷テストは CF・課金に影響するため原則行わない
+- 本番(rsai-2026)への負荷テストは CF に影響するため原則行わない
