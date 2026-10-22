@@ -15,8 +15,8 @@ public class DataSeeder {
                 logger.warn("Core tables missing (locations/categories/projects) — resetting seed version to 0");
                 v = 0;
             }
-            if (v >= 34) {
-                logger.info("Seed data v34 already present — skipping");
+            if (v >= 35) {
+                logger.info("Seed data v35 already present — skipping");
                 return;
             }
             if (v == 1) {
@@ -193,7 +193,12 @@ public class DataSeeder {
                 migrateV33(conn);
                 setSeedVersion(conn, 34);
             }
-            logger.info("Seed data v34 ready");
+            if (v <= 34) {
+                logger.info("Migrating schema v34 -> v35");
+                migrateV35(conn);
+                setSeedVersion(conn, 35);
+            }
+            logger.info("Seed data v35 ready");
         }
     }
 
@@ -976,6 +981,25 @@ public class DataSeeder {
     private static void migrateV33(Connection conn) throws Exception {
         addColumnIfMissing(conn, "foodtruck", "afterparty_location", "TEXT");
         addColumnIfMissing(conn, "projects", "afterparty", "TINYINT(1) NOT NULL DEFAULT 0");
+    }
+
+    private static void migrateV35(Connection conn) throws Exception {
+        addColumnIfMissing(conn, "locations", "show_tab", "TINYINT(1) NOT NULL DEFAULT 0");
+        addColumnIfMissing(conn, "projects", "offset", "FLOAT");
+        addColumnIfMissing(conn, "projects", "isOnMap", "TINYINT(1) DEFAULT 1");
+        addColumnIfMissing(conn, "credit", "github", "TEXT NOT NULL");
+        addColumnIfMissing(conn, "bus", "date", "DATE");
+        addColumnIfMissing(conn, "bus", "type", "TEXT");
+        addColumnIfMissing(conn, "announcements", "display_from", "DATETIME");
+        addColumnIfMissing(conn, "announcements", "display_until", "DATETIME");
+        addColumnIfMissing(conn, "foodtruck", "afterparty", "INT NOT NULL DEFAULT 0");
+        exec(conn,
+            "CREATE TABLE IF NOT EXISTS static_data (" +
+            "  data_key   VARCHAR(50) PRIMARY KEY," +
+            "  data_json  JSON        NOT NULL," +
+            "  updated_at DATETIME    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
+            ")");
+        dropColumnIfExists(conn, "bus", "Destination");
     }
 
     // ── util ──────────────────────────────────────────────────

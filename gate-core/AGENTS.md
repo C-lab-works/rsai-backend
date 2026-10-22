@@ -4,7 +4,7 @@
 # gate-core
 
 ## Purpose
-バックエンドの唯一の Gradle サブモジュール。Java 21 ソースコード全体、リソースファイル、GraalVM native image 設定を含む。独自軽量フレームワーク "Gate" を内包し、Jetty をラップした HTTP ルーティング・ミドルウェア・DI を提供する。
+バックエンドの唯一の Gradle サブモジュール。Java 25 ソースコード全体、リソースファイル、GraalVM native image 設定を含む。独自軽量フレームワーク "Gate" を内包し、Jetty をラップした HTTP ルーティング・ミドルウェア・DI を提供する。
 
 ## Key Files
 
