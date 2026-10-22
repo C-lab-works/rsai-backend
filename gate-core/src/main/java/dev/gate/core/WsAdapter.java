@@ -1,9 +1,9 @@
 package dev.gate.core;
 
+import org.eclipse.jetty.websocket.api.Callback;
 import org.eclipse.jetty.websocket.api.Session;
-import org.eclipse.jetty.websocket.api.WebSocketAdapter;
 
-public class WsAdapter extends WebSocketAdapter {
+public class WsAdapter extends Session.Listener.AbstractAutoDemanding {
 
     private static final Logger logger = new Logger(WsAdapter.class);
 
@@ -23,15 +23,15 @@ public class WsAdapter extends WebSocketAdapter {
     }
 
     @Override
-    public void onWebSocketConnect(Session session) {
-        super.onWebSocketConnect(session);
-        logger.info("WS connected: {}", session.getRemoteAddress());
+    public void onWebSocketOpen(Session session) {
+        super.onWebSocketOpen(session);
+        logger.info("WS connected: {}", session.getRemoteSocketAddress());
     }
 
     @Override
-    public void onWebSocketClose(int statusCode, String reason) {
-        super.onWebSocketClose(statusCode, reason);
+    public void onWebSocketClose(int statusCode, String reason, Callback callback) {
         logger.info("WS closed: {} {}", statusCode, reason);
+        callback.succeed();
     }
 
     @Override
