@@ -1,6 +1,6 @@
 # Gate
 
-A lightweight HTTP framework for Java 21, built on Jetty with virtual thread support.
+A lightweight HTTP framework for Java 25, built on Jetty with virtual thread support.
 
 [Japanese README](README_ja.md)
 
@@ -22,7 +22,7 @@ A lightweight HTTP framework for Java 21, built on Jetty with virtual thread sup
 
 ## Requirements
 
-- Java 21
+- Java 25
 - Gradle 9.x
 
 ## Quick Start
@@ -307,19 +307,6 @@ CREATE TABLE IF NOT EXISTS users (
 
 If `schema.sql` is not found, a warning is logged and startup continues normally.
 
-### Cloud SQL (GCP)
-
-```yaml
-database:
-  cloudSqlInstance: "my-project:us-central1:my-instance"
-  name: mydb
-  user: myuser
-  password: ""
-```
-
-When `cloudSqlInstance` is non-blank, the Cloud SQL Socket Factory is used and `host`/`port` are ignored.
-Can also be set via the `CLOUD_SQL_INSTANCE` environment variable.
-
 ## Configuration
 
 `src/main/resources/config.yml`:
@@ -334,7 +321,6 @@ database:
   name: mydb
   user: root
   password: ""
-  cloudSqlInstance: ""   # GCP Cloud SQL instance (project:region:instance)
   maxPoolSize: 10
 ```
 
@@ -349,7 +335,6 @@ All database fields can be overridden with environment variables:
 | `DB_NAME` | `database.name` |
 | `DB_USER` | `database.user` |
 | `DB_PASSWORD` | `database.password` |
-| `CLOUD_SQL_INSTANCE` | `database.cloudSqlInstance` |
 
 ## Server Lifecycle
 

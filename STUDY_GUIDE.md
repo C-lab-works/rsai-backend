@@ -41,11 +41,11 @@ STUDY_PROBLEMS.md の問題を解くための知識をまとめたノート。
 ### 技術スタック
 
 ```
-Java 21 (Virtual Threads)
+Java 25 (GraalVM native-image, Virtual Threads)
   └── Gate（自作 HTTP フレームワーク、Jetty ベース）
       ├── MySQL + HikariCP（DB 接続プール）
       ├── Cloudflare（CDN、IP フィルタ、Access 認証）
-      ├── Google Cloud Run（コンテナ実行）
+      ├── rsai-2026 / Docker Compose（コンテナ実行、GitHub Actions で自動デプロイ）
       └── Firestore（マルチインスタンス調整）
 ```
 
@@ -72,7 +72,7 @@ dev.gate/
 ├── CloudflareIpFilter.java IP 許可リスト
 ├── ApiKeyAuth.java         API キー認証
 ├── RequestMetrics.java     リクエスト統計
-├── InstanceManager.java    Cloud Run マルチインスタンス管理
+├── InstanceManager.java    マルチインスタンス管理（Firestore 前提。現構成は単一インスタンスで無効）
 ├── FirestoreRest.java      Firestore REST API クライアント
 ├── AuditLog.java           操作ログ
 ├── DiscordWebhook.java     Discord 通知
@@ -85,7 +85,7 @@ dev.gate/
 
 ### コアコンセプト
 
-Gate は Spring Boot などの重いフレームワークを使わず、Jetty を直接ラップした軽量フレームワーク。Java 21 の **Virtual Threads** を使ってスループットを確保している。
+Gate は Spring Boot などの重いフレームワークを使わず、Jetty を直接ラップした軽量フレームワーク。Java 25 の **Virtual Threads** を使ってスループットを確保している。
 
 ### ルート登録の2方式
 
@@ -923,11 +923,11 @@ conn.getMetaData().getColumns(null, null, tableName, null)
 
 ### なぜ DB 初期化を別スレッドで行うのか
 
-HTTP サーバー（`gate.start()`）を先に起動することで、DB がまだ準備できていない間も `/health` エンドポイントが応答できる。Cloud Run の起動ヘルスチェックが `/health` を叩くため、DB 待ちでタイムアウトしないようにしている。
+HTTP サーバー（`gate.start()`）を先に起動することで、DB がまだ準備できていない間も `/health` エンドポイントが応答できる。Docker のヘルスチェック（compose の healthcheck と、デプロイスクリプトの healthy 待ち）が `/health` を叩くため、DB 待ちでタイムアウトしないようにしている。
 
 ### なぜ `ReentrantLock` を `synchronized` の代わりに使うのか
 
-Java 21 の Virtual Thread は `synchronized` ブロック内でブロックされると、OS スレッド（キャリアスレッド）がピン留めされる。`ReentrantLock` ではピン留めが起きないため、高並列時のスループットが落ちない。
+Java 25 の Virtual Thread は `synchronized` ブロック内でブロックされると、OS スレッド（キャリアスレッド）がピン留めされる。`ReentrantLock` ではピン留めが起きないため、高並列時のスループットが落ちない。
 
 ### なぜ `AtomicReference` で参照を丸ごと交換するのか
 
@@ -1006,10 +1006,9 @@ MySQL の DDL（`CREATE TABLE`, `ALTER TABLE` 等）は実行と同時に暗黙�
 | `DB_NAME` | | DB 名 |
 | `DB_USER` | | DB ユーザー |
 | `DB_PASSWORD` | | DB パスワード |
-| `CLOUD_SQL_INSTANCE` | | Cloud SQL インスタンス名 |
 | `APP_VERSION` | | アプリバージョン（デプロイ時注入） |
 | `BUILD_SHA` | | Git コミット SHA（デプロイ時注入） |
-| `HOSTNAME` | | Cloud Run インスタンス ID（自動設定） |
+| `HOSTNAME` | | コンテナのホスト名（インスタンス識別に使用） |
 | `RUNMODE` | | `azure` で GcpMetricsController 無効 |
 | `CF_API_TOKEN` | | Cloudflare キャッシュパージ用トークン |
 | `CF_ZONE_ID` | | Cloudflare ゾーン ID |

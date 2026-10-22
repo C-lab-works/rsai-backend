@@ -22,7 +22,7 @@
 | `CongestionController.java` | 混雑情報の取得・キャッシュ（30秒ポーリング） |
 | `StarsController.java` | お気に入り（スター）の追加・削除。書き込みをキューに溜めて定期バッチで DB フラッシュ（`ConcurrentLinkedQueue` + 1分ポーリング） |
 | `CfMetricsController.java` | Cloudflare メトリクス取得エンドポイント |
-| `GcpMetricsController.java` | GCP（Cloud Run）メトリクス取得（`RUNMODE=azure` 時はスキップ） |
+| `GcpMetricsController.java` | GCP メトリクス取得（`RUNMODE=azure` 時はスキップ）。現構成（rsai-2026）では GCP の課金が無効のため取得できない |
 
 ### ミドルウェア・フィルタ
 | File | Description |
@@ -38,7 +38,7 @@
 ### サービス・ユーティリティ
 | File | Description |
 |------|-------------|
-| `FirestoreRest.java` | GCP Firestore REST API クライアント（インスタンス管理・ブロードキャスト用） |
+| `FirestoreRest.java` | GCP Firestore REST API クライアント（インスタンス管理・ブロードキャスト用）。現構成では Firestore に接続できず無効化される |
 | `InstanceManager.java` | Firestore を通じたインスタンス自己登録・コマンド受信・メトリクス記録 |
 | `CacheSync.java` | 書き込み起点のキャッシュ全同期（全コントローラー再構築 + broadcast + CF purge）をコアレッシング（3秒窓）付きで非同期実行 |
 | `CfPurge.java` | Cloudflare キャッシュ purge ユーティリティ。`purge_everything` と URL 単位 purge を提供。`CF_API_TOKEN`, `CF_ZONE_ID`, `PUBLIC_BASE_URL` で設定 |

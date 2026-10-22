@@ -9,7 +9,7 @@
 
 | File | Description |
 |------|-------------|
-| `Dockerfile` | GraalVM native image ビルドと Cloud Run 用コンテナイメージ定義 |
+| `Dockerfile` | GraalVM native image ビルドと本番（rsai-2026）用コンテナイメージ定義 |
 | `.dockerignore` | Docker ビルドコンテキスト除外設定 |
 | `settings.gradle.kts` | Gradle マルチプロジェクト設定（`gate-core` サブモジュール定義） |
 | `gradlew` / `gradlew.bat` | Gradle Wrapper スクリプト（ビルドのエントリポイント） |

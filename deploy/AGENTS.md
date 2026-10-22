@@ -16,6 +16,6 @@
 
 ### Working In This Directory
 - このディレクトリの設定は GitHub Actions `deploy.yml` から直接は参照されない。tatsunote2 上に手動で配置・適用する
-- 本番環境（Cloud Run）の nginx 設定は Cloudflare が担うため、このディレクトリには含まれない
+- 本番環境（rsai-2026）の nginx 設定はこのディレクトリには含まれない（サーバー側の compose で管理）
 
 <!-- MANUAL: -->

@@ -1,6 +1,6 @@
 # Gate
 
-Java 21 向け軽量 HTTP フレームワーク。Jetty をベースに仮想スレッドをサポートします。
+Java 25 向け軽量 HTTP フレームワーク。Jetty をベースに仮想スレッドをサポートします。
 
 [English README](README.md)
 
@@ -22,7 +22,7 @@ Java 21 向け軽量 HTTP フレームワーク。Jetty をベースに仮想ス
 
 ## 要件
 
-- Java 21
+- Java 25
 - Gradle 9.x
 
 ## クイックスタート
@@ -308,19 +308,6 @@ CREATE TABLE IF NOT EXISTS users (
 
 `schema.sql` が見つからない場合は警告がログに出力され、起動は続行します。
 
-### Cloud SQL（GCP）
-
-```yaml
-database:
-  cloudSqlInstance: "my-project:us-central1:my-instance"
-  name: mydb
-  user: myuser
-  password: ""
-```
-
-`cloudSqlInstance` が空でない場合、Cloud SQL Socket Factory 経由で接続されます。`host`/`port` は無視されます。
-環境変数 `CLOUD_SQL_INSTANCE` でも設定できます。
-
 ## 設定
 
 `src/main/resources/config.yml`：
@@ -335,7 +322,6 @@ database:
   name: mydb
   user: root
   password: ""
-  cloudSqlInstance: ""   # GCP Cloud SQL インスタンス（project:region:instance）
   maxPoolSize: 10
 ```
 
@@ -350,7 +336,6 @@ database:
 | `DB_NAME` | `database.name` |
 | `DB_USER` | `database.user` |
 | `DB_PASSWORD` | `database.password` |
-| `CLOUD_SQL_INSTANCE` | `database.cloudSqlInstance` |
 
 ## サーバーライフサイクル
 

@@ -4,7 +4,7 @@
 # .github
 
 ## Purpose
-GitHub Actions CI/CD パイプラインの定義と、自動化スクリプトを格納する。デプロイ（Cloud Run）とセキュリティレビュー（AI による diff 解析）の2本立て。
+GitHub Actions CI/CD パイプラインの定義と、自動化スクリプトを格納する。デプロイ（GitHub-hosted runner でビルドして GHCR に push し、self-hosted runner で rsai-2026 へ自動デプロイ）とセキュリティレビュー（AI による diff 解析）の2本立て。
 
 ## Key Files
 
